@@ -1,6 +1,6 @@
 # Sawyer — Distributed MoE Inference Network
 
-> **Status: In Progress** — This project is under active development and not ready for production use. APIs, protocols, and features may change without notice.
+> **Status: Active** — Sawyer is live and accepting providers. APIs may evolve as the network grows.
 
 **"The load is split. Friends help."**
 
