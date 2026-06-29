@@ -2,7 +2,7 @@
 
 **"The load is split. Friends help."**
 
-<img src="sawyer_logo.png" alt="Sawyer on Bedrock" width="600">
+<div align="center"><img src="sawyer_logo.png" alt="Sawyer on Bedrock" width="600"></div>
 
 Named for Tom Sawyer, who turned an impossible chore into a community effort by making participation irresistible. Sawyer turns GPU inference — a credit-draining trap — into a distributed network where each node carries a piece of the load, and everyone benefits.
 
