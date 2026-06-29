@@ -1,0 +1,238 @@
+syntax = "proto3";
+
+package sawyer;
+
+// ──────────────────────────────────────────────
+// Sawyer Distributed MoE Inference Protocol
+// ──────────────────────────────────────────────
+
+// ── Router Service (runs on the gateway) ──
+
+service SawyerRouter {
+  // Node registration and lifecycle
+  rpc RegisterNode(RegisterNodeRequest) returns (RegisterNodeResponse);
+  rpc DeregisterNode(DeregisterNodeRequest) returns (DeregisterNodeResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+
+  // Inference
+  rpc Infer(InferRequest) returns (InferResponse);
+
+  // Model discovery
+  rpc ListModels(ListModelsRequest) returns (ListModelsResponse);
+}
+
+// ── Node Service (runs on each volunteer node) ──
+
+service SawyerNode {
+  // Router calls this to activate an expert on a node
+  rpc LoadExpert(LoadExpertRequest) returns (LoadExpertResponse);
+  rpc UnloadExpert(UnloadExpertRequest) returns (UnloadExpertResponse);
+
+  // Router calls this to run inference on a loaded expert
+  rpc ExpertInfer(ExpertInferRequest) returns (ExpertInferResponse);
+
+  // Health check from router to node
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// ── Messages ──
+
+// -- Registration --
+
+message RegisterNodeRequest {
+  string node_name = 1;
+  NodeCapabilities capabilities = 2;
+  string bedrock_node_id = 3;  // Bedrock identity cert
+}
+
+message RegisterNodeResponse {
+  string node_id = 1;
+  string session_token = 2;  // For subsequent auth
+  repeated ExpertAssignment assignments = 3;
+}
+
+message DeregisterNodeRequest {
+  string node_id = 1;
+  string session_token = 2;
+}
+
+message DeregisterNodeResponse {
+  bool acknowledged = 1;
+}
+
+message NodeCapabilities {
+  string gpu_name = 1;
+  int64 vram_bytes = 2;
+  int32 max_experts = 3;
+  double bandwidth_mbps = 4;
+  string region = 5;           // e.g. "us-east-1"
+  repeated string supported_models = 6;  // Model names this node can host
+}
+
+message ExpertAssignment {
+  string model_name = 1;
+  int32 expert_id = 2;
+  ExpertStatus status = 3;
+}
+
+// -- Heartbeat --
+
+message HeartbeatRequest {
+  string node_id = 1;
+  NodeStatus status = 2;
+}
+
+message HeartbeatResponse {
+  bool acknowledged = 1;
+  repeated ExpertAssignment updated_assignments = 2;  // Router can reassign
+}
+
+message NodeStatus {
+  double cpu_usage = 1;
+  double gpu_usage = 2;
+  int64 vram_used_bytes = 3;
+  int64 vram_total_bytes = 4;
+  int32 active_requests = 5;
+  int64 total_inferences = 6;
+  double avg_latency_ms = 7;
+}
+
+// -- Inference --
+
+message InferRequest {
+  string model_name = 1;
+  bytes input_tokens = 2;         // Token IDs, packed as int32 array
+  int32 max_output_tokens = 3;
+  string user_id = 4;             // Authenticated user
+  string api_key = 5;             // Sawyer API key
+  InferParams params = 6;
+}
+
+message InferParams {
+  double temperature = 1;         // 0.0 - 2.0
+  double top_p = 2;               // 0.0 - 1.0
+  int32 top_k = 3;                // 1 - 100
+  double repetition_penalty = 4;  // 1.0 - 2.0
+  int64 seed = 5;                 // Deterministic sampling
+}
+
+message InferResponse {
+  bytes output_tokens = 1;        // Token IDs, packed as int32 array
+  string output_text = 2;         // Decoded text
+  InferMetrics metrics = 3;
+  int64 tokens_remaining = 4;    // User's token balance after this request
+}
+
+message InferMetrics {
+  int64 input_tokens = 1;
+  int64 output_tokens = 2;
+  double latency_ms = 3;
+  repeated ExpertRouting routing = 4;  // Which experts were activated
+}
+
+message ExpertRouting {
+  string model_name = 1;
+  int32 expert_id = 2;
+  string node_id = 3;           // Which node served this expert
+  double expert_latency_ms = 4;
+}
+
+// -- Expert Management (Router -> Node) --
+
+message LoadExpertRequest {
+  string model_name = 1;
+  int32 expert_id = 2;
+  string weight_url = 3;         // HuggingFace or CDN URL for weight file
+  string weight_checksum = 4;    // SHA-256 of weight file
+}
+
+message LoadExpertResponse {
+  bool success = 1;
+  string error_message = 2;
+  double load_time_seconds = 3;
+  int64 vram_used_bytes = 4;
+}
+
+message UnloadExpertRequest {
+  string model_name = 1;
+  int32 expert_id = 2;
+}
+
+message UnloadExpertResponse {
+  bool success = 1;
+  string error_message = 2;
+  int64 vram_freed_bytes = 3;
+}
+
+message ExpertInferRequest {
+  string model_name = 1;
+  int32 expert_id = 2;
+  bytes hidden_states = 3;       // Serialized tensor data
+  TensorShape hidden_shape = 4;   // Shape of the input tensor
+  int32 layer_idx = 5;           // Which MoE layer
+}
+
+message ExpertInferResponse {
+  bytes output_states = 1;       // Serialized tensor data
+  TensorShape output_shape = 2;
+  double latency_ms = 3;
+}
+
+message TensorShape {
+  repeated int64 dims = 1;
+  string dtype = 2;               // e.g. "float16", "float32"
+}
+
+// -- Health Check --
+
+message HealthCheckRequest {
+  string node_id = 1;
+}
+
+message HealthCheckResponse {
+  bool healthy = 1;
+  repeated LoadedExpert loaded_experts = 2;
+  NodeStatus status = 3;
+}
+
+message LoadedExpert {
+  string model_name = 1;
+  int32 expert_id = 2;
+  int64 vram_bytes = 3;
+  int64 inference_count = 4;
+}
+
+// -- Model Discovery --
+
+message ListModelsRequest {
+  // Empty — returns all available models
+}
+
+message ListModelsResponse {
+  repeated ModelInfo models = 1;
+}
+
+message ModelInfo {
+  string name = 1;
+  string display_name = 2;
+  int64 total_params = 3;          // e.g. 46_700_000_000
+  int32 num_experts = 4;
+  int32 active_experts = 5;        // Experts activated per token
+  int64 model_size_bytes = 6;      // Total Q4 size
+  int64 expert_size_bytes = 7;     // Per-expert Q4 size
+  int32 context_length = 8;
+  string gating_type = 9;          // "top_k", "shared"
+  string hf_repo = 10;             // HuggingFace repo ID
+  int32 available_nodes = 11;      // How many nodes can host experts for this model
+  int32 active_nodes = 12;         // Currently active nodes
+}
+
+// -- Enums --
+
+enum ExpertStatus {
+  EXPERT_STATUS_UNSPECIFIED = 0;
+  EXPERT_STATUS_LOADING = 1;
+  EXPERT_STATUS_READY = 2;
+  EXPERT_STATUS_FAILED = 3;
+  EXPERT_STATUS_EVICTING = 4;
+}

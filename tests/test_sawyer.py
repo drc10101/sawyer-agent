@@ -7,22 +7,19 @@ import pytest
 
 from sawyer.config import SawyerConfig
 from sawyer.model.registry import (
-    MoEModel,
     can_host_expert,
     get_model,
     list_models,
-    MODELS,
 )
-from sawyer.node.agent import SawyerNode, ExpertSlot
+from sawyer.node.agent import SawyerNode
 from sawyer.router.scheduler import ExpertScheduler, NodeInfo
 from sawyer.token.budget import (
+    TIER_PRICING,
+    TIER_TOKENS,
     HostEarnings,
     SubscriptionTier,
     TokenBalance,
-    TIER_PRICING,
-    TIER_TOKENS,
 )
-
 
 # ── Config ──
 
@@ -152,9 +149,20 @@ class TestSawyerNode:
 
     @pytest.mark.asyncio
     async def test_register(self):
-        node_id = await self.node.register(name="test-node")
-        assert node_id is not None
-        assert "test-node" in node_id
+        """Test register by mocking the router client — no real gRPC connection."""
+        from unittest.mock import MagicMock, patch
+
+        mock_client = MagicMock()
+        mock_client.register.return_value = "sawyer-node-42"
+        mock_client.connect = MagicMock()
+
+        with (
+            patch.object(self.node, "_router_client", None),
+            patch("sawyer.node.agent.RouterClient", return_value=mock_client),
+        ):
+            node_id = await self.node.register(name="test-node")
+            assert node_id == "sawyer-node-42"
+            assert self.node.node_id == "sawyer-node-42"
 
     @pytest.mark.asyncio
     async def test_load_expert(self):
