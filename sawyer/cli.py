@@ -8,6 +8,7 @@ Usage:
     sawyer download       Download model weights to local cache
     sawyer account        Create or show token account
     sawyer quota          Check token quota before inference
+    sawyer provider       Manage node provider registration and payouts
 """
 
 import argparse
@@ -255,6 +256,146 @@ def cmd_quota(args) -> int:
     return 0
 
 
+def cmd_provider(args) -> int:
+    """Manage node provider registration and payouts."""
+    from sawyer.provider.manager import PayoutSchedule, ProviderManager
+    from sawyer.storage.database import SawyerStorage
+
+    config = SawyerConfig()
+    storage = SawyerStorage(config.database_url)
+    mgr = ProviderManager(storage=storage)
+
+    if args.provider_action == "register":
+        provider = mgr.register(
+            email=args.email,
+            display_name=args.name,
+            legal_name=args.legal_name or args.name,
+            phone=args.phone or "",
+            country=args.country,
+            payout_schedule=(
+                PayoutSchedule.QUARTERLY
+                if args.schedule == "quarterly"
+                else PayoutSchedule.MONTHLY
+            ),
+        )
+        print("Provider registered!")
+        print(f"  ID:          {provider.provider_id}")
+        print(f"  Name:        {provider.display_name}")
+        print(f"  Email:       {provider.email}")
+        print(f"  Status:      {provider.status.value}")
+        print(f"  Payout:      {provider.payout_schedule.value}")
+        print("\nNext step: Complete Stripe Connect onboarding")
+        print(f"  sawyer provider onboarding {provider.provider_id}")
+
+    elif args.provider_action == "status":
+        provider = mgr.get_provider(args.provider_id)
+        if provider is None:
+            print(f"Provider {args.provider_id} not found")
+            storage.close()
+            return 1
+
+        summary = mgr.get_provider_summary(args.provider_id)
+        print(f"Provider Status: {summary['display_name']}")
+        print(f"  ID:              {summary['provider_id']}")
+        print(f"  Email:          {summary['email']}")
+        print(f"  Status:         {summary['status']}")
+        print(f"  Country:        {summary['country']}")
+        print(f"  Nodes:          {summary['nodes']}")
+        print(f"  Payout:         {summary['payout_schedule']}")
+        print("\n  Earnings:")
+        print(f"    Tokens served:  {summary['earnings']['total_tokens_served']:,}")
+        print(f"    Total earned:   ${summary['earnings']['total_usd_earned']:.2f}")
+        print(f"    Total paid:     ${summary['earnings']['total_usd_paid']:.2f}")
+        print(f"    Available:      ${summary['earnings']['available_balance']:.2f}")
+        print(f"    Pending:       ${summary['earnings']['pending_payouts']:.2f}")
+        print("\n  Verification:")
+        print(f"    Stripe:        {summary['verification']['stripe_connected']}")
+        print(f"    Verified:      {summary['verification']['stripe_verified']}")
+        print(f"    Tax ID:        {summary['verification']['tax_id_provided']}")
+
+    elif args.provider_action == "onboarding":
+        provider = mgr.get_provider(args.provider_id)
+        if provider is None:
+            print(f"Provider {args.provider_id} not found")
+            storage.close()
+            return 1
+        mgr.verify_provider(
+            args.provider_id,
+            stripe_connect_id=f"acct_mock_{args.provider_id}",
+        )
+        print(f"Stripe Connect onboarding initiated for {args.provider_id}")
+        print("  Status:    verified")
+        print(f"  Stripe ID: acct_mock_{args.provider_id}")
+
+    elif args.provider_action == "payouts":
+        provider = mgr.get_provider(args.provider_id)
+        if provider is None:
+            print(f"Provider {args.provider_id} not found")
+            storage.close()
+            return 1
+
+        payouts = mgr.get_payout_history(args.provider_id)
+        if not payouts:
+            print(f"No payout history for {args.provider_id}")
+        else:
+            print(f"Payout History for {provider.display_name}:")
+            for p in payouts:
+                print(
+                    f"  {p.payout_id}  ${p.amount_usd:.2f}  "
+                    f"{p.status.value}  {p.period_label}"
+                )
+
+    elif args.provider_action == "network":
+        summary = mgr.get_network_summary()
+        print("Sawyer Provider Network:")
+        print(f"  Total providers:    {summary['total_providers']}")
+        print(f"  Active providers:   {summary['active_providers']}")
+        print(f"  Verified providers: {summary['verified_providers']}")
+        print(f"  Total nodes:        {summary['total_nodes']}")
+        print(f"  Tokens served:      {summary['total_tokens_served']:,}")
+        print(f"  Total earned:      ${summary['total_usd_earned']:.2f}")
+        print(f"  Total paid:        ${summary['total_usd_paid']:.2f}")
+        print(f"  Total pending:     ${summary['total_usd_pending']:.2f}")
+
+    elif args.provider_action == "payout":
+        provider = mgr.get_provider(args.provider_id)
+        if provider is None:
+            print(f"Provider {args.provider_id} not found")
+            storage.close()
+            return 1
+
+        if not provider.is_eligible_for_payout:
+            print("Not eligible for payout")
+            print(f"  Available: ${provider.available_balance:.2f}")
+            print(f"  Minimum:   ${provider.min_payout_usd:.2f}")
+            print(f"  Verified:  {provider.stripe_account_verified}")
+            storage.close()
+            return 1
+
+        payout = mgr.process_payout(args.provider_id)
+        if payout is None:
+            print(f"Could not process payout for {args.provider_id}")
+            storage.close()
+            return 1
+
+        print("Payout processed!")
+        print(f"  ID:       {payout.payout_id}")
+        print(f"  Amount:   ${payout.amount_usd:.2f}")
+        print(f"  Status:   {payout.status.value}")
+        print(f"  Period:   {payout.period_label}")
+
+    else:
+        print(
+            "Unknown provider action. "
+            "Use: register, status, onboarding, payouts, network, payout"
+        )
+        storage.close()
+        return 1
+
+    storage.close()
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         prog="sawyer",
@@ -347,6 +488,43 @@ def main() -> int:
     quota_parser.add_argument("--user", default="default", help="User ID")
     quota_parser.add_argument("--tokens", type=int, required=True, help="Estimated tokens needed")
 
+    # provider
+    prov_parser = subparsers.add_parser(
+        "provider", help="Manage node provider registration and payouts"
+    )
+    prov_sub = prov_parser.add_subparsers(
+        dest="provider_action", help="Provider actions"
+    )
+
+    prov_reg = prov_sub.add_parser("register", help="Register as a node provider")
+    prov_reg.add_argument("--email", required=True, help="Your email address")
+    prov_reg.add_argument("--name", required=True, help="Display name")
+    prov_reg.add_argument("--legal-name", default=None, help="Legal name for payouts")
+    prov_reg.add_argument("--phone", default=None, help="Phone number")
+    prov_reg.add_argument(
+        "--country", default="US", help="Country code (default: US)"
+    )
+    prov_reg.add_argument(
+        "--schedule",
+        choices=["monthly", "quarterly"],
+        default="monthly",
+        help="Payout schedule",
+    )
+
+    prov_stat = prov_sub.add_parser("status", help="Show provider status and earnings")
+    prov_stat.add_argument("provider_id", help="Provider ID")
+
+    prov_onb = prov_sub.add_parser("onboarding", help="Start Stripe Connect onboarding")
+    prov_onb.add_argument("provider_id", help="Provider ID")
+
+    prov_pay_hist = prov_sub.add_parser("payouts", help="Show payout history")
+    prov_pay_hist.add_argument("provider_id", help="Provider ID")
+
+    prov_pay = prov_sub.add_parser("payout", help="Trigger a payout")
+    prov_pay.add_argument("provider_id", help="Provider ID")
+
+    prov_sub.add_parser("network", help="Show network-wide provider stats")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -361,6 +539,7 @@ def main() -> int:
         "download": cmd_download,
         "account": cmd_account,
         "quota": cmd_quota,
+        "provider": cmd_provider,
     }
 
     handler = commands.get(args.command)

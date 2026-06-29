@@ -1,5 +1,6 @@
 """Sawyer Provider package — node provider registration, onboarding, and payouts."""
 
+from sawyer.provider.earnings_sync import ProviderEarningsSync
 from sawyer.provider.manager import (
     EARNINGS_RATE_PER_1K_TOKENS,
     MIN_PAYOUT_USD_MONTHLY,
@@ -29,6 +30,7 @@ __all__ = [
     "SawyerProviderStripe",
     "ConnectOnboardingResult",
     "PayoutTransferResult",
+    "ProviderEarningsSync",
     "MIN_PAYOUT_USD_MONTHLY",
     "MIN_PAYOUT_USD_QUARTERLY",
     "PROVIDER_SHARE_PERCENT",
