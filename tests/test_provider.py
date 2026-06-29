@@ -179,10 +179,13 @@ class TestProviderPayouts:
         payout = self.mgr.process_payout(self.provider.provider_id)
         assert payout is not None
 
-        failed = self.mgr.mark_payout_failed(payout.payout_id, reason="bank rejected")
+        failed = self.mgr.mark_payout_failed(payout.payout_id)
         assert failed is not None
         assert failed.status == PayoutStatus.FAILED
-        assert failed.failure_reason == "bank rejected"
+
+        # Refund: reducing total_usd_paid increases available_balance
+        provider = self.mgr.get_provider(self.provider.provider_id)
+        assert provider.available_balance > 0
 
     def test_get_pending_payouts(self):
         """Get all pending payouts."""

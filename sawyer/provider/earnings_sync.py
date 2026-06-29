@@ -78,9 +78,7 @@ class ProviderEarningsSync:
             )
             self._last_flush_tokens[node_id] = host_earning.tokens_served
 
-            credited[provider.provider_id] = credited.get(
-                provider.provider_id, 0.0
-            ) + usd
+            credited[provider.provider_id] = credited.get(provider.provider_id, 0.0) + usd
             logger.info(
                 "Flushed %d tokens from node %s → provider %s ($%.4f)",
                 new_tokens,
@@ -115,9 +113,7 @@ class ProviderEarningsSync:
         if new_tokens <= 0:
             return 0.0
 
-        usd = self._provider_mgr.credit_earnings(
-            provider.provider_id, tokens_served=new_tokens
-        )
+        usd = self._provider_mgr.credit_earnings(provider.provider_id, tokens_served=new_tokens)
         self._last_flush_tokens[node_id] = host_earning.tokens_served
         return usd
 

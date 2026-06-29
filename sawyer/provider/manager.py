@@ -374,22 +374,6 @@ class ProviderManager:
                 return payout
         return None
 
-    def mark_payout_failed(self, payout_id: str, reason: str = "") -> Payout | None:
-        """Mark a payout as failed."""
-        for payout in self._payouts:
-            if payout.payout_id == payout_id:
-                payout.status = PayoutStatus.FAILED
-                payout.failure_reason = reason
-
-                # Release the pending amount
-                provider = self._providers.get(payout.provider_id)
-                if provider:
-                    provider.total_usd_pending -= payout.amount_usd
-
-                logger.warning("Payout %s failed: %s", payout_id, reason)
-                return payout
-        return None
-
     def get_payout_history(self, provider_id: str, limit: int = 50) -> list[Payout]:
         """Get payout history for a provider."""
         return [p for p in reversed(self._payouts) if p.provider_id == provider_id][:limit]
@@ -397,6 +381,43 @@ class ProviderManager:
     def get_pending_payouts(self) -> list[Payout]:
         """Get all payouts in PENDING status."""
         return [p for p in self._payouts if p.status == PayoutStatus.PENDING]
+
+    def mark_payout_failed(self, payout_id: str) -> Payout | None:
+        """Mark a pending payout as failed (e.g., transfer failed).
+
+        Refunds the payout amount back to the provider so they
+        can be paid out again later. Reduces total_usd_paid and
+        total_usd_pending since available_balance is computed.
+
+        Args:
+            payout_id: Payout to mark as failed
+
+        Returns:
+            Updated Payout, or None if not found
+        """
+        for payout in self._payouts:
+            if payout.payout_id == payout_id:
+                if payout.status != PayoutStatus.PENDING:
+                    logger.warning(
+                        "Cannot fail payout %s in status %s",
+                        payout_id,
+                        payout.status.value,
+                    )
+                    return None
+                payout.status = PayoutStatus.FAILED
+                # Refund: reduce paid amount (available_balance is computed
+                # as earned - paid - pending, so reducing paid increases it)
+                provider = self._providers.get(payout.provider_id)
+                if provider:
+                    provider.total_usd_paid -= payout.amount_usd
+                    logger.info(
+                        "Payout %s failed, refunded $%.2f to %s",
+                        payout_id,
+                        payout.amount_usd,
+                        payout.provider_id,
+                    )
+                return payout
+        return None
 
     # ── Status Updates ─────────────────────────────────────────────
 

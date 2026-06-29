@@ -19,6 +19,7 @@ from sawyer.provider.stripe_connect import (
     PayoutTransferResult,
     SawyerProviderStripe,
 )
+from sawyer.provider.webhook import ProviderWebhookHandler
 
 __all__ = [
     "Provider",
@@ -31,6 +32,7 @@ __all__ = [
     "ConnectOnboardingResult",
     "PayoutTransferResult",
     "ProviderEarningsSync",
+    "ProviderWebhookHandler",
     "MIN_PAYOUT_USD_MONTHLY",
     "MIN_PAYOUT_USD_QUARTERLY",
     "PROVIDER_SHARE_PERCENT",
