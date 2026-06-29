@@ -1,5 +1,7 @@
 # Sawyer — Distributed MoE Inference Network
 
+> **Status: In Progress** — This project is under active development and not ready for production use. APIs, protocols, and features may change without notice.
+
 **"The load is split. Friends help."**
 
 <div align="center"><img src="sawyer_logo.png" alt="Sawyer on Bedrock" width="600"></div>
