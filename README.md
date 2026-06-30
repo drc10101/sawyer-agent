@@ -1,12 +1,16 @@
 # Sawyer — Distributed MoE Inference Network
 
-> **Status: Active** — Sawyer is live and accepting providers. APIs may evolve as the network grows.
+> **Status: Active prototype** — Provider onboarding and APIs are evolving. Sawyer is under active development toward an alpha milestone.
 
 **"The load is split. Friends help."**
 
 <div align="center"><img src="sawyer_logo.png" alt="Sawyer on Bedrock" width="600"></div>
 
 Named for Tom Sawyer, who turned an impossible chore into a community effort by making participation irresistible. Sawyer turns GPU inference — a credit-draining trap — into a distributed network where each node carries a piece of the load, and everyone benefits.
+
+**Sawyer does not require providers to host full models.** Providers host isolated MoE expert workloads that the router activates only when needed. That is why Sawyer is not just another distributed inference project — it distributes only the sparse, independently activated sub-networks that MoE architectures make possible.
+
+Built on [Bedrock](https://github.com/drc10101/bedrock) for node identity, consent-gated routing, and auditability. Sawyer runs on Bedrock. Sawyer does not own Bedrock.
 
 ## The Problem
 
@@ -24,7 +28,7 @@ A distributed network where:
 
 ## Why It Works
 
-- **MoE is naturally distributable.** Experts are independent sub-networks. Unlike tensor parallelism (which splits a single matrix across GPUs), each expert runs its own forward pass. Latency-tolerant routing.
+- **MoE is more distributable than dense inference.** Experts are independent sub-networks. Unlike tensor parallelism (which splits a single matrix across GPUs), each expert runs its own forward pass. MoE is more distributable than dense tensor-parallel inference because experts are independently activated, but Sawyer's core engineering challenge is keeping routing, expert execution, and aggregation fast enough to feel local.
 - **Sparsity means efficiency.** Only ~25% of parameters activate per token on Mixtral. The network doesn't pay for dormant compute.
 - **Quantized models fit on consumer hardware.** Q4_K_M Mixtral expert ≈ 1.5GB. A 3090 can host 2-3 experts comfortably alongside other workloads.
 - **$5/mo is the sweet spot.** Below the psychological barrier of "another subscription." Enough tokens to prototype, test, and run real workloads. Revenue sustains the network without extracting from users.
@@ -179,9 +183,23 @@ sawyer/
     └── index.html           # Landing page
 ```
 
+## Installation
+
+```bash
+pip install sawyer-core
+```
+
+Or install from source for development:
+
+```bash
+git clone https://github.com/drc10101/sawyer.git
+cd sawyer
+pip install -e .
+```
+
 ## Dependencies
 
-- **Bedrock** (sawyer-identity): Node identity, consent tokens, audit chain
+- **Bedrock** (infill-bedrock): Node identity, consent tokens, audit chain
 - **vLLM / llama.cpp**: Expert inference backend
 - **gRPC / QUIC**: Low-latency inter-node communication
 - **Stripe**: Subscription and host payout management
@@ -193,4 +211,4 @@ BSL-1.1 — free for non-production use. Production use requires a paid license.
 
 ---
 
-**Next steps:** Review this architecture, then build the repo and start with `sawyer/router/gateway.py` and `sawyer/node/agent.py` as the first working modules.
+**Alpha milestone:** Single-router, two-node demo with one toy MoE model — real node registration, real health checks, real routing logs, fake economics. Prove the network behavior first, then graduate to larger quantized MoE weights.

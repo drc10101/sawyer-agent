@@ -23,7 +23,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "bedrock-core>=0.3.0",
+    "infill-bedrock>=0.3.0",
     "grpcio>=1.60.0",
     "grpcio-tools>=1.60.0",
     "aiohttp>=3.9.0",
@@ -50,6 +50,11 @@ inference = [
 
 [project.scripts]
 sawyer = "sawyer.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sawyer*"]
+exclude = ["tests*"]
 
 [tool.ruff]
 target-version = "py311"
