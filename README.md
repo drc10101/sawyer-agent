@@ -209,6 +209,15 @@ cd sawyer
 pip install -e ".[dev]"
 ```
 
+### Running
+
+After install, Sawyer can be run either way:
+
+```bash
+sawyer serve                # if Python Scripts is on PATH
+python -m sawyer serve      # works everywhere, no PATH needed
+```
+
 ## Dependencies
 
 - **Bedrock** (infill-bedrock): Node identity, consent tokens, audit chain

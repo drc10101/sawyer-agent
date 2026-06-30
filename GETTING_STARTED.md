@@ -8,8 +8,8 @@ Sawyer distributes Mixture-of-Experts (MoE) model inference across a network of 
 
 ```bash
 pip install sawyer-core
-sawyer register --name my-node --gpu
-sawyer serve
+python -m sawyer register --name my-node --gpu
+python -m sawyer serve
 ```
 
 ## How It Works
