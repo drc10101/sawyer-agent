@@ -201,11 +201,12 @@ Every node earns proportional to its hardware contribution. The 4090 in Dallas e
 - 90% distributed by weighted throughput, 10% by uptime
 - Quarterly payouts, $25 minimum, rollover below threshold
 
-### 4. `sawyer/provider/` — Provider Economics
+### 4. `sawyer/provider/` — Provider Economics & Dashboard
 - **Node Tiers**: 4 hardware tiers (4GB/8GB/12GB/24GB+) with 1x-4x earnings multipliers
 - **Revenue Pool**: 70% of subscription revenue distributed to providers quarterly
 - **Quarterly Payout**: Pool split by weighted contribution, $25 minimum, Stripe/PayPal
 - **Rollover**: Below-threshold earnings carry forward — nobody loses money
+- **Dashboard**: Real-time web UI at `http://localhost:8000/` when serving — see tokens served, earnings, uptime, model breakdown, daily/weekly stats
 
 ### 5. `sawyer/identity/` — Bedrock Integration
 - Every node holds a Bedrock cryptographic identity
@@ -280,6 +281,27 @@ After install, Sawyer can be run either way:
 sawyer serve                # if Python Scripts is on PATH
 python -m sawyer serve      # works everywhere, no PATH needed
 ```
+
+### Provider Dashboard
+
+When serving, Sawyer hosts a real-time dashboard at `http://localhost:8000/`. You'll see:
+
+- **Daily token chart** — bar graph of tokens served over the last 7 days
+- **Weekly summary** — total tokens, earnings, uptime, average daily tokens
+- **Daily breakdown table** — date, tokens, requests, latency, uptime, earnings, errors
+- **Model breakdown** — which models you served tokens for
+- **Expert breakdown** — which expert shards you ran
+- **Tier badge** — your hardware tier and earnings multiplier (1x-4x)
+- **Payout info** — available balance, total earned, total paid, next payout date
+
+API endpoints for programmatic access:
+
+```
+GET /api/stats              — JSON stats for the current provider
+GET /api/stats/{id}         — JSON stats for a specific provider
+```
+
+The dashboard auto-refreshes every 30 seconds.
 
 ### One-Click Install (Windows)
 
