@@ -9,6 +9,11 @@ Routing strategies:
 Adaptive is the recommended default. It avoids stampeding the nearest node
 while still respecting latency — underutilized servers get preferenced,
 but a server on the other side of the planet won't win just because it's idle.
+
+Fallback routing:
+When a node hosting an expert fails or times out, the scheduler automatically
+selects a redundant node hosting the same expert. If no redundant node exists,
+the gating network selects an alternative expert from the model's pool.
 """
 
 import logging
@@ -18,7 +23,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from sawyer.model.registry import get_model
+from sawyer.model.registry import get_model, MoEModel
+from sawyer.router.gating import GatingDecision, GatingNetwork
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +70,24 @@ class ExpertScheduler:
         strategy: RoutingStrategy = RoutingStrategy.ADAPTIVE,
         latency_weight: float = 0.4,
         load_weight: float = 0.6,
+        gating: GatingNetwork | None = None,
+        fallback_timeout_ms: float = 5000.0,
+        max_fallback_attempts: int = 2,
     ) -> None:
         self.nodes: dict[str, NodeInfo] = {}
         self.strategy = strategy
         # For ADAPTIVE: how much to weight latency vs load (0-1 each, sum = 1)
         self.latency_weight = latency_weight
         self.load_weight = load_weight
+        # Gating network for expert selection
+        self.gating = gating or GatingNetwork(
+            fallback_timeout_ms=fallback_timeout_ms,
+            max_fallback_attempts=max_fallback_attempts,
+        )
+        # Track failed nodes for fallback routing
+        self._failed_nodes: dict[str, float] = {}  # node_id -> timestamp of failure
+        self._fallback_timeout_ms = fallback_timeout_ms
+        self._max_fallback_attempts = max_fallback_attempts
 
     def register_node(self, node: NodeInfo) -> None:
         """Register a new node or update an existing one."""
@@ -126,19 +144,27 @@ class ExpertScheduler:
         self,
         expert_id: int,
         strategy: RoutingStrategy | None = None,
+        exclude_nodes: set[str] | None = None,
     ) -> NodeInfo | None:
         """Select the best node for a given expert using the configured strategy.
 
         Args:
             expert_id: Which expert to route to
             strategy: Override the default strategy for this request
+            exclude_nodes: Node IDs to skip (for fallback routing)
 
         Returns:
             The selected NodeInfo, or None if no healthy nodes
         """
         candidates = self.find_expert_nodes(expert_id)
+        if exclude_nodes:
+            candidates = [n for n in candidates if n.node_id not in exclude_nodes]
         if not candidates:
-            logger.warning("No healthy nodes found for expert %d", expert_id)
+            logger.warning(
+                "No healthy nodes found for expert %d (excluded=%s)",
+                expert_id,
+                exclude_nodes,
+            )
             return None
 
         strat = strategy or self.strategy
@@ -170,6 +196,59 @@ class ExpertScheduler:
             selected.latency_ms,
         )
         return selected
+
+    def select_node_with_fallback(
+        self,
+        expert_id: int,
+        model: MoEModel,
+        strategy: RoutingStrategy | None = None,
+    ) -> tuple[NodeInfo | None, bool]:
+        """Select a node for an expert, with automatic fallback on failure.
+
+        Tries the primary node selection first. If that node has recently
+        failed (tracked in _failed_nodes), tries redundant nodes hosting
+        the same expert. If no redundant nodes exist, selects an alternative
+        expert via the gating network and routes to that.
+
+        Args:
+            expert_id: Which expert to route to
+            model: The MoE model (needed for alternative expert selection)
+            strategy: Override routing strategy
+
+        Returns:
+            Tuple of (selected_node, used_fallback). Node may be None if
+            no healthy nodes are available at all.
+        """
+        # Clean stale failures (older than 60s)
+        cutoff = time.time() - 60.0
+        self._failed_nodes = {
+            nid: ts for nid, ts in self._failed_nodes.items() if ts > cutoff
+        }
+
+        # Try primary selection, excluding recently failed nodes
+        exclude = set(self._failed_nodes.keys())
+        node = self.select_node(expert_id, strategy=strategy, exclude_nodes=exclude)
+
+        if node is not None:
+            return node, False
+
+        # Primary nodes all failed — try without exclusion as last resort
+        node = self.select_node(expert_id, strategy=strategy)
+        if node is not None:
+            logger.warning(
+                "Fallback to node %s for expert %d (all preferred nodes failed)",
+                node.node_id,
+                expert_id,
+            )
+            return node, True
+
+        # No nodes at all for this expert — try an alternative expert
+        logger.warning(
+            "No nodes available for expert %d, selecting alternative expert",
+            expert_id,
+        )
+        # The caller (route_with_gating) handles expert-level fallback
+        return None, True
 
     async def route(
         self,
@@ -221,6 +300,108 @@ class ExpertScheduler:
             "status": "routed",
         }
 
+    async def route_with_gating(
+        self,
+        model_name: str,
+        input_tokens: list[int] | None = None,
+        user_id: str = "",
+        request_id: str = "",
+    ) -> dict[str, Any]:
+        """Route an inference request using the gating network for expert selection.
+
+        This is the preferred routing method. It uses the GatingNetwork to
+        determine which experts should be activated, then selects the best
+        node for each expert with automatic fallback on node failure.
+
+        Args:
+            model_name: Model identifier (e.g., "mixtral-8x7b")
+            input_tokens: Input token IDs for deterministic gating
+            user_id: Authenticated user ID
+            request_id: Unique request ID for logging
+
+        Returns:
+            Routing plan with gating decision, selected nodes, and fallback info
+        """
+        model = get_model(model_name)
+
+        # Step 1: Use gating network to select experts
+        gating_decision = self.gating.select_experts(
+            model=model,
+            input_tokens=input_tokens,
+            user_id=user_id,
+            request_id=request_id,
+        )
+
+        # Step 2: Select nodes for each expert with fallback
+        selected_nodes: dict[int, NodeInfo] = {}
+        fallbacks: dict[int, str] = {}  # expert_id -> reason for fallback
+        failed_expert_ids: list[int] = []
+
+        for expert_id in gating_decision.expert_ids:
+            node, used_fallback = self.select_node_with_fallback(
+                expert_id, model
+            )
+            if node is not None:
+                selected_nodes[expert_id] = node
+                node.active_requests += 1
+                if used_fallback:
+                    fallbacks[expert_id] = "node_failed"
+            else:
+                failed_expert_ids.append(expert_id)
+
+        # Step 3: If some experts couldn't be routed, try alternative experts
+        if failed_expert_ids:
+            alternative_ids = self.gating.fallback_experts(
+                model, failed_expert_ids, gating_decision.expert_ids
+            )
+            for alt_id in alternative_ids:
+                if alt_id not in selected_nodes and alt_id not in failed_expert_ids:
+                    node, used_fallback = self.select_node_with_fallback(
+                        alt_id, model
+                    )
+                    if node is not None:
+                        selected_nodes[alt_id] = node
+                        node.active_requests += 1
+                        fallbacks[alt_id] = "expert_fallback"
+
+        # Build the routing plan
+        all_routed = list(selected_nodes.keys())
+        status = "routed" if not failed_expert_ids else "routed_with_fallbacks"
+
+        if len(selected_nodes) == 0:
+            status = "no_nodes_available"
+
+        result = {
+            "model": model_name,
+            "experts_routed": all_routed,
+            "nodes_used": {
+                str(eid): n.node_id for eid, n in selected_nodes.items()
+            },
+            "strategy": self.strategy.value,
+            "gating": {
+                "mode": gating_decision.mode.value,
+                "scores": gating_decision.scores,
+                "original_experts": gating_decision.expert_ids,
+            },
+            "fallbacks": fallbacks,
+            "status": status,
+        }
+
+        if failed_expert_ids:
+            result["unrouted_experts"] = failed_expert_ids
+
+        logger.info(
+            "Routed %s: experts=%s, nodes=%s, fallbacks=%d, status=%s (request=%s)",
+            model_name,
+            all_routed,
+            list(result["nodes_used"].values()),
+            len(fallbacks),
+            status,
+            request_id,
+        )
+
+        return result
+
     def complete_request(self, node_id: str, response_ms: float) -> None:
         """Mark a request as completed and update node metrics.
 
@@ -238,6 +419,9 @@ class ExpertScheduler:
         alpha = 0.3
         node.avg_response_ms = alpha * response_ms + (1 - alpha) * node.avg_response_ms
 
+        # Remove from failed list if it was there
+        self._failed_nodes.pop(node_id, None)
+
         logger.debug(
             "Node %s: completed request (%.0fms), active=%d, served=%d",
             node_id,
@@ -245,6 +429,16 @@ class ExpertScheduler:
             node.active_requests,
             node.requests_served,
         )
+
+    def mark_node_failed(self, node_id: str) -> None:
+        """Mark a node as failed for fallback routing.
+
+        The node will be excluded from selection for up to 60 seconds.
+        Subsequent route calls will prefer redundant nodes hosting
+        the same experts.
+        """
+        self._failed_nodes[node_id] = time.time()
+        logger.warning("Marked node %s as failed, will prefer alternatives", node_id)
 
     def get_cluster_status(self) -> dict[str, Any]:
         """Get a summary of all registered nodes and their current load."""
