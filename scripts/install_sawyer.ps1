@@ -2,7 +2,7 @@
 .SYNOPSIS
     Install Sawyer — Distributed MoE Inference Network
 .DESCRIPTION
-    Installs sawyer-core, creates a desktop shortcut and Start Menu entry.
+    Installs sawyer-core, creates a desktop shortcut with icon and menu launcher.
     Requires Python 3.11+ and pip.
 .USAGE
     irm https://infill.systems/install/sawyer.ps1 | iex
@@ -16,10 +16,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $AppName = "Sawyer"
-$AppCmd = "python -m sawyer serve"
 $AppPkg = "sawyer-core"
-$BatName = "sawyer.bat"
-$IconUrl = "https://infill.systems/assets/sawyer-icon.ico"
 
 # --- Uninstall ---
 if ($Uninstall) {
@@ -28,11 +25,6 @@ if ($Uninstall) {
     $StartShortcut = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Sawyer.lnk"
     if (Test-Path $DesktopShortcut) { Remove-Item $DesktopShortcut -Force; Write-Host "  Removed desktop shortcut" }
     if (Test-Path $StartShortcut) { Remove-Item $StartShortcut -Force; Write-Host "  Removed Start Menu shortcut" }
-    $ScriptsDir = pip show $AppPkg 2>$null | Select-String "Location:" | ForEach-Object { ($_ -split ": ")[1] }
-    if ($ScriptsDir) {
-        $BatPath = Join-Path $ScriptsDir "..\Scripts\$BatName"
-        if (Test-Path $BatPath) { Remove-Item $BatPath -Force; Write-Host "  Removed launcher" }
-    }
     Write-Host "Sawyer uninstalled." -ForegroundColor Green
     return
 }
@@ -72,48 +64,28 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# --- Find Scripts directory ---
-$SitePackages = & $python -c "import site; print(site.getsitepackages()[0])" 2>&1
-$ScriptsDir = Join-Path (Split-Path $SitePackages -Parent) "Scripts"
+# --- Find installed package location ---
+$PkgDir = & $python -c "import sawyer, os; print(os.path.dirname(sawyer.__file__))" 2>&1
+$BatPath = Join-Path $PkgDir "sawyer.bat"
+$IconPath = Join-Path $PkgDir "sawyer.ico"
 
-# --- Write launcher .bat to Scripts dir ---
-$BatContent = @"
-@echo off
-title Sawyer — Distributed MoE Inference Network
-echo.
-echo  Starting Sawyer node...
-echo.
-python -m sawyer serve %*
-if errorlevel 1 (
-    echo.
-    echo  Sawyer exited with an error.
-    echo  Make sure sawyer-core is installed: pip install sawyer-core
-    echo.
-    pause
-)
-"@
-$BatPath = Join-Path $ScriptsDir $BatName
-Set-Content -Path $BatPath -Value $BatContent -Encoding ASCII
-Write-Host "  Launcher: $BatPath" -ForegroundColor DarkGray
-
-# --- Download icon (optional, non-blocking) ---
-$IconPath = Join-Path $ScriptsDir "sawyer-icon.ico"
-try {
-    Invoke-WebRequest -Uri $IconUrl -OutFile $IconPath -UseBasicParsing -ErrorAction Stop
-} catch {
-    Write-Host "  (Icon download skipped — no internet or icon not hosted yet)" -ForegroundColor DarkGray
-    $IconPath = $null
+if (-not (Test-Path $BatPath)) {
+    Write-Host "  WARNING: Launcher not found at $BatPath" -ForegroundColor Yellow
+}
+if (-not (Test-Path $IconPath)) {
+    Write-Host "  WARNING: Icon not found at $IconPath" -ForegroundColor Yellow
 }
 
 # --- Create shortcuts ---
 $WshShell = New-Object -ComObject WScript.Shell
 
 function New-Shortcut {
-    param([string]$Path, [string]$Target, [string]$Icon)
+    param([string]$Path, [string]$Target, [string]$Icon, [string]$Desc)
     $Shortcut = $WshShell.CreateShortcut($Path)
     $Shortcut.TargetPath = $Target
     $Shortcut.WorkingDirectory = $env:USERPROFILE
-    if ($Icon) { $Shortcut.IconLocation = $Icon }
+    $Shortcut.Description = $Desc
+    if ($Icon -and (Test-Path $Icon)) { $Shortcut.IconLocation = "$Icon,0" }
     $Shortcut.Save()
     Write-Host "  Shortcut: $Path" -ForegroundColor DarkGray
 }
@@ -121,8 +93,8 @@ function New-Shortcut {
 $DesktopShortcut = "$env:USERPROFILE\Desktop\Sawyer.lnk"
 $StartShortcut = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Sawyer.lnk"
 
-New-Shortcut $DesktopShortcut $BatPath $IconPath
-New-Shortcut $StartShortcut $BatPath $IconPath
+New-Shortcut $DesktopShortcut $BatPath $IconPath "Sawyer — Distributed MoE Inference"
+New-Shortcut $StartShortcut $BatPath $IconPath "Sawyer — Distributed MoE Inference"
 
 # --- Done ---
 Write-Host ""
@@ -130,6 +102,6 @@ Write-Host "  Sawyer installed successfully!" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Quick start:" -ForegroundColor White
 Write-Host "    Desktop shortcut: double-click Sawyer" -ForegroundColor Cyan
-Write-Host "    Command line:     python -m sawyer serve" -ForegroundColor Cyan
-Write-Host "    Register a node:  python -m sawyer register --name my-node --gpu" -ForegroundColor Cyan
+Write-Host "    Command line:     python -m sawyer chat" -ForegroundColor Cyan
+Write-Host "    Serve a node:     python -m sawyer serve" -ForegroundColor Cyan
 Write-Host ""
