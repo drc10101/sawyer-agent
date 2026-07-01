@@ -114,8 +114,16 @@ def cmd_chat(args) -> int:
     print("  Cheaper than your provider. The load is split, friends help.")
     print()
 
+    if getattr(args, "ollama_bridge", False):
+        print("  Ollama bridge enabled — serving local Ollama to the network.")
+        print()
+
     try:
-        serve_client(host=args.host, port=args.port)
+        serve_client(
+            host=args.host,
+            port=args.port,
+            ollama_bridge=getattr(args, "ollama_bridge", False),
+        )
     except KeyboardInterrupt:
         print("\n  Shutting down...")
     return 0
@@ -561,6 +569,11 @@ def main() -> int:
         type=int,
         default=8000,
         help="Port to serve on (default: 8000)",
+    )
+    chat_parser.add_argument(
+        "--ollama-bridge",
+        action="store_true",
+        help="Bridge local Ollama through Sawyer (serve Ollama to the network)",
     )
 
     # status

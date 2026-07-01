@@ -742,16 +742,32 @@ def create_client_app(config: SawyerConfig | None = None) -> FastAPI:
     return app
 
 
-def serve_client(host: str = "localhost", port: int = 8000, config: SawyerConfig | None = None) -> None:
+def serve_client(
+    host: str = "localhost",
+    port: int = 8000,
+    config: SawyerConfig | None = None,
+    ollama_bridge: bool = False,
+) -> None:
     """Start the consumer client server.
 
     This is what users run to get cheaper inference. Opens a web UI
     and an OpenAI-compatible API endpoint.
+
+    When ollama_bridge is True, also registers local Ollama as an
+    inference provider on the Sawyer network, letting other nodes
+    use your GPU through the network.
     """
     app = create_client_app(config)
+
+    if ollama_bridge:
+        # Register Ollama as an available backend for the network
+        app.state.ollama_bridge = True
+
     print(f"\n  Sawyer Client")
     print(f"  Chat UI:     http://{host}:{port}")
     print(f"  API:         http://{host}:{port}/v1/chat/completions")
     print(f"  Models:      http://{host}:{port}/v1/models")
+    if ollama_bridge:
+        print(f"  Ollama bridge: serving local Ollama to the network")
     print()
     uvicorn.run(app, host=host, port=port)
