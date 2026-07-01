@@ -10,13 +10,9 @@ echo  ╚══════╝   ╚═╝    ╚═════╝╚═╝  �
 echo.
 echo  The load is split. Friends help.
 echo.
-echo  Starting Sawyer node...
+start /b python -m sawyer chat %*
+timeout /t 2 /nobreak >nul
+start http://localhost:8000
+echo  Browser opening at http://localhost:8000
+echo  Close this window to stop Sawyer.
 echo.
-python -m sawyer serve %*
-if errorlevel 1 (
-    echo.
-    echo  Sawyer exited with an error.
-    echo  Make sure sawyer-core is installed: pip install sawyer-core
-    echo.
-    pause
-)

@@ -567,7 +567,31 @@ async function sendMessage() {
 
   } catch (err) {
     assistantDiv.className = 'message error';
-    assistantDiv.textContent = 'Error: ' + err.message;
+    if (err.message && err.message.includes('503')) {
+      assistantDiv.textContent = '';
+      const title = document.createElement('div');
+      title.textContent = 'No model is running yet.';
+      title.style.fontWeight = '600';
+      title.style.marginBottom = '8px';
+      assistantDiv.appendChild(title);
+      const steps = [
+        'Install Ollama (https://ollama.com) then run: ollama run llama3',
+        'Or start a local model: sawyer serve --offline --model mixtral-8x7b',
+        'Or connect to the Sawyer network: sawyer serve',
+      ];
+      const list = document.createElement('ul');
+      list.style.margin = '0';
+      list.style.paddingLeft = '20px';
+      steps.forEach(s => {
+        const li = document.createElement('li');
+        li.textContent = s;
+        li.style.marginBottom = '4px';
+        list.appendChild(li);
+      });
+      assistantDiv.appendChild(list);
+    } else {
+      assistantDiv.textContent = 'Error: ' + err.message;
+    }
   }
 
   isLoading = false;
@@ -680,7 +704,20 @@ def create_client_app(config: SawyerConfig | None = None) -> FastAPI:
             return response
 
         except RuntimeError as e:
-            # No backend available
+            # No backend available — give actionable steps
+            msg = str(e)
+            if "No inference backend" in msg:
+                raise HTTPException(
+                    status_code=503,
+                    detail={
+                        "message": "No inference backend is running.",
+                        "suggestions": [
+                            "Install Ollama and run: ollama run llama3",
+                            "Start a local model: sawyer serve --offline --model mixtral-8x7b",
+                            "Connect to the Sawyer network: sawyer serve",
+                        ],
+                    },
+                ) from None
             raise HTTPException(
                 status_code=503,
                 detail=str(e),
