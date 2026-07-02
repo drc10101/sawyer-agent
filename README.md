@@ -20,24 +20,41 @@ Built on [Bedrock](https://github.com/drc10101/bedrock) for node identity, conse
 
 ### For the Developer with a Laptop
 
-You're building an app that calls LLM APIs. GPT-4 costs $0.03/1K tokens. Claude Haiku is cheaper but still adds up. Sawyer gives you 500K tokens for $5/mo — roughly $0.01/1K tokens — with chat and code models available from day one.
+You're building an app that calls LLM APIs. GPT-4 costs $0.03/1K tokens. Claude Haiku is cheaper but still adds up. Sawyer gives you 500K tokens for $5/mo -- roughly $0.01/1K tokens -- with chat and code models available from day one.
 
+**bash / Git Bash:**
 ```bash
 pip install sawyer-core
-sawyer chat                    # Interactive chat UI
-sawyer chat --model mixtral   # Pick a model
+sawyer run                       # One command, everything starts
+sawyer run glm-5.1:cloud         # Pick a model
+```
+
+**PowerShell:**
+```powershell
+pip install sawyer-core
+sawyer run                       # One command, everything starts
+sawyer run glm-5.1:cloud         # Pick a model
 ```
 
 No GPU required. Your laptop connects to the network and inference happens on nodes that have the hardware. You just type.
 
 ### For the Gamer with a 4090
 
-Your gaming rig sits idle most of the day. Sawyer puts those GPUs to work. You host expert weights and serve inference to the network. The more you contribute, the more you earn — your 4090 on Tier 4 earns 4x what a laptop on Tier 1 earns per token.
+Your gaming rig sits idle most of the day. Sawyer puts those GPUs to work. You host expert weights and serve inference to the network. The more you contribute, the more you earn -- your 4090 on Tier 4 earns 4x what a laptop on Tier 1 earns per token.
 
+**bash / Git Bash:**
 ```bash
 pip install sawyer-core
 sawyer serve                   # Host experts, start earning
-sawyer serve --model mixtral  # Pick a model to serve
+sawyer serve --model mixtral   # Pick a model to serve
+sawyer status                  # Check your earnings
+```
+
+**PowerShell:**
+```powershell
+pip install sawyer-core
+sawyer serve                   # Host experts, start earning
+sawyer serve --model mixtral   # Pick a model to serve
 sawyer status                  # Check your earnings
 ```
 
@@ -123,6 +140,7 @@ The kid with the 4090 doing most of the work gets the biggest slice. That's the 
 - Minimum payout: $25. Below that, your earnings roll over to next quarter
 - Methods: Stripe Connect (primary), PayPal
 - Failed payouts roll over — nobody loses money
+- **Providers must complete Stripe Connect onboarding to receive payouts.** Earnings accumulate but cannot be disbursed until Stripe onboarding is complete. Run `sawyer provider onboarding <id>` to get started.
 
 ---
 
@@ -142,7 +160,15 @@ The kid with the 4090 doing most of the work gets the biggest slice. That's the 
 
 Use `sawyer models` to list available models, or filter by use case:
 
+**bash / Git Bash:**
 ```bash
+sawyer models              # All models
+sawyer models --use chat   # Chat-focused models
+sawyer models --use code   # Code-focused models
+```
+
+**PowerShell:**
+```powershell
 sawyer models              # All models
 sawyer models --use chat   # Chat-focused models
 sawyer models --use code   # Code-focused models
@@ -253,21 +279,41 @@ Every node earns proportional to its hardware contribution. The 4090 in Dallas e
 
 **Requires Python 3.11 or later.**
 
+**bash / Git Bash:**
 ```bash
+pip install sawyer-core
+```
+
+**PowerShell:**
+```powershell
 pip install sawyer-core
 ```
 
 For GPU inference (hosting expert nodes):
 
+**bash / Git Bash:**
 ```bash
 pip install sawyer-core[inference]
+```
+
+**PowerShell:**
+```powershell
+pip install "sawyer-core[inference]"
 ```
 
 Note: `vllm` and `llama-cpp-python` require CUDA and a C++ compiler. If installation fails, install them separately following their docs, then install sawyer-core without extras.
 
 Or install from source for development:
 
+**bash / Git Bash:**
 ```bash
+git clone https://github.com/drc10101/sawyer.git
+cd sawyer
+pip install -e ".[dev]"
+```
+
+**PowerShell:**
+```powershell
 git clone https://github.com/drc10101/sawyer.git
 cd sawyer
 pip install -e ".[dev]"
@@ -277,9 +323,60 @@ pip install -e ".[dev]"
 
 After install, Sawyer can be run either way:
 
+**bash / Git Bash:**
 ```bash
 sawyer serve                # if Python Scripts is on PATH
 python -m sawyer serve      # works everywhere, no PATH needed
+```
+
+**PowerShell:**
+```powershell
+sawyer serve                # if Python Scripts is on PATH
+python -m sawyer serve      # works everywhere, no PATH needed
+```
+
+### One Command to Start Everything
+
+`sawyer run` starts Ollama (if needed), the Sawyer router, and your agent -- one command, entire workflow:
+
+**bash / Git Bash:**
+```bash
+sawyer run                        # Auto-detect best model, start everything
+sawyer run glm-5.1:cloud          # Use a specific model
+sawyer run --no-agent             # Start Sawyer only, don't launch agent
+sawyer run --no-browser           # Don't open browser
+sawyer run --agent cursor         # Launch Cursor instead of Hermes
+```
+
+**PowerShell:**
+```powershell
+sawyer run                        # Auto-detect best model, start everything
+sawyer run glm-5.1:cloud          # Use a specific model
+sawyer run --no-agent             # Start Sawyer only, don't launch agent
+sawyer run --no-browser           # Don't open browser
+sawyer run --agent cursor         # Launch Cursor instead of Hermes
+```
+
+What `sawyer run` does:
+1. Detects Ollama -- starts it if not running
+2. Discovers models -- lists what's available with sizes
+3. Starts Sawyer router -- OpenAI-compatible API on port 8000
+4. Prints config -- exact copy-paste lines for your agent
+5. Opens browser -- chat UI at `http://localhost:8000`
+6. Launches agent -- Hermes by default, configurable via `--agent`
+
+If you just want the chat UI and API:
+
+**bash / Git Bash:**
+```bash
+sawyer chat                    # Web UI + OpenAI-compatible API
+sawyer chat --ollama-bridge    # Also serve local Ollama to the network
+```
+
+**PowerShell:**
+```powershell
+sawyer chat                    # Web UI + OpenAI-compatible API
+sawyer chat --ollama-bridge    # Also serve local Ollama to the network
 ```
 
 ### Provider Dashboard
@@ -322,6 +419,98 @@ To uninstall: `.\install_sawyer.ps1 -Uninstall`
 - **Quantized models fit on consumer hardware.** Q4_K_M Mixtral expert ~1.5GB. A 3090 can host 2-3 experts comfortably alongside other workloads.
 - **$5/mo is the sweet spot.** Below the psychological barrier of "another subscription." Enough tokens to prototype, test, and run real workloads. Revenue sustains the network without extracting from users.
 - **Hardware investment is rewarded.** Tier 4 (24GB+) earns 4x per token compared to Tier 1 (4GB). Your 4090 pays for itself.
+
+---
+
+## Agent Integration
+
+Sawyer exposes an OpenAI-compatible `/v1/chat/completions` endpoint. Any agent framework that supports custom OpenAI base URLs can use Sawyer as its LLM backend -- no SDK changes needed.
+
+### Quick Start
+
+**bash / Git Bash:**
+```bash
+sawyer run                    # Starts Ollama + Sawyer + Hermes
+```
+
+**PowerShell:**
+```powershell
+sawyer run                    # Starts Ollama + Sawyer + Hermes
+```
+
+### Manual Configuration
+
+If you prefer to configure agents manually:
+
+**Hermes (bash):**
+```bash
+hermes config set model.base_url http://localhost:8000/v1
+hermes config set model.provider openai_compatible
+hermes config set model.default glm-5.1:cloud
+```
+
+**Hermes (PowerShell):**
+```powershell
+hermes config set model.base_url "http://localhost:8000/v1"
+hermes config set model.provider openai_compatible
+hermes config set model.default "glm-5.1:cloud"
+```
+
+**Claude Code (bash):**
+```bash
+OPENAI_API_KEY=sawyer OPENAI_BASE_URL=http://localhost:8000/v1 claude
+```
+
+**Claude Code (PowerShell):**
+```powershell
+$env:OPENAI_API_KEY="sawyer"; $env:OPENAI_BASE_URL="http://localhost:8000/v1"; claude
+```
+
+**Cursor / Continue / Aider (bash):**
+```bash
+export OPENAI_API_KEY=sawyer
+export OPENAI_BASE_URL=http://localhost:8000/v1
+```
+
+**Cursor / Continue / Aider (PowerShell):**
+```powershell
+$env:OPENAI_API_KEY="sawyer"
+$env:OPENAI_BASE_URL="http://localhost:8000/v1"
+```
+
+**Python (any shell):**
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="sawyer",
+    base_url="http://localhost:8000/v1",
+)
+response = client.chat.completions.create(
+    model="glm-5.1:cloud",
+    messages=[{"role": "user", "content": "Hello"}],
+)
+```
+
+**curl (bash):**
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -d '{"model":"glm-5.1:cloud","messages":[{"role":"user","content":"hello"}]}' \
+  -H "Content-Type: application/json"
+```
+
+**curl (PowerShell):**
+```powershell
+Invoke-RestMethod -Uri "http://localhost:8000/v1/chat/completions" `
+  -Method Post -ContentType "application/json" `
+  -Body '{"model":"glm-5.1:cloud","messages":[{"role":"user","content":"hello"}]}'
+```
+
+### Supported Frameworks
+
+Hermes, OpenClaw, Claude Code, Cursor, Continue, Aider, Cline, LangChain, LlamaIndex, CrewAI, AutoGPT, and any other OpenAI-compatible client.
+
+Full integration guides with config examples for every framework: [`docs/agent-integration.md`](docs/agent-integration.md)
 
 ---
 

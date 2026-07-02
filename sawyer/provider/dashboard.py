@@ -507,6 +507,14 @@ function renderDashboard(data) {
   // Payout info
   if (payout) {
     html += '<div class="section"><h2>Payout</h2>';
+    if (payout.stripe_onboarding_required) {
+      html += '<div style="background:#1a1a2e;border:1px solid #e74c3c;border-radius:8px;padding:12px 16px;margin-bottom:16px">';
+      html += '<div style="color:#e74c3c;font-weight:600">Stripe onboarding required</div>';
+      html += '<div style="color:#aaa;margin-top:4px">Providers must complete Stripe Connect onboarding to receive payouts. ';
+      html += 'Run <code style="background:#111;padding:2px 6px;border-radius:3px;color:#12c7ef">sawyer provider onboarding &lt;id&gt;</code> to get started. ';
+      html += 'Earnings will roll over until onboarding is complete.</div>';
+      html += '</div>';
+    }
     html += '<div class="payout-info">';
     html += '<div class="row"><span class="label">Available Balance</span>';
     html += '<span class="value green">$' + (payout.available_balance || 0).toFixed(2) + '</span></div>';
@@ -582,11 +590,14 @@ def create_dashboard_app(
                     "nodes": summary.get("nodes", 0),
                 }
                 earnings = summary.get("earnings", {})
+                verification = summary.get("verification", {})
+                stripe_connected = verification.get("stripe_connected", False)
                 payout_info = {
                     "available_balance": earnings.get("available_balance", 0),
                     "total_earned": earnings.get("total_usd_earned", 0),
                     "total_paid": earnings.get("total_usd_paid", 0),
                     "next_payout": "End of quarter",
+                    "stripe_onboarding_required": not stripe_connected,
                 }
 
         return JSONResponse({

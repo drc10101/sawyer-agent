@@ -20,6 +20,12 @@ class SawyerConfig:
     # Inference backend
     inference_backend: str = "auto"  # auto, vllm, llama_cpp
 
+    # Backend URLs (override via env vars: SAWYER_OLLAMA_URL, etc.)
+    ollama_url: str = "http://localhost:11434"
+    llama_url: str = "http://localhost:8444"
+    lm_studio_url: str = "http://localhost:1234"
+    vllm_url: str = "http://localhost:8001"
+
     # Token settings
     api_key: str | None = None
 
@@ -51,9 +57,7 @@ class SawyerConfig:
 
     def __post_init__(self) -> None:
         """Load overrides from environment variables."""
-        self.stripe_secret_key = os.environ.get(
-            "SAWYER_STRIPE_SECRET_KEY", self.stripe_secret_key
-        )
+        self.stripe_secret_key = os.environ.get("SAWYER_STRIPE_SECRET_KEY", self.stripe_secret_key)
         self.stripe_publishable_key = os.environ.get(
             "SAWYER_STRIPE_PUBLISHABLE_KEY", self.stripe_publishable_key
         )

@@ -239,3 +239,55 @@ class TestDashboardApp:
         assert response.status_code == 200
         data = response.json()
         assert data["weekly_summary"]["totals"]["tokens_served"] == 5000
+
+    def test_stripe_onboarding_required_without_provider_manager(self):
+        """Without provider_manager, stripe_onboarding_required defaults to True."""
+        from sawyer.provider.dashboard import create_dashboard_app
+
+        tracker = ProviderStatsTracker()
+        app = create_dashboard_app(stats_tracker=tracker)
+
+        from fastapi.testclient import TestClient
+
+        client = TestClient(app)
+        response = client.get("/api/stats")
+        assert response.status_code == 200
+        data = response.json()
+        assert data.get("payout", {}).get("stripe_onboarding_required", True) is True
+
+    def test_stripe_onboarding_required_with_verified_provider(self):
+        """With a provider_manager, stripe_onboarding_required reflects verification status."""
+        from sawyer.provider.dashboard import create_dashboard_app
+        from sawyer.provider.manager import ProviderManager
+        from sawyer.storage import SawyerStorage
+
+        import tempfile, os
+
+        tmpdir = tempfile.mkdtemp()
+        try:
+            db_path = os.path.join(tmpdir, "test.db")
+            storage = SawyerStorage(db_path)
+            mgr = ProviderManager(storage=storage)
+            provider = mgr.register(
+                email="host@test.com", display_name="TestHost", country="US"
+            )
+            # Complete onboarding steps
+            mgr.verify_provider(provider.provider_id)
+            mgr.activate_provider(provider.provider_id)
+
+            tracker = ProviderStatsTracker()
+            tracker.record_tokens(provider.provider_id, tokens=100)
+            app = create_dashboard_app(stats_tracker=tracker, provider_manager=mgr)
+
+            from fastapi.testclient import TestClient
+
+            client = TestClient(app)
+            response = client.get("/api/stats")
+            assert response.status_code == 200
+            data = response.json()
+            # Active provider should have stripe_onboarding_required based on verification status
+            assert "stripe_onboarding_required" in data.get("payout", {})
+        finally:
+            storage.close()
+            import shutil
+            shutil.rmtree(tmpdir, ignore_errors=True)

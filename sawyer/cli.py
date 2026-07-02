@@ -3,6 +3,8 @@
 Usage:
     sawyer register       Register this machine as a Sawyer node
     sawyer serve          Start serving expert inference requests
+    sawyer run            One command: start Sawyer + Ollama + agent
+    sawyer chat           Start the consumer chat client (web UI + API)
     sawyer status         Show network status and token balance
     sawyer models         List available models and expert layouts
     sawyer download       Download model weights to local cache
@@ -13,9 +15,11 @@ Usage:
 
 import argparse
 import asyncio
+import os
 import sys
 
 import grpc
+import httpx
 
 from sawyer.config import SawyerConfig
 from sawyer.model.registry import get_model, list_models
@@ -92,10 +96,256 @@ def cmd_serve(args) -> int:
     except grpc.RpcError as e:
         print(f"\n  ERROR: Could not connect to router at {args.router}")
         print(f"  {e.details()}")
-        print(f"\n  The Sawyer router is not yet available.")
-        print(f"  Start in offline mode: sawyer serve --offline")
-        print(f"  Or check your connection and try again.")
+        print("\n  The Sawyer router is not yet available.")
+        print("  Start in offline mode: sawyer serve --offline")
+        print("  Or check your connection and try again.")
         return 1
+    return 0
+
+
+def cmd_run(args) -> int:
+    """One command to start everything — Sawyer, Ollama, and your agent.
+
+    Detects what's running, starts what isn't, and configures your agent
+    to point at Sawyer (not Ollama directly) so you get routing, thinking
+    model support, and multi-backend failover.
+
+    Usage:
+        sawyer run                      # Auto-detect best model, start everything
+        sawyer run glm-5.1:cloud        # Use specific model
+        sawyer run --no-agent            # Start Sawyer only, don't launch agent
+        sawyer run --agent cursor        # Launch Cursor instead of Hermes
+    """
+    import shutil
+    import subprocess
+    import time
+    import webbrowser
+
+    from sawyer.client import LocalInference
+
+    config = SawyerConfig()
+    inference = LocalInference(config)
+    model = args.model
+
+    # ── Step 1: Check what's already running ──────────────────────
+    print()
+    print("  Sawyer — One command. Everything running.")
+    print()
+
+    # Check Ollama
+    ollama_running = False
+    try:
+        with httpx.Client(timeout=2.0) as client:
+            resp = client.get(f"{config.ollama_url}/api/tags")
+            if resp.status_code == 200:
+                ollama_running = True
+    except Exception:
+        pass
+
+    if ollama_running:
+        print(f"  [OK] Ollama running at {config.ollama_url}")
+    else:
+        print(f"  [--] Ollama not detected at {config.ollama_url}")
+        # Try to start Ollama
+        ollama_exe = shutil.which("ollama")
+        if ollama_exe:
+            print("  [..] Starting Ollama...")
+            try:
+                subprocess.Popen(
+                    [ollama_exe, "serve"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                )
+                # Wait for Ollama to become available
+                for _ in range(15):
+                    time.sleep(1)
+                    try:
+                        with httpx.Client(timeout=1.0) as client:
+                            resp = client.get(f"{config.ollama_url}/api/tags")
+                            if resp.status_code == 200:
+                                ollama_running = True
+                                break
+                    except Exception:
+                        continue
+                if ollama_running:
+                    print(f"  [OK] Ollama started at {config.ollama_url}")
+                else:
+                    print("  [!!] Ollama didn't start in time. Run 'ollama serve' manually.")
+            except Exception as e:
+                print(f"  [!!] Could not start Ollama: {e}")
+        else:
+            print("  [!!] Ollama not installed. Install: https://ollama.com")
+
+    # ── Step 2: Discover models ──────────────────────────────────
+    print()
+    models = inference.discover_models(force=True)
+    if not models:
+        print("  [!!] No models found.")
+        if ollama_running:
+            print("      Pull a model: ollama pull llama3")
+            print("      Then run: sawyer run llama3")
+        return 1
+
+    print(f"  Models available ({len(models)}):")
+    for m in models:
+        size = m.details.get("parameter_size", "") if m.details else ""
+        size_str = f" ({size})" if size else ""
+        print(f"    {m.id}{size_str}")
+
+    # ── Step 3: Resolve model ─────────────────────────────────────
+    if not model:
+        # Default: pick the first discovered model
+        model = models[0].id
+        print(f"\n  Using: {model} (first available)")
+    else:
+        # Try to resolve short name to full name
+        resolved, _ = inference._resolve_model(model)
+        if resolved != model:
+            print(f"\n  Using: {resolved} (resolved from {model})")
+            model = resolved
+        else:
+            print(f"\n  Using: {model}")
+
+    # ── Step 4: Start Sawyer router ────────────────────────────────
+    sawyer_url = f"http://{args.host}:{args.port}"
+    sawyer_running = False
+    try:
+        with httpx.Client(timeout=1.0) as client:
+            resp = client.get(f"{sawyer_url}/health")
+            if resp.status_code == 200:
+                sawyer_running = True
+    except Exception:
+        pass
+
+    if sawyer_running:
+        print(f"  [OK] Sawyer router running at {sawyer_url}")
+    else:
+        print(f"  [..] Starting Sawyer router on port {args.port}...")
+        subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "sawyer.cli",
+                "chat",
+                "--host",
+                args.host,
+                "--port",
+                str(args.port),
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+        # Wait for Sawyer to become available
+        for _ in range(15):
+            time.sleep(1)
+            try:
+                with httpx.Client(timeout=1.0) as client:
+                    resp = client.get(f"{sawyer_url}/health")
+                    if resp.status_code == 200:
+                        sawyer_running = True
+                        break
+            except Exception:
+                continue
+        if sawyer_running:
+            print(f"  [OK] Sawyer router started at {sawyer_url}")
+        else:
+            print(f"  [!!] Sawyer didn't start. Try: sawyer chat --port {args.port}")
+            return 1
+
+    # ── Step 5: Print config for agent frameworks ─────────────────
+    print()
+    print("  ── Agent Configuration ──────────────────────────")
+    print()
+    print(f"  Base URL:  {sawyer_url}/v1")
+    print(f"  Model:     {model}")
+    print("  API Key:   sawyer (or any non-empty string)")
+    print()
+    print("  Hermes (bash):")
+    print(f"    hermes config set model.base_url {sawyer_url}/v1")
+    print("    hermes config set model.provider openai_compatible")
+    print(f"    hermes config set model.default {model}")
+    print()
+    print("  Hermes (PowerShell):")
+    print(f'    hermes config set model.base_url "{sawyer_url}/v1"')
+    print("    hermes config set model.provider openai_compatible")
+    print(f'    hermes config set model.default "{model}"')
+    print()
+    print("  OpenAI-compatible agents (bash):")
+    print(f"    OPENAI_API_KEY=sawyer OPENAI_BASE_URL={sawyer_url}/v1 <agent>")
+    print()
+    print("  OpenAI-compatible agents (PowerShell):")
+    print(f'    $env:OPENAI_API_KEY="sawyer"; $env:OPENAI_BASE_URL="{sawyer_url}/v1"; <agent>')
+    print()
+
+    # ── Step 6: Open browser to chat UI ──────────────────────────
+    if not args.no_browser:
+        webbrowser.open(f"{sawyer_url}")
+
+    # ── Step 7: Launch agent if requested ─────────────────────────
+    if args.no_agent:
+        print("  Ready. Press Ctrl+C to stop.")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("\n  Shutting down...")
+        return 0
+
+    agent = args.agent or "hermes"
+    agent_cmd = shutil.which(agent)
+
+    if not agent_cmd:
+        # Try common paths
+        common_paths = {
+            "hermes": (
+                os.path.expanduser("~/AppData/Local/hermes/hermes-agent/venv/Scripts/hermes")
+                if os.name == "nt"
+                else os.path.expanduser("~/.local/bin/hermes")
+            ),
+        }
+        agent_cmd = common_paths.get(agent)
+
+    if agent_cmd and os.path.isfile(agent_cmd):
+        print(f"  [..] Launching {agent}...")
+        # Set environment for the agent
+        env = os.environ.copy()
+        env["OPENAI_API_KEY"] = "sawyer"
+        env["OPENAI_BASE_URL"] = f"{sawyer_url}/v1"
+
+        if agent == "hermes":
+            env["HERMES_MODEL"] = model
+            env["HERMES_BASE_URL"] = f"{sawyer_url}/v1"
+
+        try:
+            proc = subprocess.Popen(
+                [agent_cmd, "--model", model] if agent == "hermes" else [agent_cmd],
+                env=env,
+            )
+            print(f"  [OK] {agent} launched (PID {proc.pid})")
+            print()
+            print(f"  Sawyer router: {sawyer_url}")
+            print(f"  Chat UI:        {sawyer_url}")
+            print(f"  {agent} PID:     {proc.pid}")
+            print()
+            print("  Press Ctrl+C to stop all services.")
+            proc.wait()
+        except KeyboardInterrupt:
+            print(f"\n  Stopping {agent}...")
+            proc.terminate()
+        except Exception as e:
+            print(f"  [!!] Could not launch {agent}: {e}")
+    else:
+        print(f"  [--] {agent} not found. Configure manually using the settings above.")
+        print()
+        print("  Ready. Press Ctrl+C to stop Sawyer.")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            print("\n  Shutting down...")
+
     return 0
 
 
@@ -107,11 +357,42 @@ def cmd_chat(args) -> int:
     Also provides an OpenAI-compatible API so any tool (curl, OpenAI SDK,
     Ollama clients) can point at it.
     """
-    from sawyer.client import serve_client
+    from sawyer.client import LocalInference, serve_client
 
     print()
     print("  Sawyer — Distributed MoE Inference")
     print("  Cheaper than your provider. The load is split, friends help.")
+    print()
+
+    # Show what's available before starting the server
+    config = SawyerConfig()
+    inference = LocalInference(config)
+
+    print("  Checking backends...")
+    backends = inference.is_available()
+    for name, available in backends.items():
+        status = "[OK]" if available else "[--]"
+        print(f"    {status} {name}")
+
+    if not any(backends.values()):
+        print()
+        print("  No backends detected. Install Ollama: https://ollama.com")
+        print("  Then: ollama pull llama3 && sawyer chat")
+        print()
+
+    models = inference.discover_models()
+    if models:
+        print(f"\n  Models available ({len(models)}):")
+        for m in models[:5]:
+            size = m.details.get("parameter_size", "") if m.details else ""
+            size_str = f" ({size})" if size else ""
+            print(f"    {m.id}{size_str}")
+        if len(models) > 5:
+            print(f"    ... and {len(models) - 5} more")
+    elif any(backends.values()):
+        print("\n  Backend detected but no models found.")
+        print("  Pull a model: ollama pull llama3")
+
     print()
 
     if getattr(args, "ollama_bridge", False):
@@ -196,9 +477,15 @@ def cmd_models(args) -> int:
         print(f"    Best for: {tags}")
         print(f"    Experts: {m.num_experts} total, {m.active_experts} active")
         print(f"    Parameters: {m.total_params_b:.1f}B total, ~{m.active_params_b:.1f}B active")
-        print(f"    Q4 memory: {m.model_size_gb_q4:.1f} GB (full), ~{m.expert_size_gb_q4:.1f} GB per expert")
+        print(
+            f"    Q4 memory: {m.model_size_gb_q4:.1f} GB (full), "
+            f"~{m.expert_size_gb_q4:.1f} GB per expert"
+        )
         print(f"    Context: {m.context_length:,} tokens")
-        print(f"    Min VRAM: {m.min_vram_gb:.0f} GB (full), {m.min_vram_per_expert_gb:.0f} GB (one expert)")
+        print(
+            f"    Min VRAM: {m.min_vram_gb:.0f} GB (full), "
+            f"{m.min_vram_per_expert_gb:.0f} GB (one expert)"
+        )
 
     print(f"\n  {len(models)} models available")
     print("\n  Tip: 'sawyer models --use chat' or '--use code' to filter")
@@ -294,7 +581,7 @@ def cmd_extract(args) -> int:
 
     print(f"\n  Extracted {len(paths)} expert shards:")
     for path in paths:
-        size_mb = path.stat().st_size / (1024 ** 2)
+        size_mb = path.stat().st_size / (1024**2)
         print(f"    {path.name}: {size_mb:.1f} MB")
 
     print("\n  Done! Use 'sawyer serve --expert <id>' to load a specific expert.")
@@ -394,7 +681,11 @@ def cmd_provider(args) -> int:
         print(f"  Email:       {provider.email}")
         print(f"  Status:      {provider.status.value}")
         print(f"  Payout:      {provider.payout_schedule.value}")
-        print("\nNext step: Complete Stripe Connect onboarding")
+        print("\nIMPORTANT: Providers must complete Stripe Connect onboarding to receive payouts.")
+        print(
+            "Earnings will accumulate but cannot be disbursed "
+            "until Stripe onboarding is complete."
+        )
         print(f"  sawyer provider onboarding {provider.provider_id}")
 
     elif args.provider_action == "status":
@@ -451,8 +742,7 @@ def cmd_provider(args) -> int:
             print(f"Payout History for {provider.display_name}:")
             for p in payouts:
                 print(
-                    f"  {p.payout_id}  ${p.amount_usd:.2f}  "
-                    f"{p.status.value}  {p.period_label}"
+                    f"  {p.payout_id}  ${p.amount_usd:.2f}  " f"{p.status.value}  {p.period_label}"
                 )
 
     elif args.provider_action == "network":
@@ -564,6 +854,44 @@ def main() -> int:
         help="Start in offline mode (no router connection)",
     )
 
+    # run — one command to start everything
+    run_parser = subparsers.add_parser(
+        "run",
+        help="One command: start Sawyer + Ollama + agent",
+    )
+    run_parser.add_argument(
+        "model",
+        nargs="?",
+        default=None,
+        help="Model to use (e.g., glm-5.1:cloud). Auto-detects if not specified.",
+    )
+    run_parser.add_argument(
+        "--host",
+        default="localhost",
+        help="Host for Sawyer router (default: localhost)",
+    )
+    run_parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port for Sawyer router (default: 8000)",
+    )
+    run_parser.add_argument(
+        "--agent",
+        default="hermes",
+        help="Agent to launch (default: hermes). Use --no-agent to skip.",
+    )
+    run_parser.add_argument(
+        "--no-agent",
+        action="store_true",
+        help="Don't launch an agent, just start Sawyer router",
+    )
+    run_parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Don't open browser automatically",
+    )
+
     # chat
     chat_parser = subparsers.add_parser(
         "chat",
@@ -591,7 +919,9 @@ def main() -> int:
     status_parser.add_argument("--user", default="default", help="User ID for token balance")
 
     # models
-    models_parser = subparsers.add_parser("models", help="List available models and expert layouts")
+    models_parser = subparsers.add_parser(
+        "models", help="List available models and expert layouts"
+    )
     models_parser.add_argument(
         "--use",
         choices=["chat", "code"],
@@ -663,18 +993,14 @@ def main() -> int:
     prov_parser = subparsers.add_parser(
         "provider", help="Manage node provider registration and payouts"
     )
-    prov_sub = prov_parser.add_subparsers(
-        dest="provider_action", help="Provider actions"
-    )
+    prov_sub = prov_parser.add_subparsers(dest="provider_action", help="Provider actions")
 
     prov_reg = prov_sub.add_parser("register", help="Register as a node provider")
     prov_reg.add_argument("--email", required=True, help="Your email address")
     prov_reg.add_argument("--name", required=True, help="Display name")
     prov_reg.add_argument("--legal-name", default=None, help="Legal name for payouts")
     prov_reg.add_argument("--phone", default=None, help="Phone number")
-    prov_reg.add_argument(
-        "--country", default="US", help="Country code (default: US)"
-    )
+    prov_reg.add_argument("--country", default="US", help="Country code (default: US)")
     prov_reg.add_argument(
         "--schedule",
         choices=["monthly", "quarterly"],
@@ -705,6 +1031,7 @@ def main() -> int:
     commands = {
         "register": cmd_register,
         "serve": cmd_serve,
+        "run": cmd_run,
         "chat": cmd_chat,
         "status": cmd_status,
         "models": cmd_models,
