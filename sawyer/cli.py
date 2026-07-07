@@ -22,12 +22,12 @@ import sys
 import grpc
 import httpx
 
+from sawyer.bench import cmd_bench
 from sawyer.config import SawyerConfig
 from sawyer.model.registry import get_model, list_models
 from sawyer.node.agent import SawyerNode
 from sawyer.node.weights import WeightLoader
 from sawyer.token.accounting import TokenAccountant
-from sawyer.bench import cmd_bench
 from sawyer.token.budget import TIER_PRICING, SubscriptionTier
 
 
@@ -394,7 +394,7 @@ def cmd_chat(args) -> int:
             print(f"    {m.id}{size_str}")
         if len(models) > 5:
             print(f"    ... and {len(models) - 5} more")
-    elif any(backends.values()):
+    elif available_backends:
         print("\n  Backend detected but no models found.")
         print("  Pull a model: ollama pull llama3")
 
