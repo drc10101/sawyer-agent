@@ -29,6 +29,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 
 from sawyer.config import SawyerConfig
+from sawyer.client.faq_html import FAQ_HTML
 
 logger = logging.getLogger(__name__)
 
@@ -69,13 +70,18 @@ class LocalInference:
 
     Tries, in order of priority:
     1. Sawyer network (distributed MoE) — not yet implemented
-    2. llama.cpp server / vLLM / LM Studio (OpenAI-compatible on configured port)
-    3. Ollama (native API on configured port)
+    2. Google Gemini API (if API key is configured) — cloud fallback
+    3. llama.cpp server / vLLM / LM Studio (OpenAI-compatible on configured port)
+    4. Ollama (native API on configured port)
+
+    For Gemini models (names starting with "gemini"), Gemini is tried first.
+    When no local models are available and a Gemini API key is configured,
+    Gemini is used as a cloud fallback.
 
     Supports:
-    - Dynamic model discovery from each backend
+    - Dynamic model discovery from each backend (including Gemini)
     - Thinking/reasoning models (extracts content from 'thinking' field)
-    - Streaming via SSE for Ollama and OpenAI-compatible backends
+    - Streaming via SSE for Ollama, OpenAI-compatible, and Gemini backends
     - Configurable backend URLs via SawyerConfig
     - Proper error logging instead of silent swallowing
     """
@@ -109,6 +115,12 @@ class LocalInference:
             or getattr(self.config, "vllm_url", "")
             or "http://localhost:8001"
         )
+        self._gemini_api_key = (
+            os.environ.get("SAWYER_GEMINI_API_KEY", "")
+            or getattr(self.config, "gemini_api_key", "")
+            or ""
+        )
+        self._gemini_url = "https://generativelanguage.googleapis.com/v1beta"
         self._discovered_models: list[DiscoveredModel] = []
         self._last_discovery_time: float = 0.0
         self._discovery_ttl: float = 300.0  # Refresh every 5 minutes
@@ -136,6 +148,7 @@ class LocalInference:
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
         backend_tasks = {
+            "gemini": (self._discover_gemini_models,),
             "ollama": (self._discover_ollama_models,),
             "llama_cpp": (self._discover_openai_compatible_models, "llama_cpp", self._llama_url),
             "vllm": (self._discover_openai_compatible_models, "vllm", self._vllm_url),
@@ -143,13 +156,13 @@ class LocalInference:
         }
 
         def _run_task(name, task_tuple):
-            if name == "ollama":
+            if name in ("ollama", "gemini"):
                 return name, task_tuple[0]()
             else:
                 func, bname, url = task_tuple
                 return name, func(bname, url)
 
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        with ThreadPoolExecutor(max_workers=5) as pool:
             futures = {
                 pool.submit(_run_task, name, task): name
                 for name, task in backend_tasks.items()
@@ -235,6 +248,58 @@ class LocalInference:
             logger.debug(f"{backend_name} discovery failed: {e}")
             return None
 
+    def _discover_gemini_models(self) -> list[DiscoveredModel] | None:
+        """Query Gemini API for available models.
+
+        Requires a Gemini API key (set via SAWYER_GEMINI_API_KEY env var
+        or config.gemini_api_key).
+        """
+        if not self._gemini_api_key:
+            logger.debug("Gemini: no API key configured, skipping discovery")
+            return None
+
+        try:
+            import httpx
+
+            with httpx.Client(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
+                resp = client.get(
+                    f"{self._gemini_url}/models",
+                    params={"key": self._gemini_api_key},
+                )
+                if resp.status_code != 200:
+                    logger.debug(f"Gemini /models returned {resp.status_code}: {resp.text[:200]}")
+                    return None
+
+                data = resp.json()
+                models = []
+                for model_info in data.get("models", []):
+                    model_id = model_info.get("name", "")
+                    if not model_id:
+                        continue
+                    # Gemini model names are like "models/gemini-1.5-pro"
+                    # Strip "models/" prefix for display/routing
+                    display_id = model_id.split("models/")[-1] if "models/" in model_id else model_id
+                    # Only include generative models (skip embedding, etc.)
+                    supported_methods = model_info.get("supportedGenerationMethods", [])
+                    if "generateContent" not in supported_methods:
+                        continue
+                    models.append(
+                        DiscoveredModel(
+                            id=display_id,
+                            backend="gemini",
+                            owned_by="google",
+                            context_length=model_info.get("inputTokenLimit"),
+                            details={
+                                "output_token_limit": model_info.get("outputTokenLimit"),
+                                "supported_methods": supported_methods,
+                            },
+                        )
+                    )
+                return models if models else None
+        except Exception as e:
+            logger.debug(f"Gemini discovery failed: {e}")
+            return None
+
     def _resolve_model(self, model: str) -> tuple[str, str | None]:
         """Resolve a Sawyer model name to (backend_model_name, backend_type).
 
@@ -302,7 +367,15 @@ class LocalInference:
         resolved_model, backend_hint = self._resolve_model(model)
 
         # If we know which backend has this model, try it first
-        if backend_hint == "ollama":
+        if backend_hint == "gemini":
+            result = self._try_gemini(prompt, resolved_model, max_tokens, temperature)
+            if result:
+                return result
+            raise RuntimeError(
+                f"Gemini model '{resolved_model}' failed. "
+                "Check your API key in Settings."
+            )
+        elif backend_hint == "ollama":
             result = self._try_ollama(prompt, resolved_model, max_tokens, temperature)
             if result:
                 return result
@@ -320,12 +393,29 @@ class LocalInference:
                 return result
         else:
             # No hint — try all backends in priority order
+            # If model name starts with "gemini", try Gemini first
+            if resolved_model.lower().startswith("gemini"):
+                result = self._try_gemini(prompt, resolved_model, max_tokens, temperature)
+                if result:
+                    return result
+                # User explicitly chose a Gemini model — don't silently fall back
+                raise RuntimeError(
+                    f"Gemini model '{resolved_model}' failed. "
+                    "Check your API key in Settings."
+                )
             result = self._try_llama(prompt, resolved_model, max_tokens, temperature, top_p)
             if result:
                 return result
             result = self._try_ollama(prompt, resolved_model, max_tokens, temperature)
             if result:
                 return result
+            # Fallback to Gemini if no local backends have the model
+            try:
+                result = self._try_gemini(prompt, resolved_model, max_tokens, temperature)
+                if result:
+                    return result
+            except RuntimeError:
+                pass  # Gemini fallback failed, continue to error
 
         # Build actionable error message
         available = self.is_available()
@@ -514,6 +604,84 @@ class LocalInference:
             logger.warning(f"{backend_name} inference error: {e}")
             return None
 
+    def _try_gemini(
+        self,
+        prompt: str,
+        model: str,
+        max_tokens: int,
+        temperature: float,
+    ) -> InferenceResult | None:
+        """Try Google Gemini API for inference.
+
+        Uses the Gemini REST API (generateContent endpoint).
+        Requires a Gemini API key (set via SAWYER_GEMINI_API_KEY env var
+        or config.gemini_api_key).
+        """
+        if not self._gemini_api_key:
+            return None
+
+        try:
+            import httpx
+
+            with httpx.Client(timeout=120) as client:
+                resp = client.post(
+                    f"{self._gemini_url}/models/{model}:generateContent",
+                    params={"key": self._gemini_api_key},
+                    json={
+                        "contents": [{"parts": [{"text": prompt}]}],
+                        "generationConfig": {
+                            "maxOutputTokens": max_tokens,
+                            "temperature": temperature,
+                        },
+                    },
+                )
+                if resp.status_code == 404:
+                    raise RuntimeError(f"Gemini model '{model}' not found. Check the model name.")
+                if resp.status_code != 200:
+                    try:
+                        err_data = resp.json()
+                        err_msg = err_data.get("error", {}).get("message", resp.text[:200])
+                    except Exception:
+                        err_msg = resp.text[:200]
+                    raise RuntimeError(f"Gemini API error ({resp.status_code}): {err_msg}")
+
+                data = resp.json()
+                candidates = data.get("candidates", [])
+                if not candidates:
+                    raise RuntimeError("Gemini returned no candidates (model may be unavailable)")
+
+                candidate = candidates[0]
+                content = candidate.get("content", {})
+                parts = content.get("parts", [])
+                text_parts = [p.get("text", "") for p in parts if p.get("text")]
+                text = "\n".join(text_parts)
+
+                # Handle thinking/reasoning models
+                thinking = ""
+                for p in parts:
+                    if p.get("thought") or p.get("thinking"):
+                        thinking += p.get("text", "")
+
+                usage = data.get("usageMetadata", {})
+
+                return InferenceResult(
+                    text=text,
+                    thinking=thinking,
+                    input_tokens=usage.get("promptTokenCount", 0),
+                    output_tokens=usage.get("candidatesTokenCount", 0),
+                    latency_ms=0,  # Gemini doesn't return latency
+                    model=model,
+                    finish_reason="stop" if candidate.get("finishReason") == "STOP" else "length",
+                    cost_tokens=usage.get("candidatesTokenCount", 0),
+                )
+
+        except httpx.ConnectError:
+            logger.debug(f"Gemini not reachable at {self._gemini_url}")
+            return None
+        except Exception as e:
+            logger.warning(f"Gemini inference error: {e}")
+            return None
+
     # ── Streaming ─────────────────────────────────────────────────
 
     def infer_stream(
@@ -548,6 +716,27 @@ class LocalInference:
             "model": resolved_model,
             "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
         }
+
+        # Try Gemini first if the model is a Gemini model
+        if backend_hint == "gemini" or (backend_hint is None and resolved_model.lower().startswith("gemini")):
+            streamed = False
+            for chunk in self._stream_gemini(
+                prompt,
+                resolved_model,
+                max_tokens,
+                temperature,
+                chat_id=chat_id,
+                messages=messages,
+            ):
+                yield chunk
+                streamed = True
+            if streamed:
+                return
+            # User explicitly chose a Gemini model — don't silently fall back
+            raise RuntimeError(
+                f"Gemini model '{resolved_model}' failed. "
+                "Check your API key in Settings."
+            )
 
         # Try streaming from Ollama first (native streaming support)
         if backend_hint in (None, "ollama"):
@@ -589,6 +778,22 @@ class LocalInference:
                     for chunk in chunks:
                         yield chunk
                     return
+
+        # Try Gemini as streaming fallback if no local backends worked
+        if backend_hint not in ("ollama", "llama_cpp", "vllm", "lm_studio", "gemini"):
+            streamed = False
+            for chunk in self._stream_gemini(
+                prompt,
+                resolved_model,
+                max_tokens,
+                temperature,
+                chat_id=chat_id,
+                messages=messages,
+            ):
+                yield chunk
+                streamed = True
+            if streamed:
+                return
 
         # No streaming backend available -- fall back to non-streaming
         try:
@@ -793,6 +998,137 @@ class LocalInference:
         except Exception:
             return
 
+    def _stream_gemini(
+        self,
+        prompt: str,
+        model: str,
+        max_tokens: int,
+        temperature: float,
+        chat_id: str = "",
+        messages: list | None = None,
+    ):
+        """Stream from Google Gemini API using generateContent with SSE.
+
+        Yields dicts in OpenAI streaming format.
+        Requires a Gemini API key.
+        """
+        if not self._gemini_api_key:
+            return
+
+        try:
+            import httpx
+
+            # Build Gemini conversation contents from messages
+            gemini_contents = []
+            if messages:
+                for msg in messages:
+                    role = msg.get("role", "user")
+                    content = msg.get("content", "")
+                    if role == "user":
+                        gemini_contents.append({"role": "user", "parts": [{"text": content}]})
+                    elif role == "assistant":
+                        gemini_contents.append({"role": "model", "parts": [{"text": content}]})
+                    elif role == "system":
+                        # Gemini uses systemInstruction at top level
+                        pass
+            if not gemini_contents:
+                gemini_contents = [{"role": "user", "parts": [{"text": prompt}]}]
+
+            if not chat_id:
+                chat_id = f"chatcmpl-{int(time.time())}"
+
+            with (
+                httpx.Client(timeout=120) as client,
+                client.stream(
+                    "POST",
+                    f"{self._gemini_url}/models/{model}:streamGenerateContent",
+                    params={"key": self._gemini_api_key, "alt": "sse"},
+                    json={
+                        "contents": gemini_contents,
+                        "generationConfig": {
+                            "maxOutputTokens": max_tokens,
+                            "temperature": temperature,
+                        },
+                    },
+                ) as resp,
+            ):
+                if resp.status_code != 200:
+                    logger.debug(f"Gemini stream returned {resp.status_code}")
+                    return
+
+                for line in resp.iter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data_str = line[6:]
+                    if data_str.strip() == "[DONE]":
+                        return
+                    try:
+                        chunk_data = json.loads(data_str)
+                    except json.JSONDecodeError:
+                        continue
+
+                    candidates = chunk_data.get("candidates", [])
+                    if not candidates:
+                        continue
+
+                    candidate = candidates[0]
+                    content = candidate.get("content", {})
+                    parts = content.get("parts", [])
+
+                    for p in parts:
+                        # Handle thinking parts
+                        if p.get("thought") or p.get("thinking"):
+                            thinking_text = p.get("text", "")
+                            if thinking_text:
+                                yield {
+                                    "id": chat_id,
+                                    "object": "chat.completion.chunk",
+                                    "created": int(time.time()),
+                                    "model": model,
+                                    "choices": [
+                                        {
+                                            "index": 0,
+                                            "delta": {"thinking": thinking_text},
+                                            "finish_reason": None,
+                                        }
+                                    ],
+                                }
+                        elif p.get("text"):
+                            yield {
+                                "id": chat_id,
+                                "object": "chat.completion.chunk",
+                                "created": int(time.time()),
+                                "model": model,
+                                "choices": [
+                                    {
+                                        "index": 0,
+                                        "delta": {"content": p["text"]},
+                                        "finish_reason": None,
+                                    }
+                                ],
+                            }
+
+                    # Check for completion
+                    finish_reason = candidate.get("finishReason")
+                    if finish_reason == "STOP":
+                        yield {
+                            "id": chat_id,
+                            "object": "chat.completion.chunk",
+                            "created": int(time.time()),
+                            "model": model,
+                            "choices": [
+                                {"index": 0, "delta": {}, "finish_reason": "stop"}
+                            ],
+                        }
+                        return
+
+        except httpx.ConnectError:
+            logger.debug(f"Gemini not reachable for streaming")
+            return
+        except Exception as e:
+            logger.warning(f"Gemini streaming error: {e}")
+            return
+
     # ── Backend Status ────────────────────────────────────────────
 
     def is_available(self) -> dict[str, bool]:
@@ -809,6 +1145,9 @@ class LocalInference:
                         resp = client.get(f"{url}/health")
                     elif name == "ollama":
                         resp = client.get(url)
+                    elif name == "gemini":
+                        # Gemini is "available" if an API key is configured
+                        return name, bool(self._gemini_api_key)
                     else:
                         resp = client.get(f"{url}/v1/models")
                     return name, resp.status_code == 200
@@ -820,10 +1159,11 @@ class LocalInference:
             (self._ollama_url, "ollama"),
             (self._vllm_url, "vllm"),
             (self._lm_studio_url, "lm_studio"),
+            (self._gemini_url, "gemini"),
         ]
 
         available = {}
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        with ThreadPoolExecutor(max_workers=5) as pool:
             futures = [pool.submit(_check, url, name) for url, name in backends]
             for future in futures:
                 try:
@@ -845,6 +1185,21 @@ class LocalInference:
         models.append({"id": "sawyer", "object": "model", "owned_by": "sawyer"})
         seen_ids.add("sawyer")
 
+        # Add well-known Gemini models if an API key is configured
+        # (even if discovery hasn't found them yet or is cached)
+        if self._gemini_api_key:
+            gemini_defaults = [
+                {"id": "gemini-2.5-pro", "owned_by": "google"},
+                {"id": "gemini-2.5-flash", "owned_by": "google"},
+                {"id": "gemini-2.0-flash", "owned_by": "google"},
+                {"id": "gemini-1.5-pro", "owned_by": "google"},
+                {"id": "gemini-1.5-flash", "owned_by": "google"},
+            ]
+            for gm in gemini_defaults:
+                if gm["id"] not in seen_ids:
+                    models.append({"id": gm["id"], "object": "model", "owned_by": gm["owned_by"]})
+                    seen_ids.add(gm["id"])
+
         # Add all discovered models
         for dm in self._discovered_models:
             if dm.id not in seen_ids:
@@ -856,6 +1211,9 @@ class LocalInference:
                     for key in ("family", "parameter_size", "quantization_level"):
                         if key in dm.details:
                             entry[key] = dm.details[key]
+                    # Include Gemini-specific details
+                    if dm.backend == "gemini" and "output_token_limit" in dm.details:
+                        entry["output_token_limit"] = dm.details["output_token_limit"]
                 models.append(entry)
                 seen_ids.add(dm.id)
             # Also add the short name (without tag) as an alias
@@ -891,6 +1249,8 @@ CHAT_HTML = """<!DOCTYPE html>
     --assistant-bg: #1a1a25;
     --error: #ef4444;
     --thinking-bg: #1a1a2a;
+    --gemini: #12c7ef;
+    --gemini-dim: #0ea5cc;
   }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
@@ -915,6 +1275,11 @@ CHAT_HTML = """<!DOCTYPE html>
     color: var(--accent);
     letter-spacing: 0.5px;
   }
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
   .header-info {
     font-size: 12px;
     color: var(--text-dim);
@@ -932,6 +1297,270 @@ CHAT_HTML = """<!DOCTYPE html>
   .status-dot.online { background: #22c55e; }
   .status-dot.offline { background: var(--error); }
   .status-dot.local { background: #f59e0b; }
+  .settings-btn {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 6px;
+    transition: background 0.2s, color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .settings-btn:hover {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  .settings-btn svg {
+    width: 20px;
+    height: 20px;
+    transition: transform 0.3s;
+  }
+  .settings-btn:hover svg {
+    transform: rotate(45deg);
+  }
+
+  /* Settings panel overlay */
+  .settings-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 998;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+  }
+  .settings-overlay.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* Settings panel */
+  .settings-panel {
+    position: fixed;
+    top: 0;
+    right: -380px;
+    width: 360px;
+    height: 100vh;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    z-index: 999;
+    transition: right 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .settings-panel.open {
+    right: 0;
+  }
+  .settings-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .settings-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .settings-close {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: color 0.2s;
+    font-size: 20px;
+    line-height: 1;
+  }
+  .settings-close:hover { color: var(--text); }
+  .settings-body {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  .settings-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .settings-section label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .settings-section .hint {
+    font-size: 11px;
+    color: var(--text-dim);
+    opacity: 0.7;
+  }
+  .api-key-row {
+    display: flex;
+    gap: 0;
+    align-items: stretch;
+  }
+  .api-key-input {
+    flex: 1;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-right: none;
+    border-radius: 8px 0 0 8px;
+    color: var(--text);
+    font-size: 13px;
+    padding: 10px 12px;
+    outline: none;
+    font-family: monospace;
+    transition: border-color 0.2s;
+  }
+  .api-key-input:focus {
+    border-color: var(--accent);
+  }
+  .api-key-input::placeholder {
+    color: var(--text-dim);
+    opacity: 0.5;
+  }
+  .eye-toggle {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 0 8px 8px 0;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s, background 0.2s;
+  }
+  .eye-toggle:hover {
+    color: var(--text);
+    background: var(--border);
+  }
+  .eye-toggle svg {
+    width: 18px;
+    height: 18px;
+  }
+  .save-btn {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    margin-top: 4px;
+  }
+  .save-btn:hover { opacity: 0.9; }
+  .save-btn.saved {
+    background: #22c55e;
+    color: #000;
+  }
+  .api-key-status {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+  .api-key-status.connected { color: #22c55e; }
+  .api-key-status.missing { color: var(--text-dim); }
+
+  /* Gemini model selector in settings */
+  .gemini-model-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .gemini-model-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .gemini-model-item:hover {
+    border-color: var(--accent-dim);
+  }
+  .gemini-model-item.selected {
+    border-color: var(--gemini);
+    background: #1a1a2f;
+  }
+  .gemini-model-item .model-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    flex: 1;
+  }
+  .gemini-model-item .radio-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    flex-shrink: 0;
+    position: relative;
+    transition: border-color 0.2s;
+  }
+  .gemini-model-item.selected .radio-dot {
+    border-color: var(--gemini);
+  }
+  .gemini-model-item.selected .radio-dot::after {
+    content: '';
+    position: absolute;
+    top: 3px; left: 3px;
+    width: 6px; height: 6px;
+    background: var(--gemini);
+    border-radius: 50%;
+  }
+
+
+  .model-select-wrapper {
+    position: relative;
+  }
+  .model-select {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 10px 12px;
+    font-size: 13px;
+    outline: none;
+    max-width: 200px;
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 28px;
+  }
+  .model-select:focus {
+    border-color: var(--accent);
+  }
+  .model-select-arrow {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
+    color: var(--text-dim);
+  }
+  .model-select-arrow svg {
+    width: 14px;
+    height: 14px;
+  }
+  .model-badge-container {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
   #messages {
     flex: 1;
     overflow-y: auto;
@@ -1029,7 +1658,7 @@ CHAT_HTML = """<!DOCTYPE html>
   textarea:focus {
     border-color: var(--accent);
   }
-  button {
+  button.send-btn {
     background: var(--accent);
     color: #000;
     border: none;
@@ -1041,24 +1670,11 @@ CHAT_HTML = """<!DOCTYPE html>
     transition: opacity 0.2s;
     white-space: nowrap;
   }
-  button:hover { opacity: 0.9; }
-  button:disabled { opacity: 0.4; cursor: not-allowed; }
-  .model-select {
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    color: var(--text);
-    padding: 10px 12px;
-    font-size: 13px;
-    outline: none;
-    max-width: 200px;
-  }
-  .model-select:focus {
-    border-color: var(--accent);
-  }
+  button.send-btn:hover { opacity: 0.9; }
+  button.send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .welcome {
     text-align: center;
-    padding: 60px 24px;
+    padding: 40px 24px 24px;
     color: var(--text-dim);
   }
   .welcome h2 {
@@ -1071,7 +1687,71 @@ CHAT_HTML = """<!DOCTYPE html>
     font-size: 14px;
     line-height: 1.6;
     max-width: 480px;
+    margin: 0 auto 20px;
+  }
+  .quickstart {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    max-width: 560px;
+    margin: 0 auto 20px;
+    text-align: left;
+  }
+  .quickstart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    transition: border-color 0.2s;
+  }
+  .quickstart-card:hover {
+    border-color: var(--accent);
+  }
+  .quickstart-card h3 {
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+  .quickstart-card p {
+    font-size: 13px;
+    margin: 0;
+    color: var(--text-dim);
+    line-height: 1.4;
+  }
+  .quickstart-card code {
+    display: block;
+    margin-top: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text);
+    background: var(--bg);
+    padding: 6px 8px;
+    border-radius: 4px;
+    overflow-x: auto;
+  }
+  .features {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    max-width: 560px;
     margin: 0 auto;
+    flex-wrap: wrap;
+  }
+  .feature {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .feature-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
   }
   .token-info {
     font-size: 11px;
@@ -1081,6 +1761,7 @@ CHAT_HTML = """<!DOCTYPE html>
 </style>
 </head>
 <body>
+
 <header>
   <h1>Sawyer</h1>
   <div class="header-info">
@@ -1089,26 +1770,108 @@ CHAT_HTML = """<!DOCTYPE html>
       <span id="status-text">Checking...</span>
     </span>
     <span id="model-display">local</span>
+    <button class="settings-btn" id="settings-btn" onclick="toggleSettings()" title="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
   </div>
 </header>
+
+<!-- Settings overlay -->
+<div class="settings-overlay" id="settings-overlay" onclick="toggleSettings()"></div>
+
+<!-- Settings panel -->
+<div class="settings-panel" id="settings-panel">
+  <div class="settings-header">
+    <h2>Settings</h2>
+    <button class="settings-close" onclick="toggleSettings()">&times;</button>
+  </div>
+  <div class="settings-body">
+    <!-- Gemini API Key -->
+    <div class="settings-section">
+      <label>API Key</label>
+      <div class="api-key-row">
+        <input type="password" class="api-key-input" id="gemini-key"
+               placeholder="Paste your API key"
+               autocomplete="off">
+        <button class="eye-toggle" id="eye-toggle" onclick="toggleKeyVisibility()" title="Show/hide key">
+          <svg id="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+            <circle cx="12" cy="12" r="3"/>
+          </svg>
+          <svg id="eye-off-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+            <line x1="1" y1="1" x2="23" y2="23"/>
+          </svg>
+        </button>
+      </div>
+      <div class="api-key-status" id="key-status"></div>
+      <button class="save-btn" id="save-key-btn" onclick="saveGeminiKey()">Save Key</button>
+    </div>
+
+    <!-- Gemini Model Selector -->
+    <div class="settings-section">
+      <label>Cloud Model</label>
+      <div class="gemini-model-list" id="gemini-model-list">
+        <!-- populated by JS -->
+      </div>
+    </div>
+  </div>
+</div>
 
 <div id="messages">
   <div class="welcome">
     <h2>Distributed MoE Inference</h2>
-    <p>Send a prompt and get cheaper inference than your provider.
-       The Sawyer network splits the load across nodes
-       so you only pay for what you use.</p>
+    <p>Split inference across nodes. Pay for what you use. Add a cloud key to start chatting.</p>
+    <div class="quickstart">
+      <div class="quickstart-card">
+        <h3>Install</h3>
+        <p>Get Sawyer running in one command:</p>
+        <code>pip install sawyer-core</code>
+      </div>
+      <div class="quickstart-card">
+        <h3>Local Model</h3>
+        <p>Serve a model from your machine:</p>
+        <code>sawyer serve --offline</code>
+      </div>
+      <div class="quickstart-card">
+        <h3>Join Network</h3>
+        <p>Connect to the distributed network:</p>
+        <code>sawyer serve</code>
+      </div>
+      <div class="quickstart-card">
+        <h3>Cloud</h3>
+        <p>Add an API key in Settings to start chatting immediately.</p>
+      </div>
+    </div>
+    <div class="features">
+      <span class="feature"><span class="feature-dot"></span>MoE routing</span>
+      <span class="feature"><span class="feature-dot"></span>Local + cloud</span>
+      <span class="feature"><span class="feature-dot"></span>Pay per token</span>
+      <span class="feature"><span class="feature-dot"></span>Open source</span>
+    </div>
   </div>
 </div>
+
+
 
 <div id="input-area">
   <div class="token-info" id="token-info"></div>
   <div class="input-row">
-    <select class="model-select" id="model-select">
-      <option value="">auto</option>
-    </select>
-    <textarea id="prompt" rows="1" placeholder="Type your prompt..." autofocus></textarea>
-    <button id="send" onclick="sendMessage()">Send</button>
+    <div class="model-badge-container" id="model-badge-area">
+      <div class="model-select-wrapper">
+        <select class="model-select" id="model-select">
+          <option value="">auto</option>
+        </select>
+        <span class="model-select-arrow">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </span>
+      </div>
+    </div>
+    <textarea id="prompt" rows="1" placeholder="Ask how to get started..." autofocus></textarea>
+    <button class="send-btn" id="send" onclick="sendMessage()">Send</button>
   </div>
 </div>
 
@@ -1121,9 +1884,123 @@ const statusDot = document.getElementById('status-dot');
 const statusText = document.getElementById('status-text');
 const modelDisplay = document.getElementById('model-display');
 const tokenInfo = document.getElementById('token-info');
+const settingsPanel = document.getElementById('settings-panel');
+const settingsOverlay = document.getElementById('settings-overlay');
+const geminiKeyInput = document.getElementById('gemini-key');
+const keyStatusEl = document.getElementById('key-status');
+const saveKeyBtn = document.getElementById('save-key-btn');
+const geminiModelList = document.getElementById('gemini-model-list');
+const modelBadgeArea = document.getElementById('model-badge-area');
 
 let conversationHistory = [];
 let isLoading = false;
+let geminiKey = localStorage.getItem('gemini_api_key') || '';
+let selectedGeminiModel = localStorage.getItem('gemini_model') || '';
+
+const CLOUD_MODELS = [
+  { id: 'gemini-2.5-pro', name: '2.5 Pro' },
+  { id: 'gemini-2.5-flash', name: '2.5 Flash' },
+  { id: 'gemini-2.0-flash', name: '2.0 Flash' },
+  { id: 'gemini-1.5-pro', name: '1.5 Pro' },
+  { id: 'gemini-1.5-flash', name: '1.5 Flash' },
+];
+
+// --- Settings panel ---
+function toggleSettings() {
+  const isOpen = settingsPanel.classList.contains('open');
+  if (isOpen) {
+    settingsPanel.classList.remove('open');
+    settingsOverlay.classList.remove('open');
+  } else {
+    settingsPanel.classList.add('open');
+    settingsOverlay.classList.add('open');
+    geminiKeyInput.value = geminiKey;
+    updateKeyStatus();
+  }
+}
+
+function toggleKeyVisibility() {
+  const isPassword = geminiKeyInput.type === 'password';
+  geminiKeyInput.type = isPassword ? 'text' : 'password';
+  document.getElementById('eye-icon').style.display = isPassword ? 'none' : 'block';
+  document.getElementById('eye-off-icon').style.display = isPassword ? 'block' : 'none';
+}
+
+function updateKeyStatus() {
+  if (geminiKey) {
+    const masked = geminiKey.slice(0, 4) + '...' + geminiKey.slice(-4);
+    keyStatusEl.textContent = 'Key saved (' + masked + ')';
+    keyStatusEl.className = 'api-key-status connected';
+  } else {
+    keyStatusEl.textContent = 'No key configured';
+    keyStatusEl.className = 'api-key-status missing';
+  }
+}
+
+async function saveGeminiKey() {
+  geminiKey = geminiKeyInput.value.trim();
+  localStorage.setItem('gemini_api_key', geminiKey);
+  updateKeyStatus();
+  renderGeminiModels();
+  if (geminiKey) {
+    // Sync key to server so cloud backend is available for routing
+    saveKeyBtn.textContent = 'Saving...';
+    try {
+      const resp = await fetch('/v1/gemini-key', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({api_key: geminiKey}),
+      });
+      if (resp.ok) {
+        saveKeyBtn.textContent = 'Saved';
+        saveKeyBtn.classList.add('saved');
+        // Refresh model list to include cloud models
+        checkStatus();
+      } else {
+        saveKeyBtn.textContent = 'Error';
+        const err = await resp.json().catch(() => ({}));
+        keyStatusEl.textContent = 'Error: ' + (err.detail || 'Failed');
+        keyStatusEl.className = 'api-key-status missing';
+      }
+    } catch (e) {
+      saveKeyBtn.textContent = 'Error';
+      keyStatusEl.textContent = 'Connection error';
+      keyStatusEl.className = 'api-key-status missing';
+    }
+  } else {
+    // Remove key from server
+    try { await fetch('/v1/gemini-key', {method: 'DELETE'}); } catch (e) {}
+    saveKeyBtn.textContent = 'Saved';
+    saveKeyBtn.classList.add('saved');
+    checkStatus();
+  }
+  setTimeout(() => {
+    saveKeyBtn.textContent = 'Save Key';
+    saveKeyBtn.classList.remove('saved');
+  }, 1500);
+}
+
+// --- Gemini model list ---
+function renderGeminiModels() {
+  geminiModelList.innerHTML = '';
+  CLOUD_MODELS.forEach(m => {
+    const item = document.createElement('div');
+    item.className = 'gemini-model-item' + (selectedGeminiModel === m.id ? ' selected' : '');
+    item.innerHTML = '<div class="radio-dot"></div>'
+      + '<span class="model-name">' + m.name + '</span>';
+    item.addEventListener('click', () => {
+      selectedGeminiModel = m.id;
+      localStorage.setItem('gemini_model', m.id);
+      renderGeminiModels();
+      updateModelBadge();
+    });
+    geminiModelList.appendChild(item);
+  });
+}
+
+function updateModelBadge() {
+  // Cloud model badge removed — no Gemini branding shown
+}
 
 // Auto-resize textarea
 promptInput.addEventListener('input', function() {
@@ -1136,6 +2013,13 @@ promptInput.addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     sendMessage();
+  }
+});
+
+// Escape to close settings
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && settingsPanel.classList.contains('open')) {
+    toggleSettings();
   }
 });
 
@@ -1167,8 +2051,7 @@ async function checkStatus() {
       models.forEach(m => {
         const opt = document.createElement('option');
         opt.value = m.id;
-        const family = m.family || m.owned_by || '';
-        const size = m.parameter_size ? ` (${m.parameter_size})` : '';
+        const size = m.parameter_size ? ' (' + m.parameter_size + ')' : '';
         opt.textContent = m.id + size;
         modelSelect.appendChild(opt);
       });
@@ -1218,8 +2101,7 @@ function addMessage(role, content, meta, thinking) {
     thinkDiv.className = 'thinking collapsed';
     thinkDiv.innerHTML = '<span class="thinking-label"'
                     + '>Thinking</span><br>'
-                    + thinking.replace(/</g, '&lt;')
-                    .replace(/\n/g, '<br>');
+                    + thinking.replace(/</g, '&lt;').split(String.fromCharCode(10)).join('<br>');
     thinkDiv.addEventListener('click', () => thinkDiv.classList.toggle('collapsed'));
     div.appendChild(thinkDiv);
   }
@@ -1260,7 +2142,11 @@ async function sendMessage() {
   conversationHistory.push({role: 'user', content: prompt});
 
   const startTime = performance.now();
-  const selectedModel = modelSelect.value || 'sawyer';
+  // If a Gemini model is selected in settings and no local model is chosen, use Gemini
+  let selectedModel = modelSelect.value || 'sawyer';
+  if (!modelSelect.value && geminiKey && selectedGeminiModel) {
+    selectedModel = selectedGeminiModel;
+  }
 
   try {
     // Try streaming first
@@ -1295,7 +2181,7 @@ async function sendMessage() {
         if (done) break;
 
         buffer += decoder.decode(value, {stream: true});
-        const lines = buffer.split('\n');
+        const lines = buffer.split(String.fromCharCode(10));
         buffer = lines.pop() || '';
 
         for (const line of lines) {
@@ -1374,6 +2260,24 @@ async function sendMessage() {
   sendBtn.disabled = false;
   promptInput.focus();
 }
+
+// Initialize settings UI
+geminiKeyInput.value = geminiKey;
+updateKeyStatus();
+renderGeminiModels();
+updateModelBadge();
+
+// Sync stored cloud key to server on load
+if (geminiKey) {
+  fetch('/v1/gemini-key', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({api_key: geminiKey}),
+  }).then(() => {
+    // Refresh model list to include cloud models
+    checkStatus();
+  }).catch(() => {});
+}
 </script>
 </body>
 </html>"""
@@ -1395,8 +2299,8 @@ def create_client_app(config: SawyerConfig | None = None) -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def chat_ui():
-        """Serve the chat UI."""
-        return HTMLResponse(content=CHAT_HTML)
+        """Serve the FAQ onboarding page."""
+        return HTMLResponse(content=FAQ_HTML)
 
     @app.get("/health")
     async def health():
@@ -1614,6 +2518,62 @@ def create_client_app(config: SawyerConfig | None = None) -> FastAPI:
             "balance": 0,
             "mode": "local",
             "message": "Token accounting active when connected to Sawyer network",
+        }
+
+    # ── Gemini API Key Management ──────────────────────────────────
+
+    @app.get("/v1/gemini-key")
+    async def get_gemini_key():
+        """Check if a Gemini API key is configured (does NOT return the key)."""
+        has_key = bool(local_inference._gemini_api_key)
+        return {
+            "configured": has_key,
+            "message": "Gemini API key is configured" if has_key else "No Gemini API key configured",
+        }
+
+    @app.post("/v1/gemini-key")
+    async def set_gemini_key(request: Request):
+        """Set or update the Gemini API key at runtime.
+
+        Accepts JSON: {"api_key": "AIza..."}
+        The key is stored in memory and also persisted to the config
+        environment variable for the current session.
+        """
+        import asyncio
+
+        body = await request.json()
+        api_key = body.get("api_key", "").strip()
+        if not api_key:
+            raise HTTPException(status_code=400, detail="api_key is required")
+
+        # Update the local inference instance
+        local_inference._gemini_api_key = api_key
+        # Also set the env var so it persists for the session
+        os.environ["SAWYER_GEMINI_API_KEY"] = api_key
+
+        # Re-discover models to include Gemini models
+        await asyncio.to_thread(local_inference.discover_models, force=True)
+
+        return {
+            "status": "ok",
+            "message": "Gemini API key configured successfully",
+            "models_count": len([m for m in local_inference._discovered_models if m.backend == "gemini"]),
+        }
+
+    @app.delete("/v1/gemini-key")
+    async def delete_gemini_key():
+        """Remove the Gemini API key."""
+        import asyncio
+
+        local_inference._gemini_api_key = ""
+        os.environ.pop("SAWYER_GEMINI_API_KEY", None)
+
+        # Re-discover models without Gemini
+        await asyncio.to_thread(local_inference.discover_models, force=True)
+
+        return {
+            "status": "ok",
+            "message": "Gemini API key removed",
         }
 
     return app

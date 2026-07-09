@@ -28,6 +28,7 @@ class SawyerConfig:
 
     # Token settings
     api_key: str | None = None
+    gemini_api_key: str | None = None
 
     # Expert hosting
     cache_dir: str = "~/.sawyer/cache"
@@ -57,6 +58,8 @@ class SawyerConfig:
 
     def __post_init__(self) -> None:
         """Load overrides from environment variables."""
+        self.api_key = os.environ.get("SAWYER_API_KEY", self.api_key)
+        self.gemini_api_key = os.environ.get("SAWYER_GEMINI_API_KEY", self.gemini_api_key)
         self.stripe_secret_key = os.environ.get("SAWYER_STRIPE_SECRET_KEY", self.stripe_secret_key)
         self.stripe_publishable_key = os.environ.get(
             "SAWYER_STRIPE_PUBLISHABLE_KEY", self.stripe_publishable_key
