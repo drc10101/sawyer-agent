@@ -20,7 +20,7 @@ Built on [Bedrock](https://github.com/drc10101/bedrock) for node identity, conse
 
 ### For the Developer with a Laptop
 
-You're building an app that calls LLM APIs. GPT-4 costs $0.03/1K tokens. Claude Haiku is cheaper but still adds up. Sawyer gives you a 14-day free trial with unlimited tokens — roughly $0.01/1K tokens at Pro — with chat and code models available from day one.
+You're building an app that calls LLM APIs. GPT-4 costs $0.03/1K tokens. Claude Haiku is cheaper but still adds up. Sawyer gives you a 14-day free trial with unlimited tokens — roughly $0.0075/1K tokens at Pro — with chat and code models available from day one.
 
 **bash / Git Bash:**
 ```bash
@@ -62,7 +62,7 @@ Tier 4 (24GB+ VRAM) can host any model's experts. Tier 1 (4GB) can still partici
 
 ### For the Small Team
 
-Your startup needs inference but can't justify GPU costs. Subscribe at the Business tier ($99/mo, 10M tokens) and route all your calls through Sawyer. Your inference cost drops by 3-6x compared to major API providers. No rate limits, no surprise bills.
+Your startup needs inference but can't justify GPU costs. Subscribe at the Enterprise tier ($200/mo, 10M tokens) and route all your calls through Sawyer. Your inference cost drops by 3-6x compared to major API providers. No rate limits, no surprise bills.
 
 ### For the Hobbyist
 
@@ -149,8 +149,9 @@ The kid with the 4090 doing most of the work gets the biggest slice. That's the 
 | Tier | Price | Tokens | Per 1K Tokens | Best For |
 |------|-------|--------|---------------|----------|
 | Explorer | 14-day free trial | Unlimited | $0.00 | Try it out |
-| Pro | $15/mo | 1M | $0.015 | Development, production workloads |
-| Business | $99/mo | 10M | $0.01 | Teams, custom deployment |
+| Pro | $15/mo | 2M | $0.0075 | Development, production workloads |
+| Pioneer | $40/mo | 5M | $0.008 | Scale, growing teams |
+| Enterprise | $200/mo | 10M | $0.020 | Teams, custom deployment |
 
 14-day free trial with unlimited tokens. Then pick your plan. 70% of subscription revenue goes to the hosts who serve inference — real money attracts real hardware.
 
@@ -223,7 +224,7 @@ Every node earns proportional to its hardware contribution. The 4090 in Dallas e
 
 ### 3. `sawyer/token/` — Token Economics
 - 14-day free trial with unlimited tokens, no credit card
-- Pro tier at $15/mo gives 1M tokens, Business at $99/mo gives 10M
+- Pro tier at $15/mo gives 2M tokens, Enterprise at $200/mo gives 10M
 - Tokens debit per inference request (input + output tokens)
 - Token budget resets monthly, rolls over unused tokens (max 1 month)
 - Provider pool = 70% of all subscription revenue distributed quarterly

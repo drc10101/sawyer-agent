@@ -315,7 +315,7 @@ class TestEndToEndTierSystem:
             assert MAX_ROLLOVER[tier] > 0
 
     def test_tier_ordering(self):
-        """Tiers are ordered by value: Explorer < Builder < Operator."""
+        """Tiers are ordered by value: Explorer < Pro < Pioneer < Enterprise."""
         prices = [TIER_PRICING[t] for t in SubscriptionTier]
         tokens = [TIER_TOKENS[t] for t in SubscriptionTier]
         assert prices == sorted(prices)
@@ -353,7 +353,7 @@ class TestEndToEndMultipleUsers:
         accountant.create_account("pro-user", SubscriptionTier.PRO)
         accountant.create_account("enterprise-user", SubscriptionTier.ENTERPRISE)
 
-        # Explorer: 500K tokens
+        # Explorer: unlimited tokens (trial)
         accountant.record_inference(
             user_id="pro-user",
             model_name="mixtral-8x7b",
@@ -363,7 +363,7 @@ class TestEndToEndMultipleUsers:
             latency_ms=50.0,
         )
 
-        # Builder: 2M tokens
+        # Pro: 2M tokens
         accountant.record_inference(
             user_id="pro-user",
             model_name="mixtral-8x7b",
@@ -373,7 +373,7 @@ class TestEndToEndMultipleUsers:
             latency_ms=80.0,
         )
 
-        # Operator: 5M tokens
+        # Enterprise: 10M tokens
         accountant.record_inference(
             user_id="enterprise-user",
             model_name="mixtral-8x7b",

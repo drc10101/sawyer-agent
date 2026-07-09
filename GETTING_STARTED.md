@@ -2,7 +2,7 @@
 
 **The load is split. Friends help.**
 
-Sawyer distributes Mixture-of-Experts (MoE) model inference across a network of volunteer-hosted nodes. Each node hosts one or more expert weight files, and a central router activates only the relevant experts per token. Users pay a low monthly subscription ($5/mo) for a token budget — cheap enough to experiment, paid enough to sustain the network.
+Sawyer distributes Mixture-of-Experts (MoE) model inference across a network of volunteer-hosted nodes. Each node hosts one or more expert weight files, and a central router activates only the relevant experts per token. Users pay a monthly subscription ($15/mo) for a token budget — cheap enough to experiment, paid enough to sustain the network.
 
 ## Quick Start
 
@@ -33,9 +33,10 @@ python -m sawyer serve
 
 | Tier | Price | Token Budget | Use Case |
 |------|-------|-------------|----------|
-| Explorer | $5/mo | 500K tokens | Prototyping, experimentation |
-| Builder | $20/mo | 2M tokens | Development, testing |
-| Operator | $50/mo | 5M tokens | Production workloads |
+| Explorer | Free (14 days) | Unlimited tokens | Prototyping, experimentation |
+| Pro | $15/mo | 2M tokens | Development, testing |
+| Pioneer | $40/mo | 5M tokens | Production workloads |
+| Enterprise | $200/mo | 10M tokens | Teams, custom deployment |
 
 ## Supported Models
 
