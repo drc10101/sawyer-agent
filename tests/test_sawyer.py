@@ -392,7 +392,7 @@ class TestTierPricing:
         assert TIER_PRICING[SubscriptionTier.PIONEER] == 40
 
     def test_enterprise_price(self):
-        assert TIER_PRICING[SubscriptionTier.ENTERPRISE] == 100
+        assert TIER_PRICING[SubscriptionTier.ENTERPRISE] == 200
 
     def test_explorer_tokens(self):
         assert TIER_TOKENS[SubscriptionTier.EXPLORER] == 0
@@ -404,4 +404,4 @@ class TestTierPricing:
         assert TIER_TOKENS[SubscriptionTier.PIONEER] == 5_000_000
 
     def test_enterprise_tokens(self):
-        assert TIER_TOKENS[SubscriptionTier.ENTERPRISE] == 25_000_000
+        assert TIER_TOKENS[SubscriptionTier.ENTERPRISE] == 10_000_000

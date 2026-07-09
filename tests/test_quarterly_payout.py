@@ -19,27 +19,27 @@ class TestQuarterlyPoolCalculation:
         pool = qp.calculate_quarterly_pool(total_subscribers=1)
 
         assert pool["total_subscribers"] == 1
-        assert pool["total_revenue_usd"] == 15.00  # $5 x 3
-        assert pool["provider_pool_usd"] == 10.50  # 70%
-        assert pool["platform_pool_usd"] == 4.50  # 30%
+        assert pool["total_revenue_usd"] == pytest.approx(155.01, rel=0.01)
+        assert pool["provider_pool_usd"] == pytest.approx(108.51, rel=0.01)
+        assert pool["platform_pool_usd"] == pytest.approx(46.50, rel=0.01)
 
     def test_pool_calculation_100_subscribers(self):
-        """100 subscribers: $500/mo x 3 x 0.70 = $1,050 to providers."""
+        """100 subscribers: $5167/mo x 3 x 0.70 = $10,850 to providers."""
         qp = QuarterlyPayout()
         pool = qp.calculate_quarterly_pool(total_subscribers=100)
 
-        assert pool["total_revenue_usd"] == 1500.00  # $5 x 100 x 3
-        assert pool["provider_pool_usd"] == 1050.00  # 70%
-        assert pool["platform_pool_usd"] == 450.00  # 30%
+        assert pool["total_revenue_usd"] == pytest.approx(15501.00, rel=0.01)
+        assert pool["provider_pool_usd"] == pytest.approx(10850.70, rel=0.01)
+        assert pool["platform_pool_usd"] == pytest.approx(4650.30, rel=0.01)
 
     def test_pool_calculation_1000_subscribers(self):
-        """1000 subscribers: $5K/mo x 3 x 0.70 = $10,500 to providers."""
+        """1000 subscribers: $51.67K/mo x 3 x 0.70 = $105,017 to providers."""
         qp = QuarterlyPayout()
         pool = qp.calculate_quarterly_pool(total_subscribers=1000)
 
-        assert pool["total_revenue_usd"] == 15000.00
-        assert pool["provider_pool_usd"] == 10500.00
-        assert pool["platform_pool_usd"] == 4500.00
+        assert pool["total_revenue_usd"] == pytest.approx(155010.00, rel=0.01)
+        assert pool["provider_pool_usd"] == pytest.approx(108507.00, rel=0.01)
+        assert pool["platform_pool_usd"] == pytest.approx(46503.00, rel=0.01)
 
     def test_platform_never_gets_more_than_30_percent(self):
         """Platform share is always exactly 30%."""

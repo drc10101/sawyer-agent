@@ -167,11 +167,11 @@ class TestSawyerStripeTiers:
         assert TIER_PRICING[SubscriptionTier.EXPLORER] == 0
         assert TIER_PRICING[SubscriptionTier.PRO] == 15
         assert TIER_PRICING[SubscriptionTier.PIONEER] == 40
-        assert TIER_PRICING[SubscriptionTier.ENTERPRISE] == 100
+        assert TIER_PRICING[SubscriptionTier.ENTERPRISE] == 200
 
     def test_tier_tokens_match(self):
         """SawyerStripe token budgets match Sawyer budget module."""
         assert TIER_TOKENS[SubscriptionTier.EXPLORER] == 0
         assert TIER_TOKENS[SubscriptionTier.PRO] == 2_000_000
         assert TIER_TOKENS[SubscriptionTier.PIONEER] == 5_000_000
-        assert TIER_TOKENS[SubscriptionTier.ENTERPRISE] == 25_000_000
+        assert TIER_TOKENS[SubscriptionTier.ENTERPRISE] == 10_000_000

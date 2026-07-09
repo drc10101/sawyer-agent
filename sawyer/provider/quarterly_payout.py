@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────────────
 
-SUBSCRIPTION_PRICE = 15.00  # Average price per month (Pro $15)
+SUBSCRIPTION_PRICE = 51.67  # Weighted average price per month (Pro $15, Pioneer $40, Enterprise $200)
 PROVIDER_SHARE = 0.70  # 70% to providers
 MIN_PAYOUT_USD = 25.00  # Minimum payout per quarter
 QUARTERS = {

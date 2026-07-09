@@ -10,7 +10,7 @@ class SubscriptionTier(Enum):
     EXPLORER = "explorer"  # Free trial — unlimited tokens
     PRO = "pro"  # $15/mo — 2M tokens
     PIONEER = "pioneer"  # $40/mo — 5M tokens
-    ENTERPRISE = "enterprise"  # $100/mo — 25M tokens
+    ENTERPRISE = "enterprise"  # $200/mo — 10M tokens
 
 
 # Token budgets per tier (monthly)
@@ -18,14 +18,14 @@ TIER_TOKENS = {
     SubscriptionTier.EXPLORER: 0,  # Unlimited during trial
     SubscriptionTier.PRO: 2_000_000,
     SubscriptionTier.PIONEER: 5_000_000,
-    SubscriptionTier.ENTERPRISE: 25_000_000,
+    SubscriptionTier.ENTERPRISE: 10_000_000,
 }
 
 TIER_PRICING = {
     SubscriptionTier.EXPLORER: 0,  # Free trial
     SubscriptionTier.PRO: 15,
     SubscriptionTier.PIONEER: 40,
-    SubscriptionTier.ENTERPRISE: 100,
+    SubscriptionTier.ENTERPRISE: 200,
 }
 
 # Maximum token rollover (1 month's worth)
@@ -33,7 +33,7 @@ MAX_ROLLOVER = {
     SubscriptionTier.EXPLORER: 0,
     SubscriptionTier.PRO: 2_000_000,
     SubscriptionTier.PIONEER: 5_000_000,
-    SubscriptionTier.ENTERPRISE: 25_000_000,
+    SubscriptionTier.ENTERPRISE: 10_000_000,
 }
 
 

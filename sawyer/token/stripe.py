@@ -11,7 +11,7 @@ Stripe prices are looked up by environment variable per tier:
   SAWYER_STRIPE_PRICE_EXPLORER  → Explorer (free trial, unlimited tokens)
   SAWYER_STRIPE_PRICE_PRO       → Pro ($15/mo, 2M tokens)
   SAWYER_STRIPE_PRICE_PIONEER   → Pioneer ($40/mo, 5M tokens)
-  SAWYER_STRIPE_PRICE_ENTERPRISE → Enterprise ($100/mo, 25M tokens)
+  SAWYER_STRIPE_PRICE_ENTERPRISE → Enterprise ($200/mo, 10M tokens)
 """
 
 import logging
@@ -48,7 +48,7 @@ class SawyerStripe:
       SAWYER_STRIPE_PRICE_EXPLORER — Stripe price ID for Explorer tier
       SAWYER_STRIPE_PRICE_PRO — Stripe price ID for Pro tier
       SAWYER_STRIPE_PRICE_PIONEER — Stripe price ID for Pioneer tier
-      SAWYER_STRIPE_PRICE_ENTERPRISE — Stripe price ID for Enterprise tier
+      SAWYER_STRIPE_PRICE_ENTERPRISE — Stripe price ID for Enterprise tier ($200/mo, 10M tokens)
     """
 
     # Map Sawyer tiers to environment variable names for Stripe price IDs
