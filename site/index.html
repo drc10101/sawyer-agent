@@ -928,6 +928,127 @@
         }
       });
     });
+
+    // ── Signup Modal ──────────────────────────────────────────────
+    const API_BASE = window.location.origin;
+
+    function openSignup(tier) {
+      // Remove existing modal if any
+      const existing = document.getElementById('signup-modal');
+      if (existing) existing.remove();
+
+      const modal = document.createElement('div');
+      modal.id = 'signup-modal';
+      modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:1000;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);';
+      modal.innerHTML = `
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:36px;max-width:420px;width:90%;position:relative;">
+          <button onclick="document.getElementById('signup-modal').remove()" style="position:absolute;top:12px;right:16px;background:none;border:none;font-size:24px;cursor:pointer;color:var(--text-secondary);line-height:1;">&times;</button>
+          <h2 style="font-size:22px;font-weight:700;margin-bottom:4px;">Get your API key</h2>
+          <p style="font-size:14px;color:var(--text-secondary);margin-bottom:24px;">Start with a 14-day free trial. No credit card required.</p>
+          <form id="signup-form" onsubmit="handleSignup(event)">
+            <div style="margin-bottom:16px;">
+              <label style="font-size:13px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:6px;">Email</label>
+              <input type="email" id="signup-email" required style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg);color:var(--text);box-sizing:border-box;" placeholder="you@example.com">
+            </div>
+            <div style="margin-bottom:16px;">
+              <label style="font-size:13px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:6px;">Name (optional)</label>
+              <input type="text" id="signup-name" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg);color:var(--text);box-sizing:border-box;" placeholder="Your name">
+            </div>
+            <input type="hidden" id="signup-tier" value="${tier}">
+            <div id="signup-error" style="color:#e53e3e;font-size:13px;margin-bottom:12px;display:none;"></div>
+            <div id="signup-success" style="display:none;">
+              <p style="font-size:14px;color:var(--text-secondary);margin-bottom:12px;">Your 14-day trial is active. Save this API key:</p>
+              <div style="background:var(--code-bg);color:var(--accent);padding:12px;border-radius:8px;font-family:var(--mono);font-size:13px;word-break:break-all;margin-bottom:12px;" id="api-key-display"></div>
+              <button type="button" onclick="copyApiKey()" style="width:100%;padding:10px;background:var(--accent);color:#000;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;">Copy API Key</button>
+              <p style="font-size:12px;color:var(--text-tertiary);margin-top:12px;text-align:center;">This key will not be shown again.</p>
+            </div>
+            <button type="submit" id="signup-submit" style="width:100%;padding:12px;background:var(--accent);color:#000;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Start Free Trial</button>
+          </form>
+          <p style="font-size:12px;color:var(--text-tertiary);text-align:center;margin-top:16px;">By signing up you agree to the Terms of Service.</p>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      modal.addEventListener('click', function(e) {
+        if (e.target === modal) modal.remove();
+      });
+      document.getElementById('signup-email').focus();
+    }
+
+    async function handleSignup(e) {
+      e.preventDefault();
+      const email = document.getElementById('signup-email').value;
+      const name = document.getElementById('signup-name').value;
+      const tier = document.getElementById('signup-tier').value;
+      const errorEl = document.getElementById('signup-error');
+      const submitBtn = document.getElementById('signup-submit');
+
+      errorEl.style.display = 'none';
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Creating account...';
+
+      try {
+        const res = await fetch(API_BASE + '/api/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, name: name || null, tier }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.detail || 'Signup failed');
+        }
+
+        // Show API key
+        if (data.api_key) {
+          document.getElementById('api-key-display').textContent = data.api_key;
+          document.getElementById('signup-success').style.display = 'block';
+          document.getElementById('signup-form').querySelector('input,button[type=submit]').forEach(el => el.style.display = 'none');
+          submitBtn.style.display = 'none';
+        } else if (data.checkout_url) {
+          // Redirect to Stripe checkout for paid tiers
+          window.location.href = data.checkout_url;
+        }
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Start Free Trial';
+      }
+    }
+
+    function copyApiKey() {
+      const key = document.getElementById('api-key-display').textContent;
+      navigator.clipboard.writeText(key).then(function() {
+        const btn = event.target;
+        btn.textContent = 'Copied!';
+        setTimeout(function() { btn.textContent = 'Copy API Key'; }, 2000);
+      });
+    }
+
+    // Wire all pricing/CTA buttons to signup
+    document.addEventListener('DOMContentLoaded', function() {
+      const tierMap = {
+        'Start Free Trial': 'explorer',
+        'Get Started': 'pro',
+        'Contact Us': 'enterprise',
+      };
+      document.querySelectorAll('.btn-primary, .btn-secondary').forEach(function(btn) {
+        const text = btn.textContent.trim();
+        if (text === 'Start Free Trial') {
+          btn.addEventListener('click', function(e) { e.preventDefault(); openSignup('explorer'); });
+        } else if (text === 'Get Started') {
+          // Determine tier from parent card
+          const card = btn.closest('.pricing-card');
+          if (card) {
+            const tierEl = card.querySelector('.pricing-tier');
+            const tier = tierEl ? tierEl.textContent.trim().toLowerCase() : 'pro';
+            btn.addEventListener('click', function(e) { e.preventDefault(); openSignup(tier); });
+          }
+        } else if (text === 'Contact Us') {
+          btn.addEventListener('click', function(e) { e.preventDefault(); openSignup('enterprise'); });
+        }
+      });
+    });
   </script>
 </body>
 </html>

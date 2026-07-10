@@ -23,12 +23,15 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn>=0.29.0",
     "infill-bedrock>=0.3.1",
     "grpcio>=1.60.0",
     "grpcio-tools>=1.60.0",
     "aiohttp>=3.9.0",
     "httpx>=0.27.0",
     "pydantic>=2.5.0",
+    "pydantic[email]>=2.5.0",
     "cryptography>=42.0.0",
     "stripe>=9.0.0",
 ]

@@ -303,6 +303,78 @@ class SawyerStorage:
 
     # ── Inference Records ──────────────────────────────────────────
 
+    def create_account(self, user_id: str, tier: SubscriptionTier) -> UserAccount:
+        """Create a new token account with default balance for the given tier."""
+        from sawyer.token.budget import TIER_TOKENS
+
+        budget = TIER_TOKENS[tier]
+        balance = TokenBalance(
+            tier=tier,
+            monthly_budget=budget,
+            current_balance=budget,
+            rollover=0,
+        )
+        account = UserAccount(
+            user_id=user_id,
+            tier=tier,
+            balance=balance,
+            total_tokens_used=0,
+            total_inferences=0,
+            last_inference_at=0.0,
+            created_at=time.time(),
+        )
+        self.save_account(account)
+        logger.info("Created account for user %s (tier=%s, budget=%d)", user_id, tier.value, budget)
+        return account
+
+    def deduct_tokens(self, user_id: str, tokens_used: int) -> None:
+        """Deduct tokens from a user's current balance."""
+        conn = self._get_conn()
+        conn.execute(
+            """
+            UPDATE accounts
+            SET current_balance = current_balance - ?,
+                total_tokens_used = total_tokens_used + ?,
+                total_inferences = total_inferences + 1,
+                last_inference_at = ?,
+                updated_at = ?
+            WHERE user_id = ?
+            """,
+            (tokens_used, tokens_used, time.time(), time.time(), user_id),
+        )
+        conn.commit()
+
+    def log_inference(
+        self,
+        user_id: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        total_tokens: int,
+        latency_ms: float,
+        node_id: str = "local",
+        routing_strategy: str = "",
+        finish_reason: str = "stop",
+    ) -> None:
+        """Log an inference record."""
+        import uuid
+
+        record = InferenceRecord(
+            record_id=f"inf_{uuid.uuid4().hex[:12]}",
+            user_id=user_id,
+            model_name=model,
+            expert_ids=[],
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            latency_ms=latency_ms,
+            node_id=node_id,
+            routing_strategy=routing_strategy,
+            finish_reason=finish_reason,
+            timestamp=time.time(),
+        )
+        self.save_inference_record(record)
+
     def save_inference_record(self, record: InferenceRecord) -> None:
         """Save an inference record to the database."""
         conn = self._get_conn()

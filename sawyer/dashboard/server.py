@@ -1,23 +1,30 @@
-"""Sawyer Dashboard — FastAPI web interface for cluster status.
+"""Sawyer Dashboard — FastAPI web interface for cluster status and customer signup.
 
 Provides:
-- GET / — Cluster overview (nodes, health, utilization)
-- GET /nodes — List all registered nodes
-- GET /nodes/{node_id} — Node detail
-- GET /accounts — List all token accounts
-- GET /accounts/{user_id} — Account detail and usage
-- GET /inference/history/{user_id} — Inference history for a user
-- GET /providers — List all providers
-- GET /providers/{provider_id} — Provider detail + earnings
+- POST /api/signup — Create account (Explorer trial), return API key
+- POST /api/checkout — Create Stripe checkout session for paid tier
+- GET  /api/checkout/success — Redirect after successful payment
+- GET  /api/checkout/cancel — Redirect after cancelled payment
+- POST /api/stripe/webhook — Stripe webhook handler
+- GET  /api/me — Get current user info (by API key)
+- POST /v1/chat/completions — OpenAI-compatible inference endpoint
+- GET  / — Cluster overview (nodes, health, utilization)
+- GET  /nodes — List all registered nodes
+- GET  /nodes/{node_id} — Node detail
+- GET  /accounts — List all token accounts
+- GET  /accounts/{user_id} — Account detail and usage
+- GET  /inference/history/{user_id} — Inference history for a user
+- GET  /providers — List all providers
+- GET  /providers/{provider_id} — Provider detail + earnings
 - POST /providers/register — Register a new provider
 - POST /providers/{provider_id}/onboarding — Start Stripe Connect onboarding
-- GET /providers/{provider_id}/verification — Check verification status
-- GET /providers/{provider_id}/payouts — Payout history
+- GET  /providers/{provider_id}/verification — Check verification status
+- GET  /providers/{provider_id}/payouts — Payout history
 - POST /providers/{provider_id}/payout — Trigger a payout
-- GET /providers/network/summary — Network-wide provider stats
-- GET /health — Health check
-- GET /stats — Aggregate statistics
-- GET /audit — Audit log query
+- GET  /providers/network/summary — Network-wide provider stats
+- GET  /health — Health check
+- GET  /stats — Aggregate statistics
+- GET  /audit — Audit log query
 """
 
 import time
@@ -26,6 +33,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, Request
 
 from sawyer.auth.api import InvalidAPIKey, SawyerAuth
+from sawyer.dashboard.signup import router as signup_router
 from sawyer.provider.manager import PayoutSchedule, ProviderManager, ProviderStatus
 from sawyer.router.scheduler import ExpertScheduler
 from sawyer.storage.database import SawyerStorage
@@ -51,6 +59,9 @@ def create_app(
         description="Distributed MoE Inference Network — Cluster Status API",
         version="0.1.0",
     )
+
+    # Register signup/payment routes
+    api.include_router(signup_router)
 
     # Register all routes
     api.add_api_route("/", cluster_overview, methods=["GET"])
@@ -82,6 +93,9 @@ def create_app(
     api.add_api_route("/providers/network/summary", network_summary, methods=["GET"])
     api.add_api_route("/stats", aggregate_stats, methods=["GET"])
     api.add_api_route("/audit", audit_log, methods=["GET"])
+
+    # OpenAI-compatible inference endpoint
+    api.add_api_route("/v1/chat/completions", chat_completions, methods=["POST"])
 
     return api
 
@@ -476,6 +490,130 @@ async def network_summary(
     """Get network-wide provider statistics."""
     mgr = _get_provider_mgr()
     return mgr.get_network_summary()
+
+
+# ── OpenAI-Compatible Inference Endpoint ──────────────────────────────
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatCompletionRequest(BaseModel):
+    model: str = "mixtral-8x7b"
+    messages: list[ChatMessage]
+    temperature: float = 0.7
+    max_tokens: int = 512
+    stream: bool = False
+
+
+async def chat_completions(
+    request: ChatCompletionRequest,
+    api_key=Depends(verify_api_key),
+) -> dict[str, Any]:
+    """OpenAI-compatible /v1/chat/completions endpoint.
+
+    Validates the API key, checks token budget, routes the inference
+    request through the Sawyer pipeline, and deducts tokens.
+    """
+    import time as _time
+    import uuid
+
+    storage = _get_storage()
+    account = storage.load_account(api_key.user_id)
+
+    if not account or not account.is_active:
+        raise HTTPException(status_code=403, detail="Account inactive or not found.")
+
+    # Check token budget
+    if account.balance.total_available <= 0:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Token budget exhausted. Current balance: {account.balance.total_available} tokens. "
+            "Upgrade your plan at https://sawyer.infill.systems/#pricing",
+        )
+
+    # Build the prompt from messages
+    prompt_parts = []
+    for msg in request.messages:
+        if msg.role == "system":
+            prompt_parts.append(f"System: {msg.content}")
+        elif msg.role == "user":
+            prompt_parts.append(f"User: {msg.content}")
+        elif msg.role == "assistant":
+            prompt_parts.append(f"Assistant: {msg.content}")
+    prompt = "\n".join(prompt_parts)
+
+    # Route through the Sawyer inference pipeline
+    # In production, this dispatches to expert nodes via gRPC.
+    # For early access, it proxies to a local llama.cpp server.
+    try:
+        from sawyer.router.pipeline import InferencePipeline
+
+        pipeline = InferencePipeline()
+        result = pipeline.run_inference(
+            model=request.model,
+            prompt=prompt,
+            max_tokens=request.max_tokens,
+            temperature=request.temperature,
+            user_id=api_key.user_id,
+            api_key_id=api_key.key_id,
+        )
+
+        # Deduct tokens from the user's budget
+        tokens_used = result.get("total_tokens", 0)
+        storage.deduct_tokens(api_key.user_id, tokens_used)
+
+        # Log the inference
+        storage.log_inference(
+            user_id=api_key.user_id,
+            model=request.model,
+            input_tokens=result.get("prompt_tokens", 0),
+            output_tokens=result.get("completion_tokens", 0),
+            total_tokens=tokens_used,
+            latency_ms=result.get("latency_ms", 0),
+            node_id=result.get("node_id", "local"),
+        )
+
+        response_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+        created = int(_time.time())
+
+        return {
+            "id": response_id,
+            "object": "chat.completion",
+            "created": created,
+            "model": request.model,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": result.get("text", ""),
+                    },
+                    "finish_reason": "stop" if tokens_used < request.max_tokens else "length",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": result.get("prompt_tokens", 0),
+                "completion_tokens": result.get("completion_tokens", 0),
+                "total_tokens": tokens_used,
+            },
+        }
+
+    except ImportError:
+        # Inference pipeline not available — return a clear error
+        raise HTTPException(
+            status_code=503,
+            detail="Inference backend not available. The Sawyer cluster is starting up. "
+            "Please try again in a few minutes.",
+        ) from None
+    except Exception as e:
+        logger.error("Inference error for user %s: %s", api_key.user_id, e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Inference error: {e}",
+        ) from None
 
 
 def serve(host: str = "0.0.0.0", port: int = 8080) -> None:
