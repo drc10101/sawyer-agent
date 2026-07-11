@@ -291,6 +291,7 @@ class TestLocalInference:
         inference._discovered_models = [
             DiscoveredModel(id="test-model", backend="ollama", owned_by="local"),
         ]
+        inference._has_discovered = True
         inference._last_discovery_time = 9999999999
 
         # Should return cached results without network calls

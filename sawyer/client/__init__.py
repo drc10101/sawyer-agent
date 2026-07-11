@@ -124,6 +124,7 @@ class LocalInference:
         self._discovered_models: list[DiscoveredModel] = []
         self._last_discovery_time: float = 0.0
         self._discovery_ttl: float = 300.0  # Refresh every 5 minutes
+        self._has_discovered: bool = False  # Track whether discovery has run (empty list is still valid cache)
 
     # ── Model Discovery ──────────────────────────────────────────
 
@@ -132,11 +133,12 @@ class LocalInference:
 
         Results are cached for 5 minutes. Use force=True to refresh immediately.
         Probes all backends concurrently for fast discovery (~1s vs ~12s sequential).
+        Empty results are also cached — no backends found is a valid outcome.
         """
         now = time.time()
         if (
             not force
-            and self._discovered_models
+            and self._has_discovered
             and (now - self._last_discovery_time) < self._discovery_ttl
         ):
             return self._discovered_models
@@ -170,7 +172,7 @@ class LocalInference:
             for future in as_completed(futures):
                 name = futures[future]
                 try:
-                    backend_name, discovered = future.result(timeout=5)
+                    backend_name, discovered = future.result(timeout=3)
                 except Exception as exc:
                     logger.debug(f"  {name}: discovery failed ({exc})")
                     continue
@@ -182,6 +184,7 @@ class LocalInference:
 
         self._discovered_models = models
         self._last_discovery_time = now
+        self._has_discovered = True
         logger.info(f"Model discovery complete: {len(models)} total models available")
         return models
 
@@ -190,7 +193,7 @@ class LocalInference:
         try:
             import httpx
 
-            with httpx.Client(timeout=5) as client:
+            with httpx.Client(timeout=httpx.Timeout(3.0, connect=1.5)) as client:
                 resp = client.get(f"{self._ollama_url}/api/tags")
                 if resp.status_code != 200:
                     logger.debug(f"Ollama /api/tags returned {resp.status_code}")
@@ -224,7 +227,7 @@ class LocalInference:
         try:
             import httpx
 
-            with httpx.Client(timeout=httpx.Timeout(1.0, connect=1.0)) as client:
+            with httpx.Client(timeout=httpx.Timeout(2.0, connect=1.0)) as client:
                 resp = client.get(f"{url}/v1/models")
                 if resp.status_code != 200:
                     return None
@@ -261,7 +264,7 @@ class LocalInference:
         try:
             import httpx
 
-            with httpx.Client(timeout=httpx.Timeout(10.0, connect=5.0)) as client:
+            with httpx.Client(timeout=httpx.Timeout(5.0, connect=2.0)) as client:
                 resp = client.get(
                     f"{self._gemini_url}/models",
                     params={"key": self._gemini_api_key},
@@ -1167,7 +1170,7 @@ class LocalInference:
             futures = [pool.submit(_check, url, name) for url, name in backends]
             for future in futures:
                 try:
-                    name, ok = future.result(timeout=3)
+                    name, ok = future.result(timeout=2)
                     available[name] = ok
                 except Exception:
                     pass
@@ -1175,8 +1178,13 @@ class LocalInference:
         return available
 
     def get_models_list(self) -> list[dict]:
-        """Get OpenAI-compatible model list from all discovered models."""
-        self.discover_models()
+        """Get OpenAI-compatible model list from all discovered models.
+
+        Uses cached discovery results. If discovery hasn't run yet,
+        returns just the default models (sawyer + Gemini defaults).
+        Does NOT trigger discovery — callers should call discover_models() separately
+        if they want fresh results.
+        """
 
         models = []
         seen_ids = set()
@@ -2288,6 +2296,7 @@ if (geminiKey) {
 
 def create_client_app(config: SawyerConfig | None = None) -> FastAPI:
     """Create the FastAPI app for the consumer client."""
+    from fastapi import Depends
     from sawyer.auth.middleware import add_cors_middleware, validate_chat_request, verify_api_key
 
     config = config or SawyerConfig()
@@ -2309,27 +2318,35 @@ def create_client_app(config: SawyerConfig | None = None) -> FastAPI:
 
     @app.get("/health")
     async def health():
-        """Health check."""
+        """Health check — fast, never blocks on model discovery."""
         import asyncio
 
         backends = await asyncio.to_thread(local_inference.is_available)
-        models = await asyncio.to_thread(local_inference.discover_models)
+        # Use cached models if available; skip blocking discovery
+        models_count = len(local_inference._discovered_models) if local_inference._has_discovered else 0
+        # Trigger background discovery if cache is cold, but don't block
+        if not local_inference._has_discovered:
+            asyncio.ensure_future(asyncio.to_thread(local_inference.discover_models))
         return {
             "status": "ok",
             "backends": backends,
-            "models_available": len(models),
-            "mode": "available" if any(backends.values()) or models else "local",
+            "models_available": models_count,
+            "mode": "available" if any(backends.values()) or models_count else "local",
         }
 
     @app.get("/v1/models")
     async def list_models():
         """List available models (OpenAI-compatible).
 
-        Dynamically discovers models from Ollama, llama.cpp, vLLM, and LM Studio.
+        Returns immediately with cached models (always includes "sawyer" default).
+        Triggers background discovery if cache is cold — never blocks.
         """
         import asyncio
 
-        models = await asyncio.to_thread(local_inference.get_models_list)
+        # Return cached results immediately; trigger background discovery if stale
+        if not local_inference._has_discovered:
+            asyncio.ensure_future(asyncio.to_thread(local_inference.discover_models))
+        models = local_inference.get_models_list()
         return {"object": "list", "data": models}
 
     @app.post("/v1/chat/completions")
