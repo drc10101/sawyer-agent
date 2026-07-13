@@ -32,10 +32,10 @@ Sawyer is a standalone AI agent that runs on your machine with no telemetry, no 
 
 Download and double-click [`install-sawyer.bat`](install-sawyer.bat). It installs Python if needed, installs Sawyer, walks you through provider/API key setup, and puts a "Sawyer Agent" shortcut on your desktop. After that, just double-click the shortcut to chat.
 
-Or paste this into PowerShell to download and run it:
+Or paste this into PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/drc10101/sawyer-agent/master/install-sawyer.bat | Out-File -Encoding ascii install-sawyer.bat; .\install-sawyer.bat
+irm https://raw.githubusercontent.com/drc10101/sawyer-agent/master/install-sawyer.bat -OutFile install-sawyer.bat; .\install-sawyer.bat
 ```
 
 **Manual install:**
