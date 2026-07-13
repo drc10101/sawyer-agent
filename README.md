@@ -31,14 +31,14 @@ Sawyer is a standalone AI agent that runs on your machine with no telemetry, no 
 One line:
 
 ```bash
-pip install git+https://github.com/drc10101/sawyer-harness.git
+pip install git+https://github.com/drc10101/sawyer-agent.git
 ```
 
 Or clone and install editable:
 
 ```bash
-git clone https://github.com/drc10101/sawyer-harness.git
-cd sawyer-harness
+git clone https://github.com/drc10101/sawyer-agent.git
+cd sawyer-agent
 pip install -e .
 ```
 
