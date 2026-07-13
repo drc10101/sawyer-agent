@@ -176,5 +176,16 @@ def setup_wizard(config_path: str = "config.yaml") -> HarnessConfig:
         ),
     )
     config.save(config_path)
-    print(f"\nConfig saved to {config_path}\n")
+    print(f"\nConfig saved to {config_path}")
+
+    # Offer to create a desktop shortcut
+    try:
+        desktop_choice = input("\nCreate a desktop shortcut? [Y/n]: ").strip().lower()
+        if desktop_choice in ("", "y", "yes"):
+            from .setup_desktop import create_shortcut
+            create_shortcut()
+    except (EOFError, KeyboardInterrupt):
+        pass
+
+    print()
     return config

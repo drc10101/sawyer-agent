@@ -72,6 +72,8 @@ Config saved to config.yaml
 
 After setup, Sawyer starts the web UI at http://127.0.0.1:8765 -- ready to chat.
 
+The setup wizard also offers to create a desktop shortcut (with the Sawyer icon) so you can launch Sawyer with one click anytime.
+
 To reconfigure later, edit `config.yaml` directly or delete it and run `sawyer-web` again.
 
 ## Configuration
