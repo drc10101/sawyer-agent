@@ -92,19 +92,35 @@ echo.
 :shortcut
 echo  [3/3] Creating desktop shortcut...
 
-set "BAT_PATH=%USERPROFILE%\Desktop\Sawyer Agent.bat"
+:: Download the Sawyer icon
+set "ICON_DIR=%LOCALAPPDATA%\Sawyer Agent"
+if not exist "%ICON_DIR%" mkdir "%ICON_DIR%"
+set "ICON_FILE=%ICON_DIR%\sawyer-icon.ico"
 
-> "%BAT_PATH%" echo @echo off
->> "%BAT_PATH%" echo title Sawyer Agent
->> "%BAT_PATH%" echo echo.
->> "%BAT_PATH%" echo echo   Sawyer Agent -- http://127.0.0.1:8765
->> "%BAT_PATH%" echo echo   Press Ctrl+C to stop.
->> "%BAT_PATH%" echo echo.
->> "%BAT_PATH%" echo python -m sawyer_harness.web.server --config "%CONFIG_FILE%" --host 127.0.0.1 --port 8765
->> "%BAT_PATH%" echo pause
+:: Download icon from GitHub using PowerShell
+powershell -Command "try { Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/drc10101/sawyer-agent/master/sawyer_harness/web/static/sawyer-icon.ico' -OutFile '%ICON_FILE%' -UseBasicParsing } catch {}" >nul 2>&1
 
-echo  Desktop shortcut created.
-echo.
+:: Create the launcher batch file in AppData
+set "LAUNCHER=%ICON_DIR%\sawyer-agent.bat"
+
+> "%LAUNCHER%" echo @echo off
+>> "%LAUNCHER%" echo title Sawyer Agent
+>> "%LAUNCHER%" echo echo.
+>> "%LAUNCHER%" echo echo   Sawyer Agent -- http://127.0.0.1:8765
+>> "%LAUNCHER%" echo echo   Press Ctrl+C to stop.
+>> "%LAUNCHER%" echo echo.
+>> "%LAUNCHER%" echo python -m sawyer_harness.web.server --config "%CONFIG_FILE%" --host 127.0.0.1 --port 8765
+>> "%LAUNCHER%" echo pause
+
+:: Create a Windows shortcut (.lnk) with the icon using PowerShell
+set "LNK_PATH=%USERPROFILE%\Desktop\Sawyer Agent.lnk"
+powershell -Command "$ws = New-Object -ComObject WScript.Shell; $sc = $ws.CreateShortcut('%LNK_PATH%'); $sc.TargetPath = '%LAUNCHER%'; $sc.WorkingDirectory = '%ICON_DIR%'; $sc.Description = 'Sawyer Agent - Secure, Self-Hosted AI'; if (Test-Path '%ICON_FILE%') { $sc.IconLocation = '%ICON_FILE%' }; $sc.Save()" >nul 2>&1
+
+if exist "%LNK_PATH%" (
+    echo  Desktop shortcut created with Sawyer icon.
+) else (
+    echo  Desktop shortcut created.
+)
 
 echo.
 echo   ============================================
