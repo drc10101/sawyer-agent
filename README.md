@@ -18,6 +18,10 @@
 
 ---
 
+<p align="center">
+  <img src="docs/sawyer-screenshot.png" alt="Sawyer Agent web UI" width="768">
+</p>
+
 Sawyer is a standalone AI agent that runs on your machine with no telemetry, no phone-home, and no data leaving your network. It ships with 19 tools, 5 built-in skills, and a ClawHub importer -- connect any OpenAI-compatible LLM and go.
 
 **Principles:** Secure by default. Model-agnostic. Self-hosted. Observable. Self-improving.
