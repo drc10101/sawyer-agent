@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sawyer-harness"
+version = "0.1.0"
+description = "Secure, model-agnostic, self-hosted AI agent framework"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=1.30.0",
+    "anthropic>=0.25.0",
+    "httpx>=0.27.0",
+    "pyyaml>=6.0",
+    "apscheduler>=3.10.0",
+    "python-telegram-bot>=21.0",
+    "rich>=13.0",
+    "prompt-toolkit>=3.0",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0",
+    "jinja2>=3.1.0",
+    "python-multipart>=0.0.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.4",
+    "black>=24.0",
+    "mypy>=1.10",
+]
+sawyer = [
+    "sawyer-sdk>=0.1.0",  # placeholder for Sawyer inference client
+]
+
+[project.scripts]
+sawyer-harness = "sawyer_harness.cli:main"
+sawyer-web = "sawyer_harness.web.server:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true

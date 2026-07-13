@@ -1,0 +1,12 @@
+# Sawyer Agent example configuration
+# Copy to config.yaml and fill in your API key
+
+llm:
+  provider: ollama           # ollama, openai, anthropic
+  model: glm-5.1:cloud
+  api_key: YOUR_KEY_HERE     # Get from https://ollama.com
+  base_url: https://ollama.com/v1
+
+server:
+  host: 127.0.0.1
+  port: 8765

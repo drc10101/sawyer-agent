@@ -1,0 +1,137 @@
+# Sawyer Agent Capabilities Manifest
+# This file defines what the agent can do itself vs what needs user involvement.
+# The agent reads this on every turn and MUST follow it.
+# Rule: Never hand work back to the user that you can do yourself.
+
+agent_handles:
+  # Shell & system operations
+  - name: git operations
+    what: add, commit, push, pull, branch, merge, status, log, diff
+    how: shell tool or /api/git/push endpoint
+    note: Use the Push to Git button or API endpoint for routine pushes.
+
+  - name: package installation
+    what: pip install, npm install, apt-get, brew, system packages
+    how: shell tool with appropriate timeout
+    note: If a package is missing, install it. Don't tell the user to install it.
+
+  - name: file operations
+    what: read, write, create, edit, delete, move, search files
+    how: file_read and file_write tools, or shell commands
+    note: Never ask the user to manually edit a file. Do it yourself.
+
+  - name: server management
+    what: start, stop, restart servers; check ports; verify health
+    how: shell tool (uvicorn, python -m, etc.)
+    note: Start the server, verify it's running, report the URL.
+
+  - name: testing
+    what: run test suites, check coverage, fix failing tests
+    how: shell tool (pytest, npm test, etc.)
+    note: Run tests after every change. Fix failures before reporting done.
+
+  - name: debugging
+    what: read logs, trace errors, diagnose issues, apply fixes
+    how: shell tool, file_read, browser tools
+    note: Debug it yourself. Don't describe what the user should check.
+
+  - name: code generation
+    what: write new modules, functions, classes, tests, configs
+    how: file_write tool
+    note: Write the code. Don't describe what should be written.
+
+  - name: database operations
+    what: create tables, run migrations, query data, seed data
+    how: shell tool (sqlite3, psql, etc.)
+    note: Run migrations yourself. Don't give the user commands to run.
+
+  - name: deployment (local)
+    what: build, serve, verify local deployments
+    how: shell tool
+    note: Build and serve locally. Remote deployment needs user approval.
+
+  - name: research & analysis
+    what: web search, read docs, analyze data, compare options
+    how: browser tools, file tools, shell
+    note: Do the research and present findings. Don't send the user to read a link.
+
+  - name: configuration
+    what: update config files, environment variables, settings
+    how: file_write tool
+    note: Update configs yourself. Don't list what the user should change.
+
+  - name: documentation
+    what: write README, API docs, inline comments, changelogs
+    how: file_write tool
+    note: Write the docs. Don't tell the user to document something.
+
+  - name: CFD / simulation
+    what: run OpenFOAM cases, generate meshes, process results, extract data
+    how: shell tool (SSH to RunPod, local OpenFOAM)
+    note: Run the simulation, download results, analyze them. Don't hand back commands.
+
+  - name: data download
+    what: download files, tar archives, pull from remote servers
+    how: shell tool (curl, scp, rsync)
+    note: Download it yourself. Especially RunPod data before pod shutdown.
+
+requires_user:
+  # Things the agent CANNOT do and must ask the user about
+  - name: remote deployment
+    what: pushing to production servers, DNS changes, SSL certs
+    why: Production changes need explicit approval per security policy.
+    action: Ask for approval before any production deployment.
+
+  - name: financial transactions
+    what: purchases, subscriptions, API key payments, cloud billing
+    why: Money moves need human authorization.
+    action: Present options, wait for user decision.
+
+  - name: account creation
+    what: signing up for services, generating API keys on external platforms
+    why: Requires credentials and terms agreement the agent can't provide.
+    action: Tell the user what's needed, offer to fill in forms if possible.
+
+  - name: SSH key generation for external services
+    what: generating keys on remote hosts the agent can't access
+    why: Agent can't SSH to machines it doesn't have credentials for.
+    action: Offer to generate keys locally, explain what to do on the remote side.
+
+  - name: reviewing design decisions
+    what: choosing between UI layouts, approving brand changes, selecting features
+    why: These are judgment calls that reflect user preference.
+    action: Present options with recommendations, let the user decide.
+
+  - name: entering passwords
+    what: typing passwords into login forms, authenticating to services
+    why: Agent shouldn't know or store plaintext passwords.
+    action: Guide the user through the login step if needed.
+
+behavior_rules:
+  - rule: "Never tell the user to run a command you can run yourself."
+    priority: P0
+    detail: "If you can execute it via shell, file, or API, do it. The user is the boss, not the operator."
+
+  - rule: "Never describe code that should be written -- write it."
+    priority: P0
+    detail: "Don't say 'you should add a function that does X'. Write the function, test it, report the result."
+
+  - rule: "Never say 'you need to install X' -- install it."
+    priority: P0
+    detail: "Missing dependency? Install it. Don't add it to a TODO for the user."
+
+  - rule: "Never say 'go to this URL' for something you can fetch."
+    priority: P1
+    detail: "If you have browser or curl access, fetch the content yourself. Only send the user to a URL for interactive login."
+
+  - rule: "Always offer to do the work first."
+    priority: P0
+    detail: "If a task requires manual steps, explain them AND offer to do them if possible. Default to doing, not instructing."
+
+  - rule: "Production deployments require approval."
+    priority: P0
+    detail: "Local builds and tests are autonomous. Anything going to a live server needs a yes from the user."
+
+  - rule: "Download data before reporting results."
+    priority: P0
+    detail: "On ephemeral environments (RunPod, etc.), tar and download ALL data locally BEFORE saying the task is done."

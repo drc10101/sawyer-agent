@@ -1,0 +1,2438 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sawyer Agent</title>
+<link rel="icon" type="image/x-icon" href="/icons/favicon.ico">
+<link rel="icon" type="image/svg+xml" href="/icons/favicon.svg">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#12c7ef">
+<link rel="stylesheet" href="/static/styles/tokens.css">
+<link rel="stylesheet" href="/static/styles/base.css">
+<link rel="stylesheet" href="/static/styles/panels.css">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+</head>
+<body>
+<div class="app-layout">
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <svg class="logo" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+        <path d="M2 17l10 5 10-5"/>
+        <path d="M2 12l10 5 10-5"/>
+      </svg>
+      <h1><span class="brand-accent">Sawyer</span> Agent</h1>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="sidebar-nav-item active" data-panel="chat" onclick="switchPanel('chat')">
+        <span class="nav-icon"><i data-lucide="message-square"></i></span>
+        <span class="nav-label">Chat</span>
+      </div>
+      <div class="sidebar-nav-item" data-panel="goals" onclick="switchPanel('goals')">
+        <span class="nav-icon"><i data-lucide="target"></i></span>
+        <span class="nav-label">Goals</span>
+      </div>
+      <div class="sidebar-nav-item" data-panel="skill-creator" onclick="switchPanel('skill-creator')">
+        <span class="nav-icon"><i data-lucide="sparkles"></i></span>
+        <span class="nav-label">Skill Creator</span>
+      </div>
+      <div class="sidebar-nav-item" data-panel="tools" onclick="switchPanel('tools')">
+        <span class="nav-icon"><i data-lucide="wrench"></i></span>
+        <span class="nav-label">Tools</span>
+      </div>
+      <div class="sidebar-nav-item" data-panel="files" onclick="switchPanel('files')">
+        <span class="nav-icon"><i data-lucide="folder"></i></span>
+        <span class="nav-label">Files</span>
+      </div>
+      <div class="sidebar-nav-item" data-panel="models" onclick="switchPanel('models')">
+        <span class="nav-icon"><i data-lucide="cpu"></i></span>
+        <span class="nav-label">Models</span>
+      </div>
+      <div class="sidebar-nav-item" data-panel="sessions" onclick="switchPanel('sessions')">
+        <span class="nav-icon"><i data-lucide="users"></i></span>
+        <span class="nav-label">Sessions</span>
+      </div>
+      <div class="sidebar-nav-item" data-panel="projects" onclick="switchPanel('projects')">
+        <span class="nav-icon"><i data-lucide="layout-dashboard"></i></span>
+        <span class="nav-label">Projects</span>
+      </div>
+      <div class="sidebar-nav-item" data-panel="cron" onclick="switchPanel('cron')">
+        <span class="nav-icon"><i data-lucide="clock"></i></span>
+        <span class="nav-label">Cron</span>
+      </div>
+      <div class="sidebar-nav-item" data-panel="context" onclick="switchPanel('context')">
+        <span class="nav-icon"><i data-lucide="brain"></i></span>
+        <span class="nav-label">Memory</span>
+      </div>
+      <div class="sidebar-nav-item" data-panel="keys" onclick="switchPanel('keys')">
+        <span class="nav-icon"><i data-lucide="key-round"></i></span>
+        <span class="nav-label">Keys</span>
+      </div>
+      <div class="sidebar-nav-item" data-panel="rules" onclick="switchPanel('rules')">
+        <span class="nav-icon"><i data-lucide="scale"></i></span>
+        <span class="nav-label">Rules</span>
+      </div>
+      <div class="sidebar-nav-item" data-panel="agents" onclick="switchPanel('agents')">
+        <span class="nav-icon"><i data-lucide="users"></i></span>
+        <span class="nav-label">Agents</span>
+      </div>
+      <div class="sidebar-nav-item" data-panel="orchestration" onclick="switchPanel('orchestration')">
+        <span class="nav-icon"><i data-lucide="network"></i></span>
+        <span class="nav-label">Orchestrate</span>
+      </div>
+
+    </nav>
+    <div class="sidebar-footer">
+      <button onclick="gitPush()" title="Push to Git" id="git-push-btn"><i data-lucide="upload-cloud"></i></button>
+      <button onclick="toggleSidebar()" title="Collapse sidebar"><i data-lucide="panel-left-close"></i></button>
+      <button onclick="toggleTheme()" title="Toggle theme" id="theme-btn"><i data-lucide="moon"></i></button>
+    </div>
+  </aside>
+
+  <!-- Main Area -->
+  <div class="main-area">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <button class="btn--icon" onclick="toggleSidebar()" title="Toggle sidebar"><i data-lucide="menu"></i></button>
+        <span id="panel-title" style="font-size:14px;font-weight:700;color:var(--text-0)">Chat</span>
+      </div>
+      <div class="header-right">
+        <div class="metric-pill">
+          <span class="pulse" id="health-pulse"></span>
+          <span>Model</span>
+          <span class="metric-value" id="metric-model">--</span>
+        </div>
+        <div class="metric-pill metric-pill--ctx" id="ctx-meter-header" title="Context window usage">
+          <span style="font-size:10px;color:var(--text-2)">CTX</span>
+          <span class="metric-value" id="metric-tokens" style="font-variant-numeric:tabular-nums">0 / 128K</span>
+          <div class="ctx-meter-bar"><div class="ctx-meter-fill" id="ctx-meter-fill" style="width:0%"></div></div>
+        </div>
+        <div class="metric-pill">
+          <span>Tasks</span>
+          <span class="metric-value" id="metric-tasks">0</span>
+        </div>
+        <button class="btn btn--subtle btn-sm" onclick="newSession()" title="New session">+ NEW SESSION</button>
+      </div>
+    </header>
+
+    <!-- Content Area -->
+    <div class="content-area">
+
+      <!-- Chat Panel -->
+      <div class="panel active" id="panel-chat">
+        <div class="chat-container">
+          <div class="chat-messages" id="chat-messages"></div>
+          <div class="chat-input">
+            <textarea id="chat-input" placeholder="Send a message..." rows="2" autofocus></textarea>
+            <button class="btn btn--primary" id="send-btn" onclick="sendMessage()">Send</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Context / Memory Panel -->
+      <div class="panel" id="panel-context">
+        <div style="max-width:900px">
+          <h3 style="margin-bottom:16px">Context Window Manager</h3>
+          <div class="ctrl-grid" style="margin-bottom:20px">
+            <div class="ctrl-card" id="ctx-model-card">
+              <h3>Model Context</h3>
+              <div style="font-size:13px;color:var(--text-1)">
+                <div style="margin-bottom:8px">Window: <strong id="ctx-window-size">--</strong> tokens</div>
+                <div style="margin-bottom:8px">Model: <strong id="ctx-model-name">--</strong></div>
+                <div style="margin-bottom:8px">Compression: <span id="ctx-comp-ratio" class="badge badge--neutral">--</span></div>
+              </div>
+              <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+                <select id="ctx-model-select" onchange="setModelContext(this.value)">
+                  <option value="">-- Select model --</option>
+                </select>
+                <button class="btn btn--primary btn-sm" onclick="compressCurrentSession()">Compress Now</button>
+              </div>
+            </div>
+            <div class="ctrl-card" id="ctx-budget-card">
+              <h3>Token Budget</h3>
+              <table id="ctx-budget-table">
+                <tr><th>Category</th><th>Tokens</th><th>%</th></tr>
+                <tr><td>System</td><td id="ctx-budget-system">--</td><td id="ctx-budget-system-pct">--</td></tr>
+                <tr><td>Memory</td><td id="ctx-budget-memory">--</td><td id="ctx-budget-memory-pct">--</td></tr>
+                <tr><td>Skills</td><td id="ctx-budget-skills">--</td><td id="ctx-budget-skills-pct">--</td></tr>
+                <tr><td>Session Context</td><td id="ctx-budget-session">--</td><td id="ctx-budget-session-pct">--</td></tr>
+                <tr><td>Recent Messages</td><td id="ctx-budget-recent">--</td><td id="ctx-budget-recent-pct">--</td></tr>
+                <tr><td>Free</td><td id="ctx-budget-free">--</td><td id="ctx-budget-free-pct">--</td></tr>
+              </table>
+            </div>
+          </div>
+          <div id="compression-result" style="display:none" class="ctrl-card">
+            <h3>Last Compression</h3>
+            <div id="compression-stats" style="font-size:13px;color:var(--text-1)"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Models Panel -->
+      <div class="panel" id="panel-models">
+        <div class="ctrl-grid" id="models-grid"></div>
+      </div>
+
+      <!-- Skills Panel -->
+      <div class="panel" id="panel-skill-creator">
+        <div style="max-width:1200px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <h3 style="color:var(--brand);font-size:1rem">Skill Creator</h3>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn--subtle btn-sm" id="sc-tab-browse" onclick="switchSkillTab('browse')" style="border-color:var(--brand);color:var(--brand)">Browse</button>
+              <button class="btn btn--subtle btn-sm" id="sc-tab-create" onclick="switchSkillTab('create')">Create</button>
+            </div>
+          </div>
+
+          <!-- Browse tab -->
+          <div id="sc-browse">
+            <div id="skills-list" class="skills-grid"></div>
+            <div id="skill-detail" class="skill-detail" style="display:none"></div>
+          </div>
+
+          <!-- Create tab -->
+          <div id="sc-create" style="display:none">
+            <div style="font-size:13px;color:var(--text-1);margin-bottom:16px">
+              Collaborative skill design. Describe what you need, the agent theorizes a skill, you refine it together, then approve.
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:12px">
+              <button class="btn btn--primary btn-sm" onclick="startNewSession()">New Session</button>
+              <button class="btn btn--subtle btn-sm" onclick="loadSkillSessions()">Refresh</button>
+            </div>
+
+            <!-- Active session -->
+            <div id="sc-session" style="display:none">
+              <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+                <span class="badge badge--brand" id="sc-phase">observe</span>
+                <span style="font-size:12px;color:var(--text-2)" id="sc-session-id"></span>
+                <span style="font-size:11px;color:var(--text-2);margin-left:auto">Revision: <span id="sc-revisions">0</span></span>
+              </div>
+
+              <!-- Step 1: Describe -->
+              <div id="sc-step-describe" class="ctrl-card" style="margin-bottom:12px">
+                <h3>1. Describe Your Need</h3>
+                <textarea id="sc-task" placeholder="What task do you keep repeating? What would you like to automate or make easier?" style="width:100%;min-height:80px"></textarea>
+                <textarea id="sc-context" placeholder="Any additional context (optional)" style="width:100%;min-height:40px;margin-top:6px"></textarea>
+                <button class="btn btn--primary" style="margin-top:8px" onclick="theorizeSkill()">Theorize Skill</button>
+              </div>
+
+              <!-- Step 2: Review & Refine -->
+              <div id="sc-step-review" class="ctrl-card" style="display:none;margin-bottom:12px">
+                <h3>2. Review & Refine</h3>
+                <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Name</label><br>
+                <input id="sc-name" style="width:300px"></div>
+                <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Category</label><br>
+                <input id="sc-category" style="width:200px"></div>
+                <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Description</label><br>
+                <input id="sc-description" style="width:100%"></div>
+                <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Triggers (comma separated)</label><br>
+                <input id="sc-triggers" style="width:100%"></div>
+                <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Procedure (one step per line)</label><br>
+                <textarea id="sc-procedure" style="width:100%;min-height:120px;font-family:var(--font-mono);font-size:12px"></textarea></div>
+                <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Pitfalls (one per line)</label><br>
+                <textarea id="sc-pitfalls" style="width:100%;min-height:60px;font-family:var(--font-mono);font-size:12px"></textarea></div>
+                <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Constraints (one per line)</label><br>
+                <textarea id="sc-constraints" style="width:100%;min-height:60px;font-family:var(--font-mono);font-size:12px"></textarea></div>
+                <div style="display:flex;gap:8px;margin-top:12px">
+                  <button class="btn btn--primary" onclick="refineSkill()">Refine</button>
+                </div>
+              </div>
+
+              <!-- Step 3: Approve -->
+              <div id="sc-step-approve" class="ctrl-card" style="display:none;margin-bottom:12px">
+                <h3>3. Approve or Reject</h3>
+                <div style="font-size:13px;color:var(--text-1);margin:8px 0" id="sc-review-summary"></div>
+                <div style="display:flex;gap:8px;margin-top:12px">
+                  <button class="btn btn--primary" onclick="approveSkill()">Approve & Create</button>
+                  <button class="btn btn--danger" onclick="rejectSkill()">Reject</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Session list -->
+            <div id="sc-sessions-list" style="margin-top:16px">
+              <div style="color:var(--text-2);font-size:13px">Click "New Session" to start designing a skill.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Goals Panel -->
+      <div class="panel" id="panel-goals">
+        <div class="goal-form">
+          <h3 style="margin-bottom:8px">New Goal</h3>
+          <textarea id="goal-input" placeholder="What do you want to accomplish?"></textarea>
+          <textarea id="goal-context" placeholder="Additional context (optional)" rows="2" style="margin-top:6px"></textarea>
+          <button class="btn btn--primary" style="margin-top:8px" onclick="createGoal()">Decompose Goal</button>
+        </div>
+        <div class="goals-list" id="goals-list"></div>
+      </div>
+
+      <!-- Tools Panel -->
+      <div class="panel" id="panel-tools">
+        <div class="ctrl-grid" id="tools-grid"></div>
+      </div>
+
+      <!-- Sessions Panel -->
+      <div class="panel" id="panel-sessions">
+        <div style="max-width:900px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <h3>Session Notes & Suggestions</h3>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn--primary btn-sm" onclick="generateNotes()">Generate Notes</button>
+              <button class="btn btn--subtle btn-sm" onclick="saveNotes()">Save Notes</button>
+              <button class="btn btn--subtle btn-sm" onclick="loadSuggestions()">Get Suggestions</button>
+            </div>
+          </div>
+          <div id="session-suggestions" style="margin-bottom:20px">
+            <div style="color:var(--text-2);font-size:13px">Loading suggestions...</div>
+          </div>
+          <div id="session-notes-display" style="margin-bottom:20px">
+            <div style="color:var(--text-2);font-size:13px">Click "Generate Notes" to create session notes.</div>
+          </div>
+          <h4 style="margin-bottom:10px">Active Sessions</h4>
+          <div id="sessions-list"></div>
+        </div>
+      </div>
+
+      <!-- Projects Panel -->
+      <div class="panel" id="panel-projects">
+        <div style="max-width:900px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <h3>Projects</h3>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn--primary btn-sm" onclick="showNewProjectForm()">New Project</button>
+            </div>
+          </div>
+          <div id="current-project" class="ctrl-card" style="margin-bottom:16px">
+            <h3>Current Project</h3>
+            <div style="color:var(--text-2);font-size:13px">No project open</div>
+          </div>
+          <div id="projects-list"></div>
+          <div id="new-project-form" style="display:none" class="ctrl-card">
+            <h3>Create Project</h3>
+            <div style="margin:8px 0">
+              <label style="font-size:11px;color:var(--text-2)">Name</label><br>
+              <input id="new-project-name" style="width:300px">
+            </div>
+            <div style="margin:8px 0">
+              <label style="font-size:11px;color:var(--text-2)">Description</label><br>
+              <input id="new-project-desc" style="width:100%">
+            </div>
+            <button class="btn btn--primary btn-sm" onclick="createProject()">Create</button>
+            <button class="btn btn--ghost" onclick="document.getElementById('new-project-form').style.display='none'">Cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Files Panel -->
+      <div class="panel" id="panel-files">
+        <div style="max-width:1200px">
+          <h3 style="margin-bottom:16px">File Drop Zone</h3>
+          <div class="drop-zone" id="drop-zone" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" onclick="document.getElementById('file-input').click()">
+            <h3>Drop files here</h3>
+            <p>or click to browse -- files are placed in the project's outputs/uploads/ directory</p>
+          </div>
+          <input type="file" id="file-input" style="display:none" onchange="handleFileSelect(event)" multiple>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <h4>Uploaded Files</h4>
+            <button class="btn btn--ghost btn-sm" onclick="loadUploadedFiles()">Refresh</button>
+          </div>
+          <div id="uploaded-files" class="file-list">
+            <div style="color:var(--text-2);font-size:13px">No files uploaded yet.</div>
+          </div>
+          <div style="margin-top:20px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+              <h4>Project Output Files</h4>
+              <button class="btn btn--ghost btn-sm" onclick="loadProjectFiles()">Refresh</button>
+            </div>
+            <div id="project-files" class="file-list">
+              <div style="color:var(--text-2);font-size:13px">Open a project to see its files.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cron Panel -->
+      <div class="panel" id="panel-cron">
+        <div style="max-width:900px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <h3 style="color:var(--brand);font-size:1rem">Cron Manager</h3>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn--primary btn-sm" onclick="showAddCronForm()">+ New Job</button>
+              <button class="btn btn--subtle btn-sm" onclick="loadCron()">Refresh</button>
+            </div>
+          </div>
+          <div id="cron-list"></div>
+
+          <!-- Add cron job form -->
+          <div id="cron-add-form" class="ctrl-card" style="display:none;margin-top:16px">
+            <h3>Create Scheduled Job</h3>
+            <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Job Name</label><br>
+            <input id="cron-name" placeholder="e.g. morning-briefing" style="width:300px"></div>
+            <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Schedule Type</label><br>
+            <select id="cron-type" style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px" onchange="onCronTypeChange()">
+              <option value="cron">Cron (recurring)</option>
+              <option value="interval">Interval (every N minutes)</option>
+              <option value="one_shot">One-shot (run once at time)</option>
+            </select></div>
+            <div id="cron-expr-group" style="margin:8px 0">
+              <label style="font-size:11px;color:var(--text-2)">Cron Expression <span style="color:var(--text-3)">(min hour day month day_of_week)</span></label><br>
+              <input id="cron-expr" placeholder="0 7 * * *" style="width:200px;font-family:var(--font-mono)">
+            </div>
+            <div id="cron-interval-group" style="margin:8px 0;display:none">
+              <label style="font-size:11px;color:var(--text-2)">Interval</label><br>
+              <input id="cron-interval" placeholder="30m" style="width:120px;font-family:var(--font-mono)"> <span style="font-size:11px;color:var(--text-2)">(30s, 5m, 1h, 2d)</span>
+            </div>
+            <div id="cron-oneshot-group" style="margin:8px 0;display:none">
+              <label style="font-size:11px;color:var(--text-2)">Run At (ISO datetime)</label><br>
+              <input id="cron-oneshot" placeholder="2026-07-13T09:00:00" style="width:260px;font-family:var(--font-mono)">
+            </div>
+            <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Prompt (sent to agent when job fires)</label><br>
+            <textarea id="cron-prompt" placeholder="Check the daily report and summarize key findings..." style="width:100%;min-height:80px"></textarea></div>
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <button class="btn btn--primary" onclick="createCronJobForm()">Create Job</button>
+              <button class="btn btn--subtle" onclick="hideCronForm()">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Agent Rules Panel -->
+      <div class="panel" id="panel-rules">
+        <div style="max-width:1000px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <h3 style="color:var(--brand);font-size:1rem">Agent Rules</h3>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn--primary btn-sm" onclick="showAddRuleForm()">+ Add Rule</button>
+              <button class="btn btn--subtle btn-sm" onclick="loadRules()">Refresh</button>
+            </div>
+          </div>
+          <div style="font-size:13px;color:var(--text-2);margin-bottom:16px">
+            Custom rules that supersede runtime defaults. Rules are injected into the agent's system prompt after capabilities rules.
+            Priority levels: <strong>P0</strong> (critical), <strong>P1</strong> (high), <strong>P2</strong> (medium), <strong>P3</strong> (low).
+          </div>
+
+          <!-- Filter bar -->
+          <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+            <label style="font-size:12px;color:var(--text-2)">Filter:</label>
+            <select id="rules-filter-scope" onchange="loadRules()" style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:4px 8px;color:var(--text-0);font-size:12px">
+              <option value="">All scopes</option>
+              <option value="global">Global</option>
+              <option value="agent">Agent-specific</option>
+              <option value="session">Session-only</option>
+              <option value="cron">Cron-only</option>
+            </select>
+            <label style="font-size:12px;color:var(--text-2);margin-left:8px">
+              <input type="checkbox" id="rules-enabled-only" onchange="loadRules()"> Enabled only
+            </label>
+          </div>
+
+          <!-- Rules list -->
+          <div id="rules-list"></div>
+
+          <!-- Add/Edit rule form -->
+          <div id="rules-add-form" class="ctrl-card" style="display:none;margin-top:16px">
+            <h3 id="rules-form-title">Add Rule</h3>
+            <input type="hidden" id="rule-edit-id" value="">
+            <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Name</label><br>
+            <input id="rule-name" placeholder="e.g. No auto-push" style="width:300px"></div>
+            <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Rule <span style="color:var(--text-3)">(imperative statement)</span></label><br>
+            <input id="rule-rule" placeholder="e.g. Never push code to production without explicit approval." style="width:100%"></div>
+            <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Detail <span style="color:var(--text-3)">(optional explanation)</span></label><br>
+            <textarea id="rule-detail" placeholder="Additional context or examples" style="width:100%;min-height:40px"></textarea></div>
+            <div style="display:flex;gap:12px;margin:8px 0">
+              <div><label style="font-size:11px;color:var(--text-2)">Priority</label><br>
+              <select id="rule-priority" style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px;width:100px">
+                <option value="P0">P0 Critical</option>
+                <option value="P1">P1 High</option>
+                <option value="P2" selected>P2 Medium</option>
+                <option value="P3">P3 Low</option>
+              </select></div>
+              <div><label style="font-size:11px;color:var(--text-2)">Scope</label><br>
+              <select id="rule-scope" style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px;width:140px">
+                <option value="global">Global</option>
+                <option value="agent">Agent-specific</option>
+                <option value="session">Session-only</option>
+                <option value="cron">Cron-only</option>
+              </select></div>
+              <div><label style="font-size:11px;color:var(--text-2)">Target Agent</label><br>
+              <input id="rule-agent" placeholder="(if agent scope)" style="width:140px"></div>
+            </div>
+            <div style="margin:8px 0">
+              <label style="font-size:11px;color:var(--text-2)"><input type="checkbox" id="rule-enabled" checked> Enabled</label>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <button class="btn btn--primary" onclick="saveRule()">Save</button>
+              <button class="btn btn--subtle" onclick="hideRuleForm()">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Agent Creator Panel -->
+      <div class="panel" id="panel-agents">
+        <div style="max-width:1100px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <h3 style="color:var(--brand);font-size:1rem">Agent Creator</h3>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn--primary btn-sm" onclick="showAddAgentForm()">+ New Agent</button>
+              <button class="btn btn--subtle btn-sm" onclick="loadAgents()">Refresh</button>
+            </div>
+          </div>
+          <div style="font-size:13px;color:var(--text-2);margin-bottom:16px">
+            Create specialized agent templates with pre-defined purpose, system prompt, rules, and model settings.
+            Spawn a session from any template to get a pre-configured agent ready for work.
+          </div>
+
+          <!-- Category filter -->
+          <div style="display:flex;gap:8px;margin-bottom:12px" id="agent-categories"></div>
+
+          <!-- Agent templates grid -->
+          <div id="agents-grid" class="ctrl-grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))"></div>
+
+          <!-- Add/Edit agent form -->
+          <div id="agents-add-form" class="ctrl-card" style="display:none;margin-top:16px">
+            <h3 id="agents-form-title">Create Agent</h3>
+            <input type="hidden" id="agent-edit-id" value="">
+            <div style="display:flex;gap:16px;flex-wrap:wrap">
+              <div style="flex:1;min-width:240px">
+                <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Name *</label><br>
+                <input id="agent-name" placeholder="e.g. Security Scanner" style="width:100%"></div>
+                <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Description</label><br>
+                <input id="agent-description" placeholder="What this agent specializes in" style="width:100%"></div>
+                <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Category</label><br>
+                <select id="agent-category" style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px;width:100%">
+                  <option value="general">General</option>
+                  <option value="development">Development</option>
+                  <option value="research">Research</option>
+                  <option value="creative">Creative</option>
+                  <option value="operations">Operations</option>
+                  <option value="security">Security</option>
+                </select></div>
+                <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Icon (Lucide icon name)</label><br>
+                <input id="agent-icon" value="bot" placeholder="bot" style="width:120px"></div>
+              </div>
+              <div style="flex:1;min-width:240px">
+                <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">System Prompt</label><br>
+                <textarea id="agent-system-prompt" placeholder="You are a specialized agent..." style="width:100%;min-height:120px"></textarea></div>
+                <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Agent-Specific Rules (one per line: rule | detail)</label><br>
+                <textarea id="agent-rules" placeholder="Always run tests before reporting done | Run pytest after every change&#10;Never describe code -- write it | Don't tell the user to write code" style="width:100%;min-height:60px;font-family:var(--font-mono);font-size:12px"></textarea></div>
+              </div>
+            </div>
+            <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px">
+              <div><label style="font-size:11px;color:var(--text-2)">Model</label><br>
+              <input id="agent-model" placeholder="gpt-4o" style="width:140px"></div>
+              <div><label style="font-size:11px;color:var(--text-2)">Provider</label><br>
+              <input id="agent-provider" placeholder="openai" style="width:120px"></div>
+              <div><label style="font-size:11px;color:var(--text-2)">Temperature</label><br>
+              <input id="agent-temperature" type="number" step="0.1" min="0" max="2" value="0.7" style="width:80px"></div>
+              <div><label style="font-size:11px;color:var(--text-2)">Max Tokens</label><br>
+              <input id="agent-max-tokens" type="number" value="4096" style="width:100px"></div>
+            </div>
+
+            <!-- Soul Section -->
+            <div style="margin-top:16px;border-top:1px solid var(--border-1);padding-top:12px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                <i data-lucide="sparkles" style="width:14px;height:14px;color:var(--brand)"></i>
+                <span style="font-size:13px;font-weight:600;color:var(--text-0)">Soul</span>
+                <span style="font-size:11px;color:var(--text-2)">-- who this agent is, what it values, how it behaves</span>
+              </div>
+              <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Identity</label><br>
+              <input id="agent-soul-identity" placeholder="e.g. A focused executor. Give me a briefing and I deliver." style="width:100%"></div>
+              <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">
+                <div style="flex:1;min-width:200px"><label style="font-size:11px;color:var(--text-2)">Strengths (comma-separated)</label><br>
+                <input id="agent-soul-strengths" placeholder="coding, debugging, clean architecture" style="width:100%"></div>
+                <div style="flex:1;min-width:200px"><label style="font-size:11px;color:var(--text-2)">Personality (comma-separated)</label><br>
+                <input id="agent-soul-personality" placeholder="direct, thorough, pragmatic" style="width:100%"></div>
+              </div>
+              <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">
+                <div style="flex:1;min-width:200px"><label style="font-size:11px;color:var(--text-2)">Values (comma-separated)</label><br>
+                <input id="agent-soul-values" placeholder="done means done, no patches, quality first" style="width:100%"></div>
+                <div style="flex:1;min-width:200px"><label style="font-size:11px;color:var(--text-2)">Quirks (one per line)</label><br>
+                <textarea id="agent-soul-quirks" placeholder="Never describes code -- writes it&#10;Asks questions only when genuinely stuck" style="width:100%;min-height:52px;font-family:var(--font-mono);font-size:12px"></textarea></div>
+              </div>
+            </div>
+
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <button class="btn btn--primary" onclick="saveAgent()">Create</button>
+              <button class="btn btn--subtle" onclick="hideAgentForm()">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Orchestration Panel -->
+      <div class="panel" id="panel-orchestration">
+        <div style="max-width:1100px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <h3 style="color:var(--brand);font-size:1rem">Orchestration Engine</h3>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn--primary btn-sm" onclick="showNewOrchestrationForm()">+ New Run</button>
+              <button class="btn btn--subtle btn-sm" onclick="loadOrchestrations()">Refresh</button>
+            </div>
+          </div>
+          <div style="font-size:13px;color:var(--text-2);margin-bottom:16px">
+            Decompose goals into subtasks, delegate to specialized agents, evaluate results, and drive improvement loops.
+            Every task is an opportunity to improve, not just complete.
+          </div>
+
+          <!-- New Run Form -->
+          <div id="orch-new-form" class="ctrl-card" style="display:none;margin-bottom:16px">
+            <h3>Create Orchestration Run</h3>
+            <div style="margin:8px 0">
+              <label style="font-size:11px;color:var(--text-2)">Goal *</label><br>
+              <textarea id="orch-goal" placeholder="Describe the goal this orchestration will accomplish..." style="width:100%;min-height:80px"></textarea>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button class="btn btn--primary" onclick="submitOrchestration()">Create Run</button>
+              <button class="btn btn--subtle" onclick="hideNewOrchestrationForm()">Cancel</button>
+            </div>
+          </div>
+
+          <!-- Runs List -->
+          <div id="orch-runs"></div>
+        </div>
+      </div>
+
+      <!-- Keys Panel -->
+      <div class="panel" id="panel-keys">
+        <div style="max-width:1200px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <h3 style="color:var(--brand);font-size:1rem">Key Storage</h3>
+            <button class="btn btn--primary btn-sm" onclick="showAddKeyForm()">+ Add Key</button>
+          </div>
+          <div style="font-size:13px;color:var(--text-2);margin-bottom:16px">
+            SSH keys, API keys, and tokens stored locally at <code style="background:var(--bg-0);padding:2px 6px;border-radius:3px;font-size:12px">~/.sawyer-harness/keys.yaml</code>. Values are always masked in the UI. Agents respect the permission level set on each key.
+          </div>
+
+          <!-- Category tabs -->
+          <div style="display:flex;gap:8px;margin-bottom:16px">
+            <button class="btn btn--subtle btn-sm" id="keys-tab-ssh" onclick="switchKeysTab('ssh')" style="border-color:var(--brand);color:var(--brand)">SSH</button>
+            <button class="btn btn--subtle btn-sm" id="keys-tab-api" onclick="switchKeysTab('api')">API</button>
+            <button class="btn btn--subtle btn-sm" id="keys-tab-tokens" onclick="switchKeysTab('tokens')">Tokens</button>
+            <button class="btn btn--subtle btn-sm" id="keys-tab-custom" onclick="switchKeysTab('custom')">Custom</button>
+          </div>
+
+          <!-- Keys list -->
+          <div id="keys-list"></div>
+
+          <!-- Add key form (hidden by default) -->
+          <div id="keys-add-form" class="ctrl-card" style="display:none;margin-top:16px">
+            <h3 id="keys-form-title">Add Key</h3>
+
+            <!-- Permission selector (always visible) -->
+            <div style="margin:8px 0;padding:8px 0;border-bottom:1px solid var(--border-1)">
+              <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px">Permission -- how agents use this key</label>
+              <select id="key-permission" style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px;width:100%;max-width:320px">
+                <option value="ask">Ask Every Time -- agent must confirm each use</option>
+                <option value="allowlist">Permanent Allowlist -- agent uses for approved operations only</option>
+                <option value="session">This Session Only -- available until restart</option>
+                <option value="approve">Approve Once Per Session -- ask once, then auto-allowed</option>
+              </select>
+            </div>
+
+            <!-- Allowlist operations (shown only when permission=allowlist) -->
+            <div id="key-allowlist-fields" style="display:none;margin:8px 0;padding:8px 0;border-bottom:1px solid var(--border-1)">
+              <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px">Approved operations (one per line)</label>
+              <textarea id="key-allow-for" style="width:100%;min-height:40px;font-family:var(--font-mono);font-size:12px" placeholder="ssh-connect&#10;file-transfer&#10;api-call"></textarea>
+            </div>
+
+            <!-- Category selector -->
+            <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Category</label><br>
+            <select id="key-category" style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px;width:200px" onchange="onKeyCategoryChange(this.value)">
+              <option value="ssh">SSH</option>
+              <option value="api">API</option>
+              <option value="tokens">Tokens</option>
+              <option value="custom">Custom</option>
+            </select></div>
+
+            <!-- Name (always visible) -->
+            <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Name</label><br>
+            <input id="key-name" placeholder="e.g. runpod-production" style="width:300px"></div>
+
+            <!-- SSH fields -->
+            <div id="key-fields-ssh" style="display:block">
+              <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Host</label><br>
+              <input id="key-host" placeholder="e.g. ssh.runpod.io" style="width:100%"></div>
+              <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">User</label><br>
+              <input id="key-user" placeholder="e.g. root" style="width:200px"></div>
+              <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Key Path</label><br>
+              <input id="key-path" placeholder="~/.ssh/id_ed25519" style="width:100%"></div>
+              <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Port</label><br>
+              <input id="key-port" placeholder="22" style="width:80px"></div>
+            </div>
+
+            <!-- API fields with preset selector -->
+            <div id="key-fields-api" style="display:none">
+              <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Provider (select or type custom)</label><br>
+              <select id="key-provider-select" style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px;width:240px" onchange="onApiProviderChange(this.value)">
+                <option value="">-- Select Provider --</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="google">Google AI</option>
+                <option value="mistral">Mistral</option>
+                <option value="groq">Groq</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="runpod">RunPod</option>
+                <option value="github">GitHub</option>
+                <option value="huggingface">Hugging Face</option>
+                <option value="cohere">Cohere</option>
+                <option value="together">Together AI</option>
+                <option value="fireworks">Fireworks AI</option>
+                <option value="perplexity">Perplexity</option>
+                <option value="xai">xAI (Grok)</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="replicate">Replicate</option>
+                <option value="custom">Custom Provider...</option>
+              </select>
+              <input id="key-provider-custom" placeholder="Custom provider name" style="display:none;width:200px;margin-left:8px"></div>
+              <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">API Key</label><br>
+              <input id="key-key" type="password" placeholder="sk-..." style="width:100%"></div>
+              <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Base URL <span style="color:var(--text-3)">(auto-filled from provider)</span></label><br>
+              <input id="key-base-url" placeholder="https://api.example.com/v1" style="width:100%"></div>
+            </div>
+
+            <!-- Token fields with service selector -->
+            <div id="key-fields-tokens" style="display:none">
+              <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Service (select or type custom)</label><br>
+              <select id="key-service-select" style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px;width:240px" onchange="onTokenServiceChange(this.value)">
+                <option value="">-- Select Service --</option>
+                <option value="telegram">Telegram Bot</option>
+                <option value="discord">Discord Bot</option>
+                <option value="slack">Slack Bot</option>
+                <option value="stripe">Stripe</option>
+                <option value="twilio">Twilio</option>
+                <option value="sendgrid">SendGrid</option>
+                <option value="github-oauth">GitHub OAuth</option>
+                <option value="google-oauth">Google OAuth</option>
+                <option value="custom">Custom Service...</option>
+              </select>
+              <input id="key-service-custom" placeholder="Custom service name" style="display:none;width:200px;margin-left:8px"></div>
+              <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Token</label><br>
+              <input id="key-token" type="password" placeholder="token value" style="width:100%"></div>
+            </div>
+
+            <!-- Custom fields -->
+            <div id="key-fields-custom" style="display:none">
+              <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Custom fields (one per line: key=value)</label><br>
+              <textarea id="key-custom-fields" style="width:100%;min-height:60px;font-family:var(--font-mono);font-size:12px" placeholder="secret=abc123&#10;endpoint=https://..."></textarea></div>
+            </div>
+
+            <!-- Note (always visible) -->
+            <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Note (optional)</label><br>
+            <input id="key-note" placeholder="What is this key for?" style="width:100%"></div>
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <button class="btn btn--primary" onclick="addKey()">Save</button>
+              <button class="btn btn--subtle" onclick="hideAddKeyForm()">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Status Bar removed -- header now shows model, CTX, tasks, and new-session button -->
+  </div>
+</div>
+
+<!-- Mobile overlay for sidebar -->
+<div class="mobile-overlay" id="mobile-overlay" onclick="closeMobileSidebar()"></div>
+
+<script>
+const API = '';
+let sessionId = '';
+let ws = null;
+let startTime = Date.now();
+let lastKeysVersion = 0;  // Track key storage changes
+
+// Panel switching
+function switchPanel(panel) {
+  document.querySelectorAll('.sidebar-nav-item').forEach(i => i.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('[data-panel="' + panel + '"]').classList.add('active');
+  document.getElementById('panel-' + panel).classList.add('active');
+  const titles = {chat:'Chat',goals:'Goals','skill-creator':'Skill Creator',
+    tools:'Tools',files:'Files',models:'Models',sessions:'Sessions',projects:'Projects',
+    cron:'Cron',context:'Memory',keys:'Keys',rules:'Rules',agents:'Agents',orchestration:'Orchestrate'};
+  document.getElementById('panel-title').textContent = titles[panel] || panel;
+  if (panel === 'models') loadModels();
+  if (panel === 'goals') loadGoals();
+  if (panel === 'tools') loadTools();
+  if (panel === 'cron') loadCron();
+  if (panel === 'context') loadContextStats();
+  if (panel === 'sessions') { loadSessions(); loadSuggestions(); }
+  if (panel === 'projects') loadProjects();
+  if (panel === 'files') { loadUploadedFiles(); loadProjectFiles(); }
+  if (panel === 'skill-creator') { loadSkills(); loadSkillSessions(); }
+  if (panel === 'keys') { loadKeys(); }
+  if (panel === 'rules') { loadRules(); }
+  if (panel === 'agents') { loadAgents(); }
+  if (panel === 'orchestration') { loadOrchestrations(); }
+  // Close sidebar on mobile
+  if (window.innerWidth <= 768) closeMobileSidebar();
+}
+
+// Sidebar toggle
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  sb.classList.toggle('collapsed');
+}
+
+// Skill Creator tab switching
+function switchSkillTab(tab) {
+  const browseTab = document.getElementById('sc-tab-browse');
+  const createTab = document.getElementById('sc-tab-create');
+  const browsePanel = document.getElementById('sc-browse');
+  const createPanel = document.getElementById('sc-create');
+  if (tab === 'browse') {
+    browseTab.style.borderColor = 'var(--brand)';
+    browseTab.style.color = 'var(--brand)';
+    createTab.style.borderColor = '';
+    createTab.style.color = '';
+    browsePanel.style.display = '';
+    createPanel.style.display = 'none';
+  } else {
+    createTab.style.borderColor = 'var(--brand)';
+    createTab.style.color = 'var(--brand)';
+    browseTab.style.borderColor = '';
+    browseTab.style.color = '';
+    browsePanel.style.display = 'none';
+    createPanel.style.display = '';
+  }
+}
+
+function closeMobileSidebar() {
+  document.getElementById('sidebar').classList.remove('mobile-open');
+  document.getElementById('mobile-overlay').classList.remove('active');
+}
+
+// Theme toggle
+function toggleTheme() {
+  const html = document.documentElement;
+  const current = html.getAttribute('data-theme');
+  const next = current === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', next);
+  const btn = document.getElementById('theme-btn');
+  btn.innerHTML = next === 'dark' ? '<i data-lucide="moon"></i>' : '<i data-lucide="sun"></i>';
+  lucide.createIcons();
+}
+
+// Toast notification
+function showToast(msg, type = 'info') {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement('div');
+  toast.className = `toast toast--${type}`;
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 3000);
+}
+
+// Push to Git
+async function gitPush() {
+  const btn = document.getElementById('git-push-btn');
+  const origHTML = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i data-lucide="loader" class="spin"></i>';
+  lucide.createIcons();
+  try {
+    const res = await fetch(API + '/api/git/push', { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      btn.innerHTML = '<i data-lucide="check"></i>';
+      lucide.createIcons();
+      showToast(data.message || 'Pushed successfully', 'success');
+    } else {
+      btn.innerHTML = '<i data-lucide="x"></i>';
+      lucide.createIcons();
+      showToast('Push failed: ' + (data.error || 'unknown error'), 'danger');
+    }
+  } catch(e) {
+    btn.innerHTML = '<i data-lucide="x"></i>';
+    lucide.createIcons();
+    showToast('Push failed: ' + e.message, 'danger');
+  }
+  setTimeout(() => {
+    btn.innerHTML = origHTML;
+    lucide.createIcons();
+    btn.disabled = false;
+  }, 3000);
+}
+
+// Chat enter key
+document.getElementById('chat-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+
+async function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  appendMsg('user', msg);
+  appendMsg('assistant', '...');
+
+  try {
+    const res = await fetch(API + '/api/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({message: msg, session_id: sessionId})
+    });
+    const data = await res.json();
+    sessionId = data.session_id;
+    const sessionEl = document.getElementById('status-session');
+    if (sessionEl) sessionEl.textContent = sessionId;
+    const msgs = document.getElementById('chat-messages');
+    msgs.lastChild.innerHTML = formatResponse(data.response);
+    updateContextBar();
+  } catch (e) {
+    const msgs = document.getElementById('chat-messages');
+    msgs.lastChild.innerHTML = '<span style="color:var(--danger)">Error: ' + e.message + '</span>';
+  }
+}
+
+function appendMsg(role, text) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.innerHTML = formatResponse(text);
+  document.getElementById('chat-messages').appendChild(div);
+  div.scrollIntoView({behavior: 'smooth'});
+}
+
+function formatResponse(text) {
+  if (!text) return '';
+  let html = text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\n/g, '<br>');
+  return html;
+}
+
+function setBudgetRow(name, tokens, total) {
+  const el = document.getElementById('ctx-budget-' + name);
+  const pctEl = document.getElementById('ctx-budget-' + name + '-pct');
+  if (el) el.textContent = tokens ? tokens.toLocaleString() : '--';
+  if (pctEl) pctEl.textContent = tokens && total ? (tokens / total * 100).toFixed(1) + '%' : '--';
+}
+
+function updateContextBar() {
+  loadContextStats();
+}
+
+async function loadModelSelector() {
+  try {
+    const res = await fetch(API + '/api/context/models');
+    const data = await res.json();
+    const sel = document.getElementById('ctx-model-select');
+    sel.innerHTML = '<option value="">-- Select model --</option>';
+    for (const [name, size] of Object.entries(data.models)) {
+      sel.innerHTML += '<option value="' + name + '">' + name + ' (' + size.toLocaleString() + ' tokens)</option>';
+    }
+  } catch(e) {}
+}
+
+async function setModelContext(model) {
+  if (!model) return;
+  await fetch(API + '/api/context/window?model=' + encodeURIComponent(model), {method: 'POST'});
+  loadContextStats();
+}
+
+// New session -- clear chat, reset state
+function newSession() {
+  sessionId = '';
+  const sessionClearEl = document.getElementById('status-session');
+  if (sessionClearEl) sessionClearEl.textContent = '';
+  document.getElementById('chat-messages').innerHTML = '';
+  document.getElementById('chat-input').value = '';
+  const tokensEl = document.getElementById('status-tokens');
+  if (tokensEl) tokensEl.textContent = 'CTX 0/128K';
+  appendMsg('assistant', 'New session started. How can I help?');
+}
+
+async function compressCurrentSession() {
+  if (!sessionId) { alert('Start a chat session first'); return; }
+  try {
+    const res = await fetch(API + '/api/context/compress/' + sessionId, {method: 'POST'});
+    const data = await res.json();
+    const statsEl = document.getElementById('compression-stats');
+    const resultEl = document.getElementById('compression-result');
+    resultEl.style.display = 'block';
+    statsEl.innerHTML = `
+      <div style="margin:4px 0">Original: <strong>${data.original_tokens.toLocaleString()}</strong> tokens</div>
+      <div style="margin:4px 0">Compressed: <strong>${data.compressed_tokens.toLocaleString()}</strong> tokens</div>
+      <div style="margin:4px 0">Kept: ${data.messages_kept} | Summarized: ${data.messages_summarized} | Dropped: ${data.messages_dropped}</div>
+      <div style="margin:4px 0">Decisions preserved: ${data.decisions_extracted}</div>
+      <div style="margin:4px 0">Ratio: ${((data.original_tokens / data.compressed_tokens) || 1).toFixed(1)}x</div>
+    `;
+    loadContextStats();
+  } catch(e) { console.error('compress error:', e); }
+}
+
+// Sessions
+async function loadSessions() {
+  try {
+    const res = await fetch(API + '/api/sessions');
+    const data = await res.json();
+    const el = document.getElementById('sessions-list');
+    if (!data.sessions.length) {
+      el.innerHTML = '<div style="color:var(--text-2);font-size:13px">No active sessions.</div>';
+      return;
+    }
+    let html = '';
+    for (const s of data.sessions) {
+      html += '<div class="ctrl-card" style="margin-bottom:6px">' +
+        '<strong style="color:var(--brand)">' + s.session_id + '</strong> | ' +
+        s.message_count + ' messages | ' + s.memory_chars + ' chars in memory | ' +
+        s.notes_count + ' notes</div>';
+    }
+    el.innerHTML = html;
+  } catch(e) { console.error(e); }
+}
+
+async function generateNotes() {
+  if (!sessionId) { alert('Start a chat session first'); return; }
+  try {
+    const res = await fetch(API + '/api/session/' + sessionId + '/notes', {method: 'POST'});
+    const data = await res.json();
+    const el = document.getElementById('session-notes-display');
+    let html = '<div class="notes-card"><h4>Session ' + sessionId + '</h4>';
+    html += '<div class="notes-content">';
+    html += 'Messages: ' + data.message_count + '\n';
+    html += 'Tool calls: ' + data.tool_calls + '\n';
+    if (data.topics && data.topics.length) html += 'Topics: ' + data.topics.join(', ') + '\n';
+    if (data.key_decisions && data.key_decisions.length) html += 'Decisions: ' + data.key_decisions.join(', ') + '\n';
+    html += '</div></div>';
+    el.innerHTML = html;
+  } catch(e) { console.error(e); }
+}
+
+async function saveNotes() {
+  if (!sessionId) { alert('Start a chat session first'); return; }
+  try {
+    const res = await fetch(API + '/api/sessions/' + sessionId + '/notes/save', {method: 'POST'});
+    const data = await res.json();
+    alert('Notes saved to: ' + data.path);
+  } catch(e) { console.error(e); }
+}
+
+async function loadSuggestions() {
+  try {
+    const res = await fetch(API + '/api/sessions/suggestions');
+    const data = await res.json();
+    const el = document.getElementById('session-suggestions');
+    if (!data.suggestions || !data.suggestions.length) {
+      el.innerHTML = '<div style="color:var(--text-2);font-size:13px">No suggestions yet. Complete a session and generate notes first.</div>';
+      return;
+    }
+    let html = '';
+    for (const sug of data.suggestions) {
+      html += '<div class="suggestion-card" onclick="document.getElementById(\'chat-input\').value=this.querySelector(\'.sug-text\').textContent">' +
+        '<div class="sug-text">' + sug + '</div></div>';
+    }
+    el.innerHTML = html;
+  } catch(e) {
+    document.getElementById('session-suggestions').innerHTML = '<div style="color:var(--text-2);font-size:13px">Open a project to get session suggestions.</div>';
+  }
+}
+
+// Projects
+async function loadProjects() {
+  try {
+    const res = await fetch(API + '/api/projects');
+    const data = await res.json();
+    const list = document.getElementById('projects-list');
+    if (!data.projects.length) {
+      list.innerHTML = '<div style="color:var(--text-2);font-size:13px">No projects yet. Create one above.</div>';
+    } else {
+      let html = '';
+      for (const p of data.projects) {
+        const badge = p.initialized ? '<span class="badge badge--success">init</span>' : '<span class="badge badge--neutral">new</span>';
+        html += '<div class="file-item" onclick="openProject(\'' + p.name + '\')">' +
+          '<span class="fname">' + p.name + '</span>' +
+          '<span>' + badge + '</span>' +
+          '<span class="fsize">' + (p.description || '') + '</span></div>';
+      }
+      list.innerHTML = html;
+    }
+    // Current project
+    const curRes = await fetch(API + '/api/projects/current');
+    const curData = await curRes.json();
+    const curEl = document.getElementById('current-project');
+    if (curData.project) {
+      curEl.innerHTML = '<h3>Current: ' + curData.project.name + '</h3>' +
+        '<div style="font-size:13px;color:var(--text-1)">' + curData.project.description + '</div>' +
+        '<div style="font-size:11px;color:var(--text-2);margin-top:4px">' + curData.project.path + '</div>';
+    } else {
+      curEl.innerHTML = '<h3>Current Project</h3><div style="color:var(--text-2);font-size:13px">No project open</div>';
+    }
+  } catch(e) { console.error(e); }
+}
+
+function showNewProjectForm() {
+  document.getElementById('new-project-form').style.display = 'block';
+}
+
+async function createProject() {
+  const name = document.getElementById('new-project-name').value.trim();
+  if (!name) return;
+  try {
+    const res = await fetch(API + '/api/projects?name=' + encodeURIComponent(name) + '&description=' + encodeURIComponent(document.getElementById('new-project-desc').value), {method: 'POST'});
+    const data = await res.json();
+    document.getElementById('new-project-form').style.display = 'none';
+    loadProjects();
+  } catch(e) { console.error(e); }
+}
+
+async function openProject(name) {
+  try {
+    await fetch(API + '/api/projects/' + encodeURIComponent(name) + '/open', {method: 'POST'});
+    loadProjects();
+  } catch(e) { console.error(e); }
+}
+
+// Files / Drop Zone
+function handleDragOver(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  document.getElementById('drop-zone').classList.add('dragover');
+}
+function handleDragLeave(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  document.getElementById('drop-zone').classList.remove('dragover');
+}
+async function handleDrop(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  document.getElementById('drop-zone').classList.remove('dragover');
+  const files = e.dataTransfer.files;
+  for (const file of files) {
+    await uploadFile(file);
+  }
+  loadUploadedFiles();
+}
+async function handleFileSelect(e) {
+  const files = e.target.files;
+  for (const file of files) {
+    await uploadFile(file);
+  }
+  loadUploadedFiles();
+}
+async function uploadFile(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('filename', file.name);
+  try {
+    const content = await file.arrayBuffer();
+    await fetch(API + '/api/files/upload?filename=' + encodeURIComponent(file.name), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/octet-stream'},
+      body: content,
+    });
+  } catch(e) { console.error('Upload error:', e); }
+}
+async function loadUploadedFiles() {
+  try {
+    const res = await fetch(API + '/api/files/uploads');
+    const data = await res.json();
+    const el = document.getElementById('uploaded-files');
+    if (!data.files.length) {
+      el.innerHTML = '<div style="color:var(--text-2);font-size:13px">No files uploaded yet.</div>';
+      return;
+    }
+    let html = '';
+    for (const f of data.files) {
+      html += '<div class="file-item" onclick="viewFile(\'' + f.name + '\')">' +
+        '<span class="fname">' + f.name + '</span>' +
+        '<span class="fsize">' + formatBytes(f.size) + '</span>' +
+        '<span class="fdate">' + new Date(f.modified).toLocaleString() + '</span></div>';
+    }
+    el.innerHTML = html;
+  } catch(e) { console.error(e); }
+}
+async function loadProjectFiles() {
+  try {
+    const res = await fetch(API + '/api/projects/current/files');
+    const data = await res.json();
+    const el = document.getElementById('project-files');
+    if (!data.files || !Object.keys(data.files).length) {
+      el.innerHTML = '<div style="color:var(--text-2);font-size:13px">No files in project yet.</div>';
+      return;
+    }
+    let html = '';
+    for (const [path, info] of Object.entries(data.files)) {
+      html += '<div class="file-item" onclick="viewFile(\'' + info.path.replace(/\\/g, '\\\\') + '\')">' +
+        '<span class="fname">' + path + '</span>' +
+        '<span class="fsize">' + formatBytes(info.size) + '</span></div>';
+    }
+    el.innerHTML = html;
+  } catch(e) {
+    document.getElementById('project-files').innerHTML = '<div style="color:var(--text-2);font-size:13px">Open a project to see its files.</div>';
+  }
+}
+async function viewFile(name) {
+  try {
+    const res = await fetch(API + '/api/files/' + encodeURIComponent(name) + '/content');
+    if (!res.ok) return;
+    const data = await res.json();
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:center;justify-content:center';
+    overlay.onclick = () => overlay.remove();
+    const box = document.createElement('div');
+    box.style.cssText = 'background:var(--bg-1);border:1px solid var(--brand);border-radius:12px;padding:20px;max-width:80vw;max-height:80vh;overflow:auto';
+    box.innerHTML = '<h3 style="color:var(--brand);margin-bottom:8px">' + data.filename + '</h3><pre style="font-size:12px;white-space:pre-wrap;color:var(--text-1)">' + (data.content || '').replace(/</g, '&lt;') + '</pre>';
+    box.onclick = e => e.stopPropagation();
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+  } catch(e) { console.error(e); }
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+// Models
+async function loadModels() {
+  try {
+    const res = await fetch(API + '/api/models');
+    const data = await res.json();
+    const grid = document.getElementById('models-grid');
+
+    let html = '<div class="ctrl-card"><h3>Providers</h3><table><tr><th>Name</th><th>Type</th><th>Model</th><th>Status</th><th>Requests</th><th>Errors</th></tr>';
+    for (const [name, p] of Object.entries(data.providers)) {
+      const badgeClass = p.health === 'healthy' ? 'badge--success' : p.health === 'down' ? 'badge--danger' : p.health === 'degraded' ? 'badge--warning' : 'badge--neutral';
+      html += '<tr><td>' + name + '</td><td>' + (p.type || 'unknown') + '</td><td>' + (p.model || '--') + '</td><td><span class="badge ' + badgeClass + '">' + p.health + '</span></td><td>' + p.total_requests + '</td><td>' + p.total_errors + '</td></tr>';
+    }
+    html += '</table></div>';
+
+    html += '<div class="ctrl-card"><h3>Routing Config</h3><p style="color:var(--text-2);font-size:12px">Provider priority and task-type preferences.</p>';
+    html += '<div style="margin-top:10px"><button class="btn btn--primary btn-sm" onclick="checkAllHealth()">Health Check All</button></div></div>';
+
+    grid.innerHTML = html;
+
+    // Update header metric
+    const healthy = Object.values(data.providers).filter(p => p.health === 'healthy').length;
+    document.getElementById('metric-model').textContent = healthy + '/' + Object.keys(data.providers).length;
+  } catch(e) { console.error('loadModels error:', e); }
+}
+
+async function checkAllHealth() {
+  try {
+    const res = await fetch(API + '/api/models');
+    const data = await res.json();
+    for (const name of Object.keys(data.providers)) {
+      await fetch(API + '/api/models/' + name + '/health', {method: 'POST'});
+    }
+    loadModels();
+  } catch(e) { console.error(e); }
+}
+
+// Skills
+async function loadSkills() {
+  try {
+    const res = await fetch(API + '/api/skills');
+    const data = await res.json();
+    const list = document.getElementById('skills-list');
+    let html = '';
+    for (const s of data.skills) {
+      html += '<div class="skill-card" onclick="showSkill(\'' + s.name + '\')">\n        <h4>' + s.name + '</h4>\n        <div class="meta">v' + s.version + ' | ' + s.category + ' | ' + s.chars + ' chars</div>\n        <div class="desc">' + s.description + '</div>\n      </div>';
+    }
+    if (!data.skills.length) html = '<div style="color:var(--text-2)">No skills loaded. Create one with + New Skill.</div>';
+    list.innerHTML = html;
+  } catch(e) { console.error(e); }
+}
+
+async function showSkill(name) {
+  try {
+    const res = await fetch(API + '/api/skills/' + name);
+    const data = await res.json();
+    const detail = document.getElementById('skill-detail');
+    detail.style.display = 'block';
+    detail.innerHTML = '<h3>' + data.name + ' <span style="font-size:12px;color:var(--text-2)">v' + data.version + ' | ' + data.category + '</span></h3>\n      <p style="color:var(--text-1);font-size:13px;margin:4px 0">' + data.description + '</p>\n      <p style="font-size:11px;color:var(--text-2)">Triggers: ' + data.triggers.join(', ') + '</p>\n      <pre>' + data.content + '</pre>\n      <div style="margin-top:10px;display:flex;gap:8px">\n        <button class="btn btn--danger btn-sm" onclick="deleteSkill(\'' + data.name + '\')">Delete</button>\n      </div>';
+  } catch(e) { console.error(e); }
+}
+
+async function deleteSkill(name) {
+  if (!confirm('Delete skill "' + name + '"?')) return;
+  await fetch(API + '/api/skills/' + name, {method: 'DELETE'});
+  loadSkills();
+  document.getElementById('skill-detail').style.display = 'none';
+}
+
+function showNewSkillForm() {
+  const detail = document.getElementById('skill-detail');
+  detail.style.display = 'block';
+  detail.innerHTML = '<h3>New Skill</h3>\n    <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Name</label><br>\n    <input id="new-skill-name" style="width:300px" placeholder="my-skill"></div>\n    <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Category</label><br>\n    <input id="new-skill-category" style="width:300px" value="general"></div>\n    <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Triggers (comma separated)</label><br>\n    <input id="new-skill-triggers" style="width:300px" placeholder="debug, python, error"></div>\n    <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Description</label><br>\n    <input id="new-skill-desc" style="width:100%" placeholder="Short description"></div>\n    <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Content (Markdown)</label><br>\n    <textarea id="new-skill-content" style="width:100%;min-height:120px;font-family:var(--font-mono);font-size:12px" placeholder="# My Skill\n\nStep-by-step instructions..."></textarea></div>\n    <button class="btn btn--primary" onclick="createSkill()">Create</button>';
+}
+
+async function createSkill() {
+  const name = document.getElementById('new-skill-name').value.trim();
+  if (!name) return;
+  await fetch(API + '/api/skills', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      name: name,
+      category: document.getElementById('new-skill-category').value,
+      description: document.getElementById('new-skill-desc').value,
+      triggers: document.getElementById('new-skill-triggers').value.split(',').map(t => t.trim()).filter(Boolean),
+      content: document.getElementById('new-skill-content').value,
+    })
+  });
+  loadSkills();
+  document.getElementById('skill-detail').style.display = 'none';
+}
+
+// Goals
+async function loadGoals() {
+  try {
+    const res = await fetch(API + '/api/goals');
+    const data = await res.json();
+    const list = document.getElementById('goals-list');
+    let html = '';
+    for (const g of data.goals) {
+      const pct = Math.round(g.progress * 100);
+      const statusBadge = g.status === 'complete' ? 'badge--success' : g.status === 'decomposed' ? 'badge--warning' : 'badge--neutral';
+      html += '<div class="goal-card">\n        <h4>' + g.goal + ' <span class="badge ' + statusBadge + '">' + g.status + '</span></h4>\n        <div style="font-size:11px;color:var(--text-2)">Created: ' + g.created + ' | Progress: ' + pct + '%</div>\n        <div class="progress"><div class="progress-bar" style="width:' + pct + '%"></div></div>\n        <div style="margin-top:6px">';
+      for (const st of g.subtasks) {
+        const done = st.status === 'complete';
+        html += '<div class="subtask' + (done ? ' done' : '') + '">\n          <div class="check' + (done ? ' done' : '') + '" onclick="toggleSubtask(\'' + g.id + '\',\'' + st.id + '\')">' + (done ? '&#10003;' : '') + '</div>\n          <span>' + st.task + '</span></div>';
+      }
+      html += '</div></div>';
+    }
+    if (!data.goals.length) html = '<div style="color:var(--text-2)">No goals yet. Create one above.</div>';
+    list.innerHTML = html;
+  } catch(e) { console.error(e); }
+}
+
+async function createGoal() {
+  const goal = document.getElementById('goal-input').value.trim();
+  if (!goal) return;
+  document.getElementById('goal-input').value = '';
+  const context = document.getElementById('goal-context').value.trim();
+  document.getElementById('goal-context').value = '';
+  try {
+    await fetch(API + '/api/goals', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({goal, context})
+    });
+    loadGoals();
+  } catch(e) { console.error(e); }
+}
+
+async function toggleSubtask(goalId, subtaskId) {
+  await fetch(API + '/api/goals/' + goalId + '/subtask/' + subtaskId + '/complete', {method: 'POST'});
+  loadGoals();
+}
+
+// Tools
+async function loadTools() {
+  try {
+    const res = await fetch(API + '/api/tools');
+    const data = await res.json();
+    const grid = document.getElementById('tools-grid');
+
+    let toolsHtml = '<div class="ctrl-card"><h3>Available Tools</h3><table><tr><th>Name</th><th>Description</th><th>Parameters</th></tr>';
+    for (const t of data.tools) {
+      const params = Object.keys(t.function.parameters.properties || {}).join(', ');
+      toolsHtml += '<tr><td style="color:var(--brand)">' + t.function.name + '</td><td>' + t.function.description + '</td><td style="color:var(--text-2);font-size:11px">' + params + '</td></tr>';
+    }
+    toolsHtml += '</table></div>';
+
+    let auditHtml = '<div class="ctrl-card"><h3>Recent Audit Log</h3><table><tr><th>Time</th><th>Tool</th><th>Success</th><th>Duration</th></tr>';
+    for (const a of data.audit_log.slice(0, 20)) {
+      const ts = new Date(a.timestamp * 1000).toLocaleTimeString();
+      const badge = a.success ? '<span class="badge badge--success">OK</span>' : '<span class="badge badge--danger">ERR</span>';
+      auditHtml += '<tr><td>' + ts + '</td><td>' + a.tool + '</td><td>' + badge + '</td><td>' + Math.round(a.duration_ms) + 'ms</td></tr>';
+    }
+    auditHtml += '</table></div>';
+
+    grid.innerHTML = toolsHtml + auditHtml;
+    document.getElementById('metric-tasks').textContent = data.tools ? data.tools.length : '0';
+  } catch(e) { console.error(e); }
+}
+
+// Cron
+function showAddCronForm() {
+  document.getElementById('cron-add-form').style.display = 'block';
+  document.getElementById('cron-name').value = '';
+  document.getElementById('cron-expr').value = '0 7 * * *';
+  document.getElementById('cron-interval').value = '30m';
+  document.getElementById('cron-oneshot').value = '';
+  document.getElementById('cron-prompt').value = '';
+  document.getElementById('cron-type').value = 'cron';
+  onCronTypeChange();
+}
+
+function hideCronForm() {
+  document.getElementById('cron-add-form').style.display = 'none';
+}
+
+function onCronTypeChange() {
+  const type = document.getElementById('cron-type').value;
+  document.getElementById('cron-expr-group').style.display = (type === 'cron') ? 'block' : 'none';
+  document.getElementById('cron-interval-group').style.display = (type === 'interval') ? 'block' : 'none';
+  document.getElementById('cron-oneshot-group').style.display = (type === 'one_shot') ? 'block' : 'none';
+}
+
+async function createCronJobForm() {
+  const name = document.getElementById('cron-name').value.trim();
+  const prompt = document.getElementById('cron-prompt').value.trim();
+  if (!name || !prompt) { alert('Name and prompt are required.'); return; }
+  const type = document.getElementById('cron-type').value;
+  let scheduleExpr = '';
+  if (type === 'cron') scheduleExpr = document.getElementById('cron-expr').value.trim();
+  else if (type === 'interval') scheduleExpr = document.getElementById('cron-interval').value.trim();
+  else if (type === 'one_shot') scheduleExpr = document.getElementById('cron-oneshot').value.trim();
+  if (!scheduleExpr) { alert('Schedule expression is required.'); return; }
+
+  try {
+    const res = await fetch(API + '/api/cron?name=' + encodeURIComponent(name) +
+      '&schedule_type=' + encodeURIComponent(type) +
+      '&schedule_expr=' + encodeURIComponent(scheduleExpr) +
+      '&prompt=' + encodeURIComponent(prompt), {method: 'POST'});
+    const data = await res.json();
+    hideCronForm();
+    loadCron();
+    showToast('Cron job created: ' + name, 'success');
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function loadCron() {
+  try {
+    const res = await fetch(API + '/api/cron');
+    const data = await res.json();
+    const list = document.getElementById('cron-list');
+    let html = '';
+    for (const j of data.jobs) {
+      const statusBadge = j.enabled ? 'badge--success' : 'badge--danger';
+      html += '<div class="ctrl-card" style="margin-bottom:8px">\n        <div style="display:flex;justify-content:space-between;align-items:center">\n          <div><strong>' + j.name + '</strong> <span class="badge ' + statusBadge + '">' + (j.enabled ? 'ON' : 'OFF') + '</span></div>\n          <div style="font-size:11px;color:var(--text-2)">' + j.schedule_type + ': ' + j.schedule_expr + '</div>\n        </div>\n        <div style="font-size:13px;color:var(--text-1);margin-top:6px">' + j.prompt.substring(0, 100) + (j.prompt.length > 100 ? '...' : '') + '</div>\n        <div style="font-size:11px;color:var(--text-2);margin-top:4px">Runs: ' + j.run_count + ' | Last: ' + (j.last_run || 'never') + '</div>\n        <div style="margin-top:6px;display:flex;gap:6px">\n          <button class="btn ' + (j.enabled ? 'btn--danger' : 'btn--primary') + ' btn-sm" onclick="toggleCron(\'' + j.id + '\', ' + !j.enabled + ')">' + (j.enabled ? 'Disable' : 'Enable') + '</button>\n          <button class="btn btn--subtle btn-sm" onclick="runCronNow(\'' + j.id + '\')" title="Run now">Run Now</button>\n          <button class="btn btn--danger btn-sm" onclick="deleteCron(\'' + j.id + '\')">Delete</button>\n        </div>\n      </div>';
+    }
+    if (!data.jobs.length) html = '<div style="color:var(--text-2)">No scheduled jobs.</div>';
+    list.innerHTML = html;
+  } catch(e) { console.error(e); }
+}
+
+async function toggleCron(id, enabled) {
+  await fetch(API + '/api/cron/' + id + '/toggle?enabled=' + enabled, {method: 'POST'});
+  loadCron();
+}
+
+async function deleteCron(id) {
+  if (!confirm('Delete this job?')) return;
+  await fetch(API + '/api/cron/' + id, {method: 'DELETE'});
+  loadCron();
+}
+
+async function runCronNow(id) {
+  try {
+    const res = await fetch(API + '/api/cron/' + id + '/run', {method: 'POST'});
+    const data = await res.json();
+    showToast('Job triggered: ' + (data.name || id), 'success');
+    loadCron();
+  } catch(e) { showToast('Error running job: ' + e.message, 'danger'); }
+}
+
+// Skill Creator
+let scSessionId = null;
+
+async function startNewSession() {
+  try {
+    const res = await fetch(API + '/api/skill-creator/sessions', {method: 'POST'});
+    const data = await res.json();
+    scSessionId = data.session_id;
+    document.getElementById('sc-session').style.display = 'block';
+    document.getElementById('sc-phase').textContent = data.phase;
+    document.getElementById('sc-session-id').textContent = data.session_id;
+    document.getElementById('sc-step-describe').style.display = 'block';
+    document.getElementById('sc-step-review').style.display = 'none';
+    document.getElementById('sc-step-approve').style.display = 'none';
+    document.getElementById('sc-task').value = '';
+    document.getElementById('sc-context').value = '';
+  } catch(e) { console.error(e); }
+}
+
+async function theorizeSkill() {
+  const task = document.getElementById('sc-task').value.trim();
+  if (!task) { alert('Describe the task you want to create a skill for.'); return; }
+  const context = document.getElementById('sc-context').value.trim();
+  try {
+    const res = await fetch(API + '/api/skill-creator/sessions/' + scSessionId + '/theorize?task=' + encodeURIComponent(task) + '&context=' + encodeURIComponent(context), {method: 'POST'});
+    const data = await res.json();
+    const spec = data.spec;
+    document.getElementById('sc-name').value = spec.name;
+    document.getElementById('sc-category').value = spec.category;
+    document.getElementById('sc-description').value = spec.description;
+    document.getElementById('sc-triggers').value = spec.triggers.join(', ');
+    document.getElementById('sc-procedure').value = spec.procedure.join('\n');
+    document.getElementById('sc-pitfalls').value = spec.pitfalls.join('\n');
+    document.getElementById('sc-constraints').value = spec.constraints.join('\n');
+    document.getElementById('sc-step-describe').style.display = 'none';
+    document.getElementById('sc-step-review').style.display = 'block';
+    document.getElementById('sc-phase').textContent = data.phase;
+    document.getElementById('sc-revisions').textContent = '0';
+  } catch(e) { console.error(e); }
+}
+
+async function refineSkill() {
+  if (!scSessionId) return;
+  const changes = {};
+  const name = document.getElementById('sc-name').value.trim();
+  const category = document.getElementById('sc-category').value.trim();
+  const description = document.getElementById('sc-description').value.trim();
+  const triggers = document.getElementById('sc-triggers').value.split(',').map(t => t.trim()).filter(Boolean);
+  const procedure = document.getElementById('sc-procedure').value.split('\n').map(s => s.trim()).filter(Boolean);
+  const pitfalls = document.getElementById('sc-pitfalls').value.split('\n').map(s => s.trim()).filter(Boolean);
+  const constraints = document.getElementById('sc-constraints').value.split('\n').map(s => s.trim()).filter(Boolean);
+
+  if (name) changes.name = name;
+  if (category) changes.category = category;
+  if (description) changes.description = description;
+  changes.triggers = triggers;
+  changes.procedure = procedure;
+  changes.pitfalls = pitfalls;
+  changes.constraints = constraints;
+
+  try {
+    const res = await fetch(API + '/api/skill-creator/sessions/' + scSessionId + '/refine', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(changes),
+    });
+    const data = await res.json();
+    document.getElementById('sc-phase').textContent = data.phase;
+    document.getElementById('sc-revisions').textContent = data.revision_count;
+    document.getElementById('sc-step-approve').style.display = 'block';
+    const spec = data.spec;
+    document.getElementById('sc-review-summary').innerHTML =
+      '<strong>' + spec.name + '</strong> (' + spec.category + ')<br>' +
+      spec.description + '<br><br>' +
+      '<strong>Triggers:</strong> ' + spec.triggers.join(', ') + '<br>' +
+      '<strong>Steps:</strong> ' + spec.procedure.length + '<br>' +
+      '<strong>Pitfalls:</strong> ' + spec.pitfalls.length + '<br>' +
+      '<strong>Constraints:</strong> ' + spec.constraints.length;
+  } catch(e) { console.error(e); }
+}
+
+async function approveSkill() {
+  if (!scSessionId) return;
+  try {
+    const res = await fetch(API + '/api/skill-creator/sessions/' + scSessionId + '/approve', {method: 'POST'});
+    const data = await res.json();
+    alert('Skill created: ' + data.skill.name);
+    document.getElementById('sc-session').style.display = 'none';
+    scSessionId = null;
+    loadSkillSessions();
+  } catch(e) { console.error(e); }
+}
+
+async function rejectSkill() {
+  if (!scSessionId) return;
+  if (!confirm('Reject and abandon this skill?')) return;
+  try {
+    await fetch(API + '/api/skill-creator/sessions/' + scSessionId + '/reject', {method: 'POST'});
+    document.getElementById('sc-session').style.display = 'none';
+    scSessionId = null;
+    loadSkillSessions();
+  } catch(e) { console.error(e); }
+}
+
+async function loadSkillSessions() {
+  try {
+    const res = await fetch(API + '/api/skill-creator/sessions');
+    const data = await res.json();
+    const el = document.getElementById('sc-sessions-list');
+    if (!data.sessions.length) {
+      el.innerHTML = '<div style="color:var(--text-2);font-size:13px">No skill sessions yet.</div>';
+      return;
+    }
+    let html = '';
+    for (const s of data.sessions) {
+      const statusBadge = s.status === 'completed' ? 'badge--success' : s.status === 'abandoned' ? 'badge--danger' : 'badge--brand';
+      html += '<div class="file-item" onclick="resumeSession(\'' + s.id + '\')">' +
+        '<span class="fname">' + (s.name || 'Untitled') + '</span>' +
+        '<span class="badge ' + statusBadge + '">' + s.phase + '</span>' +
+        '<span class="fsize">' + s.category + '</span>' +
+        '<span class="fdate">Rev ' + s.revision_count + '</span></div>';
+    }
+    el.innerHTML = html;
+  } catch(e) { console.error(e); }
+}
+
+async function resumeSession(id) {
+  try {
+    const res = await fetch(API + '/api/skill-creator/sessions/' + id);
+    const data = await res.json();
+    scSessionId = data.id;
+    document.getElementById('sc-session').style.display = 'block';
+    document.getElementById('sc-phase').textContent = data.phase;
+    document.getElementById('sc-session-id').textContent = data.id;
+    document.getElementById('sc-revisions').textContent = data.revision_count;
+    const spec = data.spec;
+    if (data.phase === 'observe') {
+      document.getElementById('sc-step-describe').style.display = 'block';
+      document.getElementById('sc-step-review').style.display = 'none';
+      document.getElementById('sc-step-approve').style.display = 'none';
+    } else if (data.phase === 'theorize' || data.phase === 'refine') {
+      document.getElementById('sc-step-describe').style.display = 'none';
+      document.getElementById('sc-step-review').style.display = 'block';
+      document.getElementById('sc-name').value = spec.name;
+      document.getElementById('sc-category').value = spec.category;
+      document.getElementById('sc-description').value = spec.description;
+      document.getElementById('sc-triggers').value = spec.triggers.join(', ');
+      document.getElementById('sc-procedure').value = spec.procedure.join('\n');
+      document.getElementById('sc-pitfalls').value = spec.pitfalls.join('\n');
+      document.getElementById('sc-constraints').value = spec.constraints.join('\n');
+      document.getElementById('sc-step-approve').style.display = data.phase === 'refine' ? 'block' : 'none';
+    } else if (data.phase === 'approve') {
+      document.getElementById('sc-step-describe').style.display = 'none';
+      document.getElementById('sc-step-review').style.display = 'block';
+      document.getElementById('sc-step-approve').style.display = 'block';
+    }
+  } catch(e) { console.error(e); }
+}
+
+// Key Storage
+let currentKeysTab = 'ssh';
+
+// API provider preset base URLs
+const API_PRESETS = {
+  openai: 'https://api.openai.com/v1',
+  anthropic: 'https://api.anthropic.com',
+  google: 'https://generativelanguage.googleapis.com',
+  mistral: 'https://api.mistral.ai/v1',
+  groq: 'https://api.groq.com/openai/v1',
+  deepseek: 'https://api.deepseek.com/v1',
+  runpod: 'https://api.runpod.ai',
+  github: 'https://api.github.com',
+  huggingface: 'https://huggingface.co/api',
+  cohere: 'https://api.cohere.ai',
+  together: 'https://api.together.xyz/v1',
+  fireworks: 'https://api.fireworks.ai/inference/v1',
+  perplexity: 'https://api.perplexity.ai',
+  xai: 'https://api.x.ai/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+  replicate: 'https://api.replicate.com/v1',
+  custom: ''
+};
+
+function switchKeysTab(tab) {
+  currentKeysTab = tab;
+  ['ssh', 'api', 'tokens', 'custom'].forEach(t => {
+    const btn = document.getElementById('keys-tab-' + t);
+    if (btn) {
+      if (t === tab) {
+        btn.style.borderColor = 'var(--brand)';
+        btn.style.color = 'var(--brand)';
+      } else {
+        btn.style.borderColor = '';
+        btn.style.color = '';
+      }
+    }
+  });
+  loadKeys();
+}
+
+function onKeyCategoryChange(cat) {
+  ['ssh', 'api', 'tokens', 'custom'].forEach(t => {
+    const el = document.getElementById('key-fields-' + t);
+    if (el) el.style.display = (t === cat) ? 'block' : 'none';
+  });
+}
+
+function onApiProviderChange(val) {
+  const customInput = document.getElementById('key-provider-custom');
+  const baseUrlField = document.getElementById('key-base-url');
+  if (val === 'custom') {
+    customInput.style.display = 'inline-block';
+    customInput.value = '';
+    customInput.focus();
+    baseUrlField.value = '';
+  } else {
+    customInput.style.display = 'none';
+    customInput.value = '';
+    if (API_PRESETS[val]) baseUrlField.value = API_PRESETS[val];
+  }
+}
+
+function onTokenServiceChange(val) {
+  const customInput = document.getElementById('key-service-custom');
+  if (val === 'custom') {
+    customInput.style.display = 'inline-block';
+    customInput.value = '';
+    customInput.focus();
+  } else {
+    customInput.style.display = 'none';
+    customInput.value = '';
+  }
+}
+
+// Show/hide allowlist fields based on permission
+document.addEventListener('DOMContentLoaded', () => {
+  const permSelect = document.getElementById('key-permission');
+  if (permSelect) {
+    permSelect.addEventListener('change', () => {
+      const allowlistDiv = document.getElementById('key-allowlist-fields');
+      if (allowlistDiv) allowlistDiv.style.display = (permSelect.value === 'allowlist') ? 'block' : 'none';
+    });
+  }
+});
+
+const PERM_BADGES = {
+  ask: '<span style="font-size:11px;padding:2px 6px;border-radius:3px;background:var(--warning-bg,rgba(234,179,8,0.15));color:var(--warning,orange)">Ask Every Time</span>',
+  allowlist: '<span style="font-size:11px;padding:2px 6px;border-radius:3px;background:rgba(34,197,94,0.15);color:#22c55e">Allowlist</span>',
+  session: '<span style="font-size:11px;padding:2px 6px;border-radius:3px;background:rgba(59,130,246,0.15);color:#3b82f6">Session Only</span>',
+  approve: '<span style="font-size:11px;padding:2px 6px;border-radius:3px;background:rgba(168,85,247,0.15);color:#a855f7">Approve Once</span>'
+};
+
+async function loadKeys() {
+  try {
+    const res = await fetch(API + '/api/keys?category=' + currentKeysTab);
+    const data = await res.json();
+    const entries = data[currentKeysTab] || [];
+    const container = document.getElementById('keys-list');
+    if (!entries.length) {
+      container.innerHTML = '<div style="color:var(--text-2);font-size:13px;padding:16px 0">No ' + currentKeysTab.toUpperCase() + ' keys stored yet.</div>';
+      return;
+    }
+    container.innerHTML = entries.map(e => {
+      const perm = e.permission || 'ask';
+      const badge = PERM_BADGES[perm] || PERM_BADGES.ask;
+      const fields = Object.entries(e).filter(([k,v]) => k !== 'name' && k !== 'permission' && k !== 'allow_for' && v).map(([k,v]) =>
+        '<span style="display:inline-block;margin-right:12px;font-size:12px"><strong style="color:var(--text-2)">' + k + ':</strong> <span style="color:var(--text-0)">' + v + '</span></span>'
+      ).join('');
+      return '<div class="file-item" style="flex-wrap:wrap;gap:8px">' +
+        '<span class="fname">' + e.name + '</span>' +
+        badge +
+        '<div style="flex:1;min-width:0;display:flex;flex-wrap:wrap;gap:4px 0">' + fields + '</div>' +
+        '<button class="btn btn--danger btn-sm" style="margin-left:auto" onclick="deleteKey(\'' + e.name.replace(/'/g, "\\'") + '\')">Delete</button>' +
+      '</div>';
+    }).join('');
+  } catch(e) { console.error(e); }
+}
+
+// ============================================================
+// Orchestration Engine
+// ============================================================
+
+function showNewOrchestrationForm() {
+  document.getElementById('orch-new-form').style.display = 'block';
+}
+
+function hideNewOrchestrationForm() {
+  document.getElementById('orch-new-form').style.display = 'none';
+  document.getElementById('orch-goal').value = '';
+}
+
+async function submitOrchestration() {
+  const goal = document.getElementById('orch-goal').value.trim();
+  if (!goal) { alert('Goal is required'); return; }
+  try {
+    const res = await fetch(API + '/api/orchestrations', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ goal }),
+    });
+    if (!res.ok) { const err = await res.json(); throw new Error(err.detail || 'Failed to create run'); }
+    hideNewOrchestrationForm();
+    loadOrchestrations();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function loadOrchestrations() {
+  try {
+    const res = await fetch(API + '/api/orchestrations');
+    const runs = await res.json();
+    const container = document.getElementById('orch-runs');
+    if (!runs.length) {
+      container.innerHTML = '<div style="color:var(--text-2);text-align:center;padding:32px">No orchestration runs yet. Create one to get started.</div>';
+      return;
+    }
+    container.innerHTML = runs.map(r => {
+      const statusColors = {pending:'var(--warning)',running:'var(--brand)',completed:'var(--success)',failed:'var(--danger)'};
+      const color = statusColors[r.status] || 'var(--text-2)';
+      const total = r.tasks ? r.tasks.length : 0;
+      const completed = r.tasks ? r.tasks.filter(t => t.status === 'completed').length : 0;
+      const improvements = r.improvements_found || 0;
+      return `<div class="ctrl-card" style="margin-bottom:12px;cursor:pointer" onclick="loadOrchestrationDetail('${r.id}')">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-weight:600;color:var(--text-0)">${r.goal.length > 80 ? r.goal.substring(0,80) + '...' : r.goal}</div>
+            <div style="font-size:12px;color:var(--text-2);margin-top:4px">${r.id} &middot; ${new Date(r.created).toLocaleString()}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <span class="badge" style="background:${color};color:var(--bg-0);font-size:11px">${r.status.toUpperCase()}</span>
+            <span style="font-size:12px;color:var(--text-2)">${completed}/${total} tasks</span>
+            ${improvements > 0 ? `<span style="font-size:12px;color:var(--warning)">+${improvements} improvements</span>` : ''}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) { console.error('loadOrchestrations error:', e); }
+}
+
+async function loadOrchestrationDetail(runId) {
+  try {
+    const res = await fetch(API + '/api/orchestrations/' + runId);
+    const run = await res.json();
+    const stats = await fetch(API + '/api/orchestrations/' + runId + '/stats').then(r => r.json());
+    const container = document.getElementById('orch-runs');
+
+    const statusColors = {pending:'var(--warning)',running:'var(--brand)',completed:'var(--success)',failed:'var(--danger)'};
+    const taskStatusColors = {pending:'var(--text-2)',running:'var(--brand)',completed:'var(--success)',failed:'var(--danger)',evaluating:'var(--warning)',improving:'var(--warning)'};
+    const typeIcons = {worker:'wrench',creative:'lightbulb',orchestrator:'network'};
+
+    let tasksHtml = '';
+    if (run.tasks && run.tasks.length) {
+      tasksHtml = run.tasks.map(t => {
+        const tc = taskStatusColors[t.status] || 'var(--text-2)';
+        const icon = typeIcons[t.agent_type] || 'wrench';
+        return `<div style="display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid var(--border-1)">
+          <span style="color:${tc};font-size:12px;font-weight:600">${t.status.toUpperCase()}</span>
+          <span style="color:var(--text-1);flex:1;font-size:13px">${t.goal}</span>
+          <span style="font-size:11px;color:var(--text-2)">[${t.agent_type}]</span>
+          ${t.improvements && t.improvements.length ? `<span style="font-size:11px;color:var(--warning)">+${t.improvements.length}</span>` : ''}
+        </div>`;
+      }).join('');
+    } else {
+      tasksHtml = '<div style="color:var(--text-2);text-align:center;padding:16px">No tasks yet. Decompose the goal or add tasks manually.</div>';
+    }
+
+    container.innerHTML = `
+      <div style="margin-bottom:16px">
+        <button class="btn btn--subtle btn-sm" onclick="loadOrchestrations()">&larr; Back to runs</button>
+      </div>
+      <div class="ctrl-card" style="margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div>
+            <h3 style="color:var(--brand);margin:0">${run.goal}</h3>
+            <div style="font-size:12px;color:var(--text-2);margin-top:4px">${run.id} &middot; ${new Date(run.created).toLocaleString()}</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="badge" style="background:${statusColors[run.status] || 'var(--text-2)'};color:var(--bg-0);font-size:11px">${run.status.toUpperCase()}</span>
+            ${run.status === 'pending' ? `<button class="btn btn--primary btn-sm" onclick="startOrchestration('${run.id}')">Start</button>` : ''}
+            ${run.status === 'running' ? `<button class="btn btn--success btn-sm" onclick="completeOrchestration('${run.id}')">Complete</button>` : ''}
+            <button class="btn btn--danger btn-sm" onclick="deleteOrchestration('${run.id}')">Delete</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:16px;font-size:13px;color:var(--text-2)">
+          <span><strong style="color:var(--text-0)">${stats.total_tasks || 0}</strong> tasks</span>
+          <span><strong style="color:var(--success)">${stats.by_status?.completed || 0}</strong> completed</span>
+          <span><strong style="color:var(--warning)">${run.improvements_found || 0}</strong> improvements</span>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h4 style="color:var(--text-0);margin:0">Tasks</h4>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn--primary btn-sm" onclick="showAddTaskForm('${run.id}')">+ Add Task</button>
+          <button class="btn btn--subtle btn-sm" onclick="decomposeOrchestration('${run.id}')">Auto-Decompose</button>
+        </div>
+      </div>
+      ${tasksHtml}
+
+      <div id="orch-add-task-form" class="ctrl-card" style="display:none;margin-top:16px">
+        <h4>Add Task</h4>
+        <div style="margin:8px 0">
+          <label style="font-size:11px;color:var(--text-2)">Goal *</label><br>
+          <input id="orch-task-goal" placeholder="What should this task accomplish?" style="width:100%">
+        </div>
+        <div style="display:flex;gap:12px;margin:8px 0">
+          <div><label style="font-size:11px;color:var(--text-2)">Type</label><br>
+          <select id="orch-task-type" style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px">
+            <option value="worker">Worker</option>
+            <option value="creative">Creative Evaluator</option>
+            <option value="orchestrator">Orchestrator</option>
+          </select></div>
+          <div><label style="font-size:11px;color:var(--text-2)">Priority</label><br>
+          <select id="orch-task-priority" style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px">
+            <option value="P0">P0 Critical</option>
+            <option value="P1">P1 High</option>
+            <option value="P2" selected>P2 Medium</option>
+            <option value="P3">P3 Low</option>
+          </select></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn--primary" onclick="addOrchestrationTask('${run.id}')">Add Task</button>
+          <button class="btn btn--subtle" onclick="document.getElementById('orch-add-task-form').style.display='none'">Cancel</button>
+        </div>
+      </div>
+    `;
+  } catch(e) { console.error('loadOrchestrationDetail error:', e); }
+}
+
+function showAddTaskForm(runId) {
+  document.getElementById('orch-add-task-form').style.display = 'block';
+}
+
+async function addOrchestrationTask(runId) {
+  const goal = document.getElementById('orch-task-goal').value.trim();
+  if (!goal) { alert('Goal is required'); return; }
+  const agentType = document.getElementById('orch-task-type').value;
+  const priority = document.getElementById('orch-task-priority').value;
+  try {
+    const res = await fetch(API + '/api/orchestrations/' + runId + '/tasks', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ goal, agent_type: agentType, priority }),
+    });
+    if (!res.ok) { const err = await res.json(); throw new Error(err.detail || 'Failed to add task'); }
+    loadOrchestrationDetail(runId);
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function startOrchestration(runId) {
+  try {
+    const res = await fetch(API + '/api/orchestrations/' + runId + '/start', { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to start run');
+    loadOrchestrationDetail(runId);
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function completeOrchestration(runId) {
+  try {
+    const res = await fetch(API + '/api/orchestrations/' + runId + '/complete', { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to complete run');
+    loadOrchestrationDetail(runId);
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function deleteOrchestration(runId) {
+  if (!confirm('Delete this orchestration run?')) return;
+  try {
+    const res = await fetch(API + '/api/orchestrations/' + runId, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete run');
+    loadOrchestrations();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function decomposeOrchestration(runId) {
+  const goal = prompt('Enter subtasks as a comma-separated list:');
+  if (!goal) return;
+  const subtaskGoals = goal.split(',').map(g => g.trim()).filter(g => g);
+  const subtasks = subtaskGoals.map(g => ({ goal: g, agent_type: 'worker', priority: 'P2' }));
+  try {
+    const res = await fetch(API + '/api/orchestrations/' + runId + '/decompose', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ subtasks }),
+    });
+    if (!res.ok) { const err = await res.json(); throw new Error(err.detail || 'Failed to decompose'); }
+    loadOrchestrationDetail(runId);
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+function showAddKeyForm() {
+  document.getElementById('keys-add-form').style.display = 'block';
+  onKeyCategoryChange(document.getElementById('key-category').value);
+}
+
+function hideAddKeyForm() {
+  document.getElementById('keys-add-form').style.display = 'none';
+}
+
+async function addKey() {
+  const cat = document.getElementById('key-category').value;
+  const name = document.getElementById('key-name').value.trim();
+  if (!name) { alert('Name is required'); return; }
+
+  const entry = { name: name };
+
+  // Permission
+  const perm = document.getElementById('key-permission').value;
+  entry.permission = perm;
+  if (perm === 'allowlist') {
+    const allowFor = document.getElementById('key-allow-for').value.trim();
+    if (allowFor) entry.allow_for = allowFor.split('\n').map(s => s.trim()).filter(Boolean);
+  }
+
+  if (cat === 'ssh') {
+    const host = document.getElementById('key-host').value.trim();
+    const user = document.getElementById('key-user').value.trim();
+    const path = document.getElementById('key-path').value.trim();
+    const port = document.getElementById('key-port').value.trim();
+    if (host) entry.host = host;
+    if (user) entry.user = user;
+    if (path) entry.key_path = path;
+    if (port && port !== '22') entry.port = port;
+  } else if (cat === 'api') {
+    const providerSel = document.getElementById('key-provider-select').value;
+    let provider = providerSel;
+    if (providerSel === 'custom') {
+      provider = document.getElementById('key-provider-custom').value.trim();
+    }
+    const key = document.getElementById('key-key').value;
+    const baseUrl = document.getElementById('key-base-url').value.trim();
+    if (provider) entry.provider = provider;
+    if (key) entry.key = key;
+    if (baseUrl) entry.base_url = baseUrl;
+  } else if (cat === 'tokens') {
+    const serviceSel = document.getElementById('key-service-select').value;
+    let service = serviceSel;
+    if (serviceSel === 'custom') {
+      service = document.getElementById('key-service-custom').value.trim();
+    }
+    const token = document.getElementById('key-token').value;
+    if (service) entry.service = service;
+    if (token) entry.token = token;
+  } else {
+    const custom = document.getElementById('key-custom-fields').value.trim();
+    if (custom) {
+      custom.split('\n').forEach(line => {
+        const [k, ...v] = line.split('=');
+        if (k && v.length) entry[k.trim()] = v.join('=').trim();
+      });
+    }
+  }
+
+  const note = document.getElementById('key-note').value.trim();
+  if (note) entry.note = note;
+
+  try {
+    const res = await fetch(API + '/api/keys/' + cat, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(entry)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      alert(err.detail || 'Failed to add key');
+      return;
+    }
+    hideAddKeyForm();
+    // Clear form
+    ['key-name','key-host','key-user','key-path','key-port','key-key','key-base-url','key-token','key-custom-fields','key-note','key-allow-for'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    document.getElementById('key-provider-select').value = '';
+    document.getElementById('key-service-select').value = '';
+    document.getElementById('key-permission').value = 'ask';
+    document.getElementById('key-allowlist-fields').style.display = 'none';
+    document.getElementById('key-provider-custom').style.display = 'none';
+    document.getElementById('key-service-custom').style.display = 'none';
+    loadKeys();
+    // Notify that keys changed -- user should restart session
+    showKeysChangedNotification();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function deleteKey(name) {
+  if (!confirm('Delete key "' + name + '" from ' + currentKeysTab + '?')) return;
+  try {
+    const res = await fetch(API + '/api/keys/' + currentKeysTab + '/' + encodeURIComponent(name), { method: 'DELETE' });
+    if (!res.ok) { alert('Failed to delete'); return; }
+    loadKeys();
+    // Notify that keys changed -- user should restart session
+    showKeysChangedNotification();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+// Agent Rules
+async function loadRules() {
+  try {
+    const scope = document.getElementById('rules-filter-scope')?.value || '';
+    const enabledOnly = document.getElementById('rules-enabled-only')?.checked || false;
+    const params = new URLSearchParams();
+    if (scope) params.set('scope', scope);
+    if (enabledOnly) params.set('enabled_only', 'true');
+    const res = await fetch(API + '/api/rules?' + params.toString());
+    const data = await res.json();
+    const list = document.getElementById('rules-list');
+    if (!data.rules || !data.rules.length) {
+      list.innerHTML = '<div style="color:var(--text-2);font-size:13px;padding:16px 0">No rules yet. Create one to customize agent behavior.</div>';
+      return;
+    }
+    let html = '';
+    for (const r of data.rules) {
+      const priColors = {P0:'var(--danger)',P1:'var(--warning)',P2:'var(--brand)',P3:'var(--text-2)'};
+      const priColor = priColors[r.priority] || priColors.P2;
+      const statusBadge = r.enabled
+        ? '<span class="badge badge--success">ON</span>'
+        : '<span class="badge badge--danger">OFF</span>';
+      const scopeBadge = '<span style="font-size:10px;padding:2px 6px;border-radius:3px;background:var(--bg-0);color:var(--text-2)">' + r.scope + '</span>';
+      html += '<div class="ctrl-card" style="margin-bottom:8px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center">' +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            '<span style="font-weight:700;color:' + priColor + ';font-size:12px;font-family:var(--font-mono)">[' + r.priority + ']</span>' +
+            '<strong>' + r.name + '</strong> ' + statusBadge + ' ' + scopeBadge +
+          '</div>' +
+          '<div style="display:flex;gap:4px">' +
+            '<button class="btn btn--subtle btn-sm" onclick="editRule(\'' + r.id + '\')" title="Edit"><i data-lucide="pencil" style="width:12px;height:12px"></i></button>' +
+            '<button class="btn btn--danger btn-sm" onclick="deleteRule(\'' + r.id + '\')" title="Delete"><i data-lucide="trash-2" style="width:12px;height:12px"></i></button>' +
+          '</div>' +
+        '</div>' +
+        '<div style="font-size:13px;color:var(--text-0);margin-top:4px">' + r.rule + '</div>' +
+        (r.detail ? '<div style="font-size:12px;color:var(--text-2);margin-top:2px">' + r.detail + '</div>' : '') +
+        (r.agent ? '<div style="font-size:11px;color:var(--text-3);margin-top:2px">Target: ' + r.agent + '</div>' : '') +
+      '</div>';
+    }
+    list.innerHTML = html;
+    if (window.lucide) window.lucide.createIcons();
+  } catch(e) { console.error('loadRules error:', e); }
+}
+
+function showAddRuleForm() {
+  document.getElementById('rules-add-form').style.display = 'block';
+  document.getElementById('rules-form-title').textContent = 'Add Rule';
+  document.getElementById('rule-edit-id').value = '';
+  ['rule-name','rule-rule','rule-detail','rule-agent'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('rule-priority').value = 'P2';
+  document.getElementById('rule-scope').value = 'global';
+  document.getElementById('rule-enabled').checked = true;
+}
+
+function hideRuleForm() {
+  document.getElementById('rules-add-form').style.display = 'none';
+}
+
+function editRule(id) {
+  fetch(API + '/api/rules/' + id).then(r => r.json()).then(r => {
+    document.getElementById('rules-add-form').style.display = 'block';
+    document.getElementById('rules-form-title').textContent = 'Edit Rule';
+    document.getElementById('rule-edit-id').value = r.id;
+    document.getElementById('rule-name').value = r.name || '';
+    document.getElementById('rule-rule').value = r.rule || '';
+    document.getElementById('rule-detail').value = r.detail || '';
+    document.getElementById('rule-priority').value = r.priority || 'P2';
+    document.getElementById('rule-scope').value = r.scope || 'global';
+    document.getElementById('rule-agent').value = r.agent || '';
+    document.getElementById('rule-enabled').checked = r.enabled !== false;
+  }).catch(e => console.error(e));
+}
+
+async function saveRule() {
+  const id = document.getElementById('rule-edit-id').value;
+  const name = document.getElementById('rule-name').value.trim();
+  const rule = document.getElementById('rule-rule').value.trim();
+  if (!name || !rule) { alert('Name and rule are required.'); return; }
+  const data = {
+    name: name,
+    rule: rule,
+    detail: document.getElementById('rule-detail').value.trim(),
+    priority: document.getElementById('rule-priority').value,
+    scope: document.getElementById('rule-scope').value,
+    agent: document.getElementById('rule-agent').value.trim(),
+    enabled: document.getElementById('rule-enabled').checked,
+  };
+  try {
+    if (id) {
+      await fetch(API + '/api/rules/' + id, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+    } else {
+      const params = new URLSearchParams(data);
+      await fetch(API + '/api/rules?' + params.toString(), {method:'POST'});
+    }
+    hideRuleForm();
+    loadRules();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function deleteRule(id) {
+  if (!confirm('Delete this rule?')) return;
+  await fetch(API + '/api/rules/' + id, {method:'DELETE'});
+  loadRules();
+}
+
+// Agent Creator
+let agentCategoryFilter = '';
+
+async function loadAgents() {
+  try {
+    const params = agentCategoryFilter ? '?category=' + encodeURIComponent(agentCategoryFilter) : '';
+    const res = await fetch(API + '/api/agents' + params);
+    const data = await res.json();
+    const grid = document.getElementById('agents-grid');
+
+    // Load categories
+    const catRes = await fetch(API + '/api/agents/categories');
+    const catData = await catRes.json();
+    const catEl = document.getElementById('agent-categories');
+    let catHtml = '<button class="btn btn--subtle btn-sm" style="border-color:' + (!agentCategoryFilter ? 'var(--brand)' : '') + ';color:' + (!agentCategoryFilter ? 'var(--brand)' : '') + '" onclick="filterAgentCategory(\'\')">All</button>';
+    for (const cat of catData.categories) {
+      const active = agentCategoryFilter === cat;
+      catHtml += '<button class="btn btn--subtle btn-sm" style="border-color:' + (active ? 'var(--brand)' : '') + ';color:' + (active ? 'var(--brand)' : '') + '" onclick="filterAgentCategory(\'' + cat + '\')">' + cat.charAt(0).toUpperCase() + cat.slice(1) + '</button>';
+    }
+    catEl.innerHTML = catHtml;
+
+    if (!data.templates || !data.templates.length) {
+      grid.innerHTML = '<div style="color:var(--text-2);font-size:13px;padding:16px 0">No agent templates found.</div>';
+      return;
+    }
+
+    let html = '';
+    for (const t of data.templates) {
+      const builtinBadge = t.is_builtin ? '<span class="badge badge--brand" style="margin-left:4px">Built-in</span>' : '';
+      const ruleCount = (t.rules || []).length;
+      const modelDisplay = t.model || 'default';
+      const soul = t.soul || {};
+      const soulSnippet = soul.identity ? '<span style="color:var(--brand);font-size:11px">&#10022; ' + soul.identity.substring(0, 60) + (soul.identity.length > 60 ? '...' : '') + '</span>' : '';
+      html += '<div class="ctrl-card" style="cursor:pointer" onclick="viewAgent(\'' + t.id + '\')">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center">' +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            '<i data-lucide="' + (t.icon || 'bot') + '" style="width:20px;height:20px;color:var(--brand)"></i>' +
+            '<strong>' + t.name + '</strong>' + builtinBadge +
+          '</div>' +
+          '<span style="font-size:11px;color:var(--text-2)">' + modelDisplay + '</span>' +
+        '</div>' +
+        '<div style="font-size:13px;color:var(--text-1);margin-top:6px">' + (t.description || '').substring(0, 120) + (t.description && t.description.length > 120 ? '...' : '') + '</div>' +
+        (soulSnippet ? '<div style="margin-top:4px">' + soulSnippet + '</div>' : '') +
+        '<div style="font-size:11px;color:var(--text-2);margin-top:4px">' +
+          '<span style="margin-right:12px">' + ruleCount + ' rules</span>' +
+          '<span style="margin-right:12px">' + t.category + '</span>' +
+          '<span>temp: ' + t.temperature + '</span>' +
+        '</div>' +
+        '<div style="display:flex;gap:4px;margin-top:8px">' +
+          '<button class="btn btn--primary btn-sm" onclick="event.stopPropagation();spawnAgent(\'' + t.id + '\')">Spawn Session</button>' +
+          (!t.is_builtin ? '<button class="btn btn--danger btn-sm" onclick="event.stopPropagation();deleteAgent(\'' + t.id + '\')" title="Delete"><i data-lucide="trash-2" style="width:12px;height:12px"></i></button>' : '') +
+        '</div>' +
+      '</div>';
+    }
+    grid.innerHTML = html;
+    if (window.lucide) window.lucide.createIcons();
+  } catch(e) { console.error('loadAgents error:', e); }
+}
+
+function filterAgentCategory(cat) {
+  agentCategoryFilter = cat;
+  loadAgents();
+}
+
+function showAddAgentForm() {
+  document.getElementById('agents-add-form').style.display = 'block';
+  document.getElementById('agents-form-title').textContent = 'Create Agent';
+  document.getElementById('agent-edit-id').value = '';
+  ['agent-name','agent-description','agent-system-prompt','agent-rules'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('agent-category').value = 'general';
+  document.getElementById('agent-icon').value = 'bot';
+  document.getElementById('agent-model').value = '';
+  document.getElementById('agent-provider').value = '';
+  document.getElementById('agent-temperature').value = '0.7';
+  document.getElementById('agent-max-tokens').value = '4096';
+  // Clear soul fields
+  document.getElementById('agent-soul-identity').value = '';
+  document.getElementById('agent-soul-strengths').value = '';
+  document.getElementById('agent-soul-personality').value = '';
+  document.getElementById('agent-soul-values').value = '';
+  document.getElementById('agent-soul-quirks').value = '';
+}
+
+function hideAgentForm() {
+  document.getElementById('agents-add-form').style.display = 'none';
+}
+
+async function saveAgent() {
+  const editId = document.getElementById('agent-edit-id').value;
+  const name = document.getElementById('agent-name').value.trim();
+  if (!name) { alert('Name is required.'); return; }
+
+  // Parse rules: one per line, "rule | detail" format
+  const rulesRaw = document.getElementById('agent-rules').value.trim();
+  const rules = [];
+  if (rulesRaw) {
+    for (const line of rulesRaw.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const parts = trimmed.split('|').map(s => s.trim());
+      rules.push({name: parts[0].substring(0, 40), rule: parts[0], detail: parts[1] || '', priority: 'P2'});
+    }
+  }
+
+  // Parse soul fields
+  const soulIdentity = document.getElementById('agent-soul-identity').value.trim();
+  const soulStrengths = document.getElementById('agent-soul-strengths').value.trim().split(',').map(s => s.trim()).filter(Boolean);
+  const soulPersonality = document.getElementById('agent-soul-personality').value.trim().split(',').map(s => s.trim()).filter(Boolean);
+  const soulValues = document.getElementById('agent-soul-values').value.trim().split(',').map(s => s.trim()).filter(Boolean);
+  const soulQuirks = document.getElementById('agent-soul-quirks').value.trim().split('\n').map(s => s.trim()).filter(Boolean);
+
+  const data = {
+    name: name,
+    description: document.getElementById('agent-description').value.trim(),
+    system_prompt: document.getElementById('agent-system-prompt').value.trim(),
+    category: document.getElementById('agent-category').value,
+    icon: document.getElementById('agent-icon').value.trim() || 'bot',
+    model: document.getElementById('agent-model').value.trim(),
+    provider: document.getElementById('agent-provider').value.trim(),
+    temperature: parseFloat(document.getElementById('agent-temperature').value) || 0.7,
+    max_tokens: parseInt(document.getElementById('agent-max-tokens').value) || 4096,
+    rules: rules,
+    tools_enabled: 'all',
+    soul_identity: soulIdentity,
+    soul_strengths: soulStrengths,
+    soul_personality: soulPersonality,
+    soul_values: soulValues,
+    soul_quirks: soulQuirks,
+  };
+
+  try {
+    if (editId) {
+      await fetch(API + '/api/agents/' + editId, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+    } else {
+      await fetch(API + '/api/agents', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+    }
+    hideAgentForm();
+    loadAgents();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function spawnAgent(templateId) {
+  try {
+    const res = await fetch(API + '/api/agents/' + templateId + '/spawn', {method:'POST'});
+    const data = await res.json();
+    if (data.session_id) {
+      sessionId = data.session_id;
+      { const el = document.getElementById('status-session'); if (el) el.textContent = sessionId; }
+      showToast('Agent spawned: ' + data.template_name + ' (session ' + data.session_id + ')', 'success');
+      switchPanel('chat');
+      appendMsg('assistant', 'Session started with **' + data.template_name + '** agent template.\nModel: ' + data.model + '\n\nSystem prompt preview: ' + data.system_prompt_preview.substring(0, 200) + '...');
+    }
+  } catch(e) { alert('Error spawning agent: ' + e.message); }
+}
+
+function viewAgent(id) {
+  fetch(API + '/api/agents/' + id).then(r => r.json()).then(t => {
+    document.getElementById('agents-add-form').style.display = 'block';
+    document.getElementById('agents-form-title').textContent = t.is_builtin ? 'View: ' + t.name : 'Edit: ' + t.name;
+    document.getElementById('agent-edit-id').value = t.is_builtin ? '' : t.id;
+    document.getElementById('agent-name').value = t.name || '';
+    document.getElementById('agent-description').value = t.description || '';
+    document.getElementById('agent-system-prompt').value = t.system_prompt || '';
+    document.getElementById('agent-category').value = t.category || 'general';
+    document.getElementById('agent-icon').value = t.icon || 'bot';
+    document.getElementById('agent-model').value = t.model || '';
+    document.getElementById('agent-provider').value = t.provider || '';
+    document.getElementById('agent-temperature').value = t.temperature || 0.7;
+    document.getElementById('agent-max-tokens').value = t.max_tokens || 4096;
+    // Fill rules
+    if (t.rules && t.rules.length) {
+      document.getElementById('agent-rules').value = t.rules.map(r => r.rule + (r.detail ? ' | ' + r.detail : '')).join('\n');
+    } else {
+      document.getElementById('agent-rules').value = '';
+    }
+    // Fill soul fields
+    const soul = t.soul || {};
+    document.getElementById('agent-soul-identity').value = soul.identity || '';
+    document.getElementById('agent-soul-strengths').value = (soul.strengths || []).join(', ');
+    document.getElementById('agent-soul-personality').value = (soul.personality || []).join(', ');
+    document.getElementById('agent-soul-values').value = (soul.values || []).join(', ');
+    document.getElementById('agent-soul-quirks').value = (soul.quirks || []).join('\n');
+  }).catch(e => console.error(e));
+}
+
+async function deleteAgent(id) {
+  if (!confirm('Delete this agent template?')) return;
+  await fetch(API + '/api/agents/' + id, {method:'DELETE'});
+  loadAgents();
+}
+
+// Initial status & uptime
+async function loadStatus() {
+  try {
+    const res = await fetch(API + '/api/status');
+    const data = await res.json();
+    { const el = document.getElementById('status-model'); if (el) el.textContent = data.model || data.status || '--'; }
+    document.getElementById('status-text') && (document.getElementById('status-text').textContent = data.status + ' | v' + data.version);
+    // Show PID in status bar
+    if (data.pid) {
+      const pidEl = document.getElementById('status-pid');
+      if (pidEl) pidEl.textContent = data.pid;
+    }
+    if (data.context_window) {
+      // Context meter is updated by loadContextStats() with used/total format
+      const fillEl = document.getElementById('ctx-meter-fill');
+      if (fillEl) fillEl.style.width = '0%';
+    }
+    if (data.sessions) {
+      const el = document.getElementById('metric-tasks');
+      if (el) el.textContent = data.sessions;
+    }
+    // Detect key storage changes
+    if (data.keys_version !== undefined) {
+      if (lastKeysVersion > 0 && data.keys_version > lastKeysVersion) {
+        showKeysChangedNotification();
+      }
+      lastKeysVersion = data.keys_version;
+    }
+  } catch(e) {
+    { const el = document.getElementById('status-model'); if (el) el.textContent = 'Offline'; }
+    { const el = document.getElementById('status-dot'); if (el) el.classList.add('down'); }
+  }
+}
+
+// Show notification in chat that keys changed, offer session restart
+let keysChangeNotified = false;
+function showKeysChangedNotification() {
+  if (keysChangeNotified) return;  // Only show once per change
+  keysChangeNotified = true;
+  const container = document.getElementById('chat-messages');
+  if (!container) return;
+  const msg = document.createElement('div');
+  msg.id = 'keys-change-notification';
+  msg.style.cssText = 'background:rgba(18,199,239,0.08);border:1px solid var(--brand);border-radius:8px;padding:12px 16px;margin:8px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap';
+  msg.innerHTML = '<span style="color:var(--brand);font-size:14px;font-weight:600">Access keys have changed</span>' +
+    '<span style="color:var(--text-2);font-size:13px">Your key storage was updated. Changes take effect in a new session.</span>' +
+    '<button class="btn btn--primary btn-sm" onclick="saveAndNewSession()" style="margin-left:auto">Save & New Session</button>' +
+    '<button class="btn btn--subtle btn-sm" onclick="dismissKeysNotification()">Dismiss</button>';
+  container.appendChild(msg);
+  container.scrollTop = container.scrollHeight;
+  // Switch to chat panel so user sees it
+  switchPanel('chat');
+}
+
+function dismissKeysNotification() {
+  const n = document.getElementById('keys-change-notification');
+  if (n) n.remove();
+  keysChangeNotified = false;
+}
+
+// Save current chat context and start a new session
+async function saveAndNewSession() {
+  // Remove the notification so it doesn't persist
+  const notif = document.querySelector('[style*="rgba(18,199,239"]');
+  if (notif) notif.remove();
+  // Add a system note that keys changed
+  const container = document.getElementById('chat-messages');
+  if (container) {
+    const note = document.createElement('div');
+    note.className = 'msg system';
+    note.innerHTML = '<em>Session saved. Starting new session with updated keys...</em>';
+    container.appendChild(note);
+  }
+  // Start a fresh session
+  newSession();
+}
+
+// Uptime counter
+function updateUptime() {
+  const elapsed = Math.floor((Date.now() - startTime) / 1000);
+  const h = Math.floor(elapsed / 3600);
+  const m = Math.floor((elapsed % 3600) / 60);
+  const s = elapsed % 60;
+  { const el = document.getElementById('status-uptime'); if (el) el.textContent = (h > 0 ? h + 'h ' : '') + m + 'm ' + s + 's'; }
+}
+setInterval(updateUptime, 1000);
+
+loadStatus();
+lucide.createIcons();
+</script>
+
+<!-- Preact App Module — reactive state management + component rendering -->
+<script type="module" src="/static/lib/app.js"></script>
+</body>
+</html>
