@@ -71,29 +71,29 @@ server:
 
 ## Tools
 
-Sawyer ships with 19 built-in tools. No plugins required:
+All major tools and files are accessible right from the GUI -- no CLI required. The sidebar gives you full control over every tool, skill, and project file without leaving the browser.
 
-| Tool | Description |
-|------|-------------|
-| `shell` | Execute shell commands |
-| `file_read` | Read files with line numbers |
-| `file_write` | Write/overwrite files |
-| `file_search` | Search by filename or content |
-| `web_search` | DuckDuckGo search (no API key) |
-| `web_fetch` | Fetch and extract text from URLs |
-| `code_execute` | Run Python in a sandboxed subprocess |
-| `memory_search` | Search persistent memory |
-| `memory_store` | Store facts across sessions |
-| `memory_delete` | Delete memory entries |
-| `skill_search` | Search skills by query |
-| `skill_load` | Load a skill's instructions |
-| `skill_list` | List all skills |
-| `git` | Git operations: status, diff, log, commit, branch, push |
-| `patch` | Surgical find/replace file edits |
-| `http_request` | REST API calls: GET, POST, PUT, DELETE |
-| `clipboard` | Copy text to system clipboard |
-| `project_create` | Scaffold new projects from templates |
-| `clawhub_import` | Import skills from ClawHub.ai or GitHub |
+| Tool | What It Does |
+|------|--------------|
+| `shell` | Execute shell commands -- builds, installs, git, processes |
+| `file_read` | Read files with line numbers and pagination |
+| `file_write` | Create or overwrite files entirely |
+| `file_search` | Find files by name or search inside file contents |
+| `web_search` | Search the web via DuckDuckGo (no API key needed) |
+| `web_fetch` | Fetch and extract readable text from any URL |
+| `code_execute` | Run Python code in a sandboxed subprocess |
+| `memory_search` | Search persistent memory for stored facts and preferences |
+| `memory_store` | Save facts that survive across sessions |
+| `memory_delete` | Remove memory entries you no longer need |
+| `skill_search` | Search available skills by keyword |
+| `skill_load` | Load a skill's full instructions into context |
+| `skill_list` | List all installed skills with descriptions |
+| `git` | Git operations: status, diff, log, commit, branch, push, pull, stash |
+| `patch` | Surgical find/replace edits in files (no full rewrites) |
+| `http_request` | REST API calls: GET, POST, PUT, DELETE with headers and body |
+| `clipboard` | Copy text to the system clipboard for sharing |
+| `project_create` | Scaffold new projects from built-in templates |
+| `clawhub_import` | Import skills from ClawHub.ai or GitHub (68K+ available) |
 
 ## Skills
 
