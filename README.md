@@ -45,14 +45,34 @@ pip install -e .
 ## Quick Start
 
 ```bash
-# Copy the example config and add your API key
-cp config.example.yaml config.yaml
-
-# Start the web UI
-sawyer-web --config config.yaml --host 127.0.0.1 --port 8765
+# Install and launch
+pip install git+https://github.com/drc10101/sawyer-agent.git
+sawyer-web
 ```
 
-Open http://127.0.0.1:8765 in your browser.
+On first run, Sawyer prompts you interactively:
+
+```
+=== Sawyer Agent Setup ===
+
+First run detected -- let's configure your AI provider.
+
+  1. Ollama (cloud or local)
+  2. OpenAI (GPT-4o, GPT-4.1, etc.)
+  3. Anthropic (Claude)
+  4. Custom OpenAI-compatible endpoint
+
+Provider [1]: 1
+Model [glm-5.1:cloud]:
+Base URL [https://ollama.com/v1]:
+API Key: sk-...
+
+Config saved to config.yaml
+```
+
+After setup, Sawyer starts the web UI at http://127.0.0.1:8765 -- ready to chat.
+
+To reconfigure later, edit `config.yaml` directly or delete it and run `sawyer-web` again.
 
 ## Configuration
 

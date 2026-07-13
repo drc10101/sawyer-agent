@@ -110,3 +110,71 @@ class HarnessConfig:
             ),
             channels=channels,
         )
+
+    def needs_setup(self) -> bool:
+        """Check if the config is missing required values (first-run)."""
+        return not self.llm.api_key
+
+    def save(self, path: str | Path) -> None:
+        """Save config to a YAML file."""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "llm": {
+                "provider": self.llm.provider,
+                "model": self.llm.model,
+                "api_key": self.llm.api_key,
+                "base_url": self.llm.base_url,
+                "max_tokens": self.llm.max_tokens,
+                "temperature": self.llm.temperature,
+            },
+            "security": {
+                "sandbox": self.security.sandbox,
+                "max_command_timeout": self.security.max_command_timeout,
+            },
+            "memory": {
+                "backend": self.memory.backend,
+                "path": self.memory.path,
+            },
+        }
+        path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False), encoding="utf-8")
+
+
+def setup_wizard(config_path: str = "config.yaml") -> HarnessConfig:
+    """Interactive first-run setup. Prompts for provider, model, and API key, then saves config."""
+    print("\n=== Sawyer Agent Setup ===\n")
+    print("First run detected -- let's configure your AI provider.\n")
+
+    providers = {
+        "1": ("ollama", "Ollama (cloud or local)", "glm-5.1:cloud", "https://ollama.com/v1"),
+        "2": ("openai", "OpenAI (GPT-4o, GPT-4.1, etc.)", "gpt-4o", "https://api.openai.com/v1"),
+        "3": ("anthropic", "Anthropic (Claude)", "claude-sonnet-4-20250514", "https://api.anthropic.com"),
+        "4": ("custom", "Custom OpenAI-compatible endpoint", "", ""),
+    }
+
+    for key, (pid, label, _, _) in providers.items():
+        print(f"  {key}. {label}")
+
+    choice = input("\nProvider [1]: ").strip() or "1"
+    provider_id, _, default_model, default_url = providers.get(choice, providers["1"])
+
+    model = input(f"Model [{default_model}]: ").strip() or default_model
+    base_url = input(f"Base URL [{default_url}]: ").strip() or default_url
+
+    print()
+    api_key = input("API Key: ").strip()
+    if not api_key:
+        print("\nNo API key provided. Sawyer will start but won't be able to chat until you add one.")
+        print(f"Edit {config_path} later to add your key.\n")
+
+    config = HarnessConfig(
+        llm=LLMConfig(
+            provider=provider_id,
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+        ),
+    )
+    config.save(config_path)
+    print(f"\nConfig saved to {config_path}\n")
+    return config

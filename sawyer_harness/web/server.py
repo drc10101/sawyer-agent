@@ -1744,4 +1744,10 @@ def main():
     )
 
     config = HarnessConfig.from_file(args.config)
+
+    # First-run setup: if no config file or no API key, run interactive wizard
+    if not Path(args.config).exists() or config.needs_setup():
+        from .config import setup_wizard
+        config = setup_wizard(args.config)
+
     run_server(config, host=args.host, port=args.port)
