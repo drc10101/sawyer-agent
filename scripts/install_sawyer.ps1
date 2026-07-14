@@ -275,7 +275,7 @@ Write-Host "  Fast Llama ready" -ForegroundColor Green
 # ── Create desktop shortcuts ──
 $PkgDir = & $python -c "import sawyer, os; print(os.path.dirname(sawyer.__file__))" 2>&1
 $BatPath = Join-Path $PkgDir "sawyer.bat"
-$IconPath = Join-Path $PkgDir "sawyer.ico"
+$IconPath = Join-Path $PkgDir "SAWYER_AGENT.ico"
 
 if (-not (Test-Path $BatPath)) {
     Write-Host "  WARNING: Launcher not found at $BatPath" -ForegroundColor Yellow

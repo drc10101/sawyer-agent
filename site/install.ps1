@@ -16,7 +16,9 @@ param(
     [switch]$Uninstall
 )
 
-$ErrorActionPreference = "Stop"
+# Use Continue for external commands (pip, venv, etc.) that write harmless warnings to stderr.
+# Stop would treat those warnings as terminating errors. We'll use try/catch for real failures.
+$ErrorActionPreference = "Continue"
 $AppName = "Sawyer"
 $AppPkg = "sawyer-core"
 $Version = "0.6.0"
@@ -147,7 +149,7 @@ Write-Host "  Step 2/4: Installing sawyer-core..." -ForegroundColor Cyan
 # Create venv for isolation
 if (-not (Test-Path (Join-Path $VenvDir "Scripts\Activate.ps1"))) {
     Write-Host "  Creating virtual environment..." -ForegroundColor DarkGray
-    & $python -m venv $VenvDir 2>$null
+    & $python -m venv $VenvDir
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  WARNING: venv creation failed. Installing to user site." -ForegroundColor Yellow
         & $python -m pip install --user --upgrade $AppPkg
@@ -164,8 +166,8 @@ if (Test-Path (Join-Path $VenvDir "Scripts\Activate.ps1")) {
     $python = "python"
     $pip = "pip"
 
-    # Upgrade pip
-    & $python -m pip install --upgrade pip --quiet 2>$null
+    # Upgrade pip (warnings are harmless)
+    & $python -m pip install --upgrade pip --quiet
 
     # Install sawyer-core
     & $pip install --upgrade $AppPkg
@@ -273,7 +275,7 @@ Write-Host "  Fast Llama ready" -ForegroundColor Green
 # ── Create desktop shortcuts ──
 $PkgDir = & $python -c "import sawyer, os; print(os.path.dirname(sawyer.__file__))" 2>&1
 $BatPath = Join-Path $PkgDir "sawyer.bat"
-$IconPath = Join-Path $PkgDir "sawyer.ico"
+$IconPath = Join-Path $PkgDir "SAWYER_AGENT.ico"
 
 if (-not (Test-Path $BatPath)) {
     Write-Host "  WARNING: Launcher not found at $BatPath" -ForegroundColor Yellow

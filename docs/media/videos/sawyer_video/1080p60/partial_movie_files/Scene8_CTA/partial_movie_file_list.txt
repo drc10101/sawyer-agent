@@ -1,0 +1,10 @@
+# This file is used internally by FFMPEG.
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/1080p60/partial_movie_files/Scene8_CTA/2873985843_3961478253_223132457.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/1080p60/partial_movie_files/Scene8_CTA/3496312638_3324304512_1515419759.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/1080p60/partial_movie_files/Scene8_CTA/3496312638_2574473371_1579885831.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/1080p60/partial_movie_files/Scene8_CTA/3496312638_3785628504_3173519554.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/1080p60/partial_movie_files/Scene8_CTA/3496312638_2688965532_342422384.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/1080p60/partial_movie_files/Scene8_CTA/3496312638_553392001_1339210838.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/1080p60/partial_movie_files/Scene8_CTA/3496312638_2575721361_2538553624.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/1080p60/partial_movie_files/Scene8_CTA/3496312638_1825899279_94959368.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/1080p60/partial_movie_files/Scene8_CTA/3496312638_3176623864_2420296903.mp4'

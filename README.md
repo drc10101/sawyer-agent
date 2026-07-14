@@ -1,4 +1,4 @@
-<div align="center"><img src="sawyer_logo.png" alt="Sawyer Agent on Bedrock" width="800"></div>
+<div align="center"><img src="Sawyer_Agent_Bedrock_Logo_Samples.png" alt="Sawyer Agent on Bedrock" width="800"></div>
 
 # Sawyer — Distributed MoE Inference Network
 

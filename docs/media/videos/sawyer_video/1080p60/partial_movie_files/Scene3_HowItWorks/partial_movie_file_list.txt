@@ -1,0 +1,9 @@
+# This file is used internally by FFMPEG.
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/1080p60/partial_movie_files/Scene3_HowItWorks/2873985843_3808507893_223132457.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/1080p60/partial_movie_files/Scene3_HowItWorks/3496312638_4019877387_2851026416.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/1080p60/partial_movie_files/Scene3_HowItWorks/3496312638_2513276162_663324164.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/1080p60/partial_movie_files/Scene3_HowItWorks/3496312638_1918155783_3349172492.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/1080p60/partial_movie_files/Scene3_HowItWorks/3496312638_1038168294_2060208332.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/1080p60/partial_movie_files/Scene3_HowItWorks/3496312638_3373791004_597763970.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/1080p60/partial_movie_files/Scene3_HowItWorks/3496312638_3877907558_2864761821.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/1080p60/partial_movie_files/Scene3_HowItWorks/3496312638_1630341430_2873729818.mp4'

@@ -749,13 +749,44 @@ def cmd_provider(args) -> int:
             print(f"Provider {args.provider_id} not found")
             storage.close()
             return 1
-        mgr.verify_provider(
-            args.provider_id,
-            stripe_connect_id=f"acct_mock_{args.provider_id}",
-        )
-        print(f"Stripe Connect onboarding initiated for {args.provider_id}")
-        print("  Status:    verified")
-        print(f"  Stripe ID: acct_mock_{args.provider_id}")
+
+        # Try real Stripe Connect onboarding if Stripe key is configured
+        stripe_key = os.environ.get("STRIPE_SECRET_KEY", "")
+        if stripe_key:
+            from sawyer.provider.stripe_connect import SawyerProviderStripe
+
+            stripe_provider = SawyerProviderStripe(mgr)
+            try:
+                result = stripe_provider.create_connect_account(args.provider_id)
+                print(f"Stripe Connect onboarding initiated for {args.provider_id}")
+                print(f"  Status:    {provider.status.value}")
+                print(f"  Stripe ID: {result.account_id}")
+                print(f"  Onboarding URL (expires in 1 hour):")
+                print(f"  {result.url}")
+            except ValueError as e:
+                print(f"  Error: {e}")
+                storage.close()
+                return 1
+            except Exception as e:
+                print(f"  Stripe error: {e}")
+                print("  Falling back to mock onboarding.")
+                mgr.verify_provider(
+                    args.provider_id,
+                    stripe_connect_id=f"acct_mock_{args.provider_id}",
+                )
+                print(f"Stripe Connect onboarding (mock) for {args.provider_id}")
+                print("  Status:    verified")
+                print(f"  Stripe ID: acct_mock_{args.provider_id}")
+        else:
+            # No Stripe key configured -- mock onboarding
+            mgr.verify_provider(
+                args.provider_id,
+                stripe_connect_id=f"acct_mock_{args.provider_id}",
+            )
+            print(f"Stripe Connect onboarding (mock) for {args.provider_id}")
+            print("  Status:    verified")
+            print(f"  Stripe ID: acct_mock_{args.provider_id}")
+            print("  Set STRIPE_SECRET_KEY to enable real Stripe Connect.")
 
     elif args.provider_action == "payouts":
         provider = mgr.get_provider(args.provider_id)

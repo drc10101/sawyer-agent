@@ -6,6 +6,7 @@ Provides:
 - GET  /api/checkout/success — Redirect after successful payment
 - GET  /api/checkout/cancel — Redirect after cancelled payment
 - POST /api/stripe/webhook — Stripe webhook handler
+- POST /api/billing/portal — Create Stripe billing portal session
 - GET  /api/me — Get current user info (by API key)
 - POST /v1/chat/completions — OpenAI-compatible inference endpoint
 - GET  / — Cluster overview (nodes, health, utilization)
@@ -27,6 +28,7 @@ Provides:
 - GET  /audit — Audit log query
 """
 
+import os
 import time
 from typing import Any
 
@@ -385,24 +387,49 @@ async def register_provider(request: Request) -> dict[str, Any]:
 
 
 async def start_onboarding(provider_id: str, api_key=Depends(verify_api_key)) -> dict[str, Any]:
-    """Start Stripe Connect onboarding for a provider."""
+    """Start Stripe Connect onboarding for a provider.
+
+    If STRIPE_SECRET_KEY is configured, creates a real Stripe Connect Express
+    account and returns the onboarding URL. Otherwise, marks as mock-verified.
+    """
     mgr = _get_provider_mgr()
     provider = mgr.get_provider(provider_id)
     if provider is None:
         raise HTTPException(status_code=404, detail=f"Provider {provider_id} not found")
 
-    # In production, this calls SawyerProviderStripe.create_connect_account()
-    # For now, mark as onboarding
-    provider.status = ProviderStatus.ONBOARDING
-    provider.updated_at = time.time()
+    stripe_key = os.environ.get("STRIPE_SECRET_KEY", "")
+    if stripe_key:
+        from sawyer.provider.stripe_connect import SawyerProviderStripe
 
-    return {
-        "provider_id": provider_id,
-        "status": provider.status.value,
-        "message": "Stripe Connect onboarding initiated. "
-        "Provider will receive an onboarding link via email.",
-        "next_step": "GET /providers/{provider_id}/verification to check status",
-    }
+        stripe_provider = SawyerProviderStripe(mgr)
+        try:
+            result = stripe_provider.create_connect_account(provider_id)
+            return {
+                "provider_id": provider_id,
+                "status": provider.status.value,
+                "stripe_account_id": result.account_id,
+                "onboarding_url": result.url,
+                "expires_at": result.expires_at,
+                "message": "Complete Stripe Connect onboarding to start earning.",
+                "next_step": "GET /providers/{provider_id}/verification to check status",
+            }
+        except Exception as e:
+            logger.error("Stripe Connect onboarding failed for %s: %s", provider_id, e)
+            raise HTTPException(
+                status_code=503,
+                detail=f"Stripe onboarding failed: {e}",
+            ) from None
+    else:
+        # No Stripe key -- mock onboarding
+        provider.status = ProviderStatus.ONBOARDING
+        provider.updated_at = time.time()
+        return {
+            "provider_id": provider_id,
+            "status": provider.status.value,
+            "message": "Stripe Connect onboarding initiated (mock). "
+            "Set STRIPE_SECRET_KEY to enable real Stripe Connect.",
+            "next_step": "GET /providers/{provider_id}/verification to check status",
+        }
 
 
 async def check_verification(provider_id: str, api_key=Depends(verify_api_key)) -> dict[str, Any]:

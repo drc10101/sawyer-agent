@@ -6,6 +6,7 @@ Endpoints:
   GET  /api/checkout/success  — Redirect after successful payment
   GET  /api/checkout/cancel   — Redirect after cancelled payment
   POST /api/stripe/webhook   — Stripe webhook handler
+  POST /api/billing/portal   — Create Stripe billing portal session
   GET  /api/me               — Get current user info (by API key)
 """
 
@@ -324,6 +325,43 @@ async def stripe_webhook(request: Request) -> dict[str, str]:
         raise HTTPException(status_code=400, detail="Invalid webhook signature.") from None
 
     return {"status": "received"}
+
+
+class PortalRequest(BaseModel):
+    email: EmailStr
+    return_url: str = "https://sawyer.infill.systems/"
+
+@router.post("/billing/portal")
+async def billing_portal(request: PortalRequest) -> Any:
+    """Create a Stripe billing portal session for subscription management.
+
+    Allows customers to upgrade, downgrade, or cancel their subscription,
+    update payment methods, and view billing history.
+    """
+    stripe = SawyerStripe()
+    if not stripe.api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Payment processing not configured.",
+        )
+
+    # Find or create Stripe customer
+    import stripe as stripe_lib
+    customers = stripe_lib.Customer.list(email=request.email, limit=1)
+    if not customers.data:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No Stripe customer found for {request.email}. "
+            "Sign up first at sawyer.infill.systems.",
+        )
+
+    customer_id = customers.data[0].id
+    session = stripe.create_portal_session(
+        stripe_customer_id=customer_id,
+        return_url=request.return_url,
+    )
+
+    return {"portal_url": session.url}
 
 
 @router.get("/me", response_model=UserInfoResponse)

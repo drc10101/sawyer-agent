@@ -1,0 +1,8 @@
+file 'C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/Scene1_PriceShock.mp4'
+file 'C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/Scene2_TheGap.mp4'
+file 'C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/Scene3_HowItWorks.mp4'
+file 'C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/Scene4_WhatYouGet.mp4'
+file 'C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/Scene5_Demo.mp4'
+file 'C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/Scene6_Tiers.mp4'
+file 'C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/Scene7_Providers.mp4'
+file 'C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/Scene8_CTA.mp4'

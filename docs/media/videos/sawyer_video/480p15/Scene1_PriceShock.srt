@@ -1,0 +1,8 @@
+1
+00:00:00,000 --> 00:00:03,000
+AI inference doesn't have to cost this much.
+
+2
+00:00:03,266 --> 00:00:05,266
+Thirty-three times cheaper.
+

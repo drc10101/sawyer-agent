@@ -1,0 +1,8 @@
+# This file is used internally by FFMPEG.
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/partial_movie_files/Scene6_Tiers/4156864382_3852165805_223132457.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/partial_movie_files/Scene6_Tiers/300363247_1613988078_3415754447.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/partial_movie_files/Scene6_Tiers/300363247_3938270715_2475430533.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/partial_movie_files/Scene6_Tiers/300363247_347310065_718844098.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/partial_movie_files/Scene6_Tiers/300363247_3498002855_3496016117.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/partial_movie_files/Scene6_Tiers/300363247_3877907558_1077157359.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/partial_movie_files/Scene6_Tiers/300363247_1987520136_2873729818.mp4'

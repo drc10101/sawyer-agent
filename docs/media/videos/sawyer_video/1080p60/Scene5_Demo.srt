@@ -1,0 +1,8 @@
+1
+00:00:00,000 --> 00:00:03,000
+One line change. Same API. Different price.
+
+2
+00:00:01,900 --> 00:00:04,900
+Change the base URL and API key. That's it.
+

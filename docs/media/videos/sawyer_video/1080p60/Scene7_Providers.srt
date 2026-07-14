@@ -1,0 +1,8 @@
+1
+00:00:00,000 --> 00:00:03,000
+If you have a GPU sitting idle, Sawyer puts it to work.
+
+2
+00:00:04,700 --> 00:00:08,700
+An RTX 3090 earns about forty-four cents an hour. A rig with four of them? That's passive income.
+

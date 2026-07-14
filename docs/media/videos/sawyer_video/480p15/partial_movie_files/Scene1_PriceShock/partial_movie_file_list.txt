@@ -1,0 +1,9 @@
+# This file is used internally by FFMPEG.
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/partial_movie_files/Scene1_PriceShock/4156864382_3804840681_223132457.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/partial_movie_files/Scene1_PriceShock/300363247_1119429571_1837416325.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/partial_movie_files/Scene1_PriceShock/300363247_2574473371_2769941201.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/partial_movie_files/Scene1_PriceShock/300363247_3175769030_421215029.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/partial_movie_files/Scene1_PriceShock/300363247_2574473371_3497449241.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/partial_movie_files/Scene1_PriceShock/300363247_4177403109_698267069.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/partial_movie_files/Scene1_PriceShock/300363247_310540274_4005325857.mp4'
+file 'file:C:/Users/drc10/development/SAWYER/docs/media/videos/sawyer_video/480p15/partial_movie_files/Scene1_PriceShock/300363247_621651872_2420296903.mp4'
