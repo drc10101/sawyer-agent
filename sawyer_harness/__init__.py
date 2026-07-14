@@ -1,5 +1,7 @@
 """Sawyer Harness -- Secure, model-agnostic, self-hosted AI agent framework."""
 
+__version__ = "0.6.0"
+
 from sawyer_harness.config import HarnessConfig
 from sawyer_harness.memory import MemoryStore
 from sawyer_harness.tools import ToolRegistry, create_default_registry

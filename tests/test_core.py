@@ -8,7 +8,7 @@ from sawyer_harness.tools import ToolRegistry, create_default_registry, ToolResu
 def test_config_defaults():
     """Config loads with sensible defaults."""
     config = HarnessConfig()
-    assert config.llm.provider == "openai"
+    assert config.llm.provider == "ollama"
     assert config.security.sandbox is True
     assert config.memory.backend == "sqlite"
 

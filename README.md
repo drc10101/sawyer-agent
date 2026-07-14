@@ -26,29 +26,44 @@ Sawyer is a standalone AI agent that runs on your machine with no telemetry, no 
 
 ## Install
 
-**One-click setup (Windows):**
-
-Download and double-click [`install-sawyer.bat`](install-sawyer.bat). It installs Sawyer, walks you through provider/API key setup, and puts a "Sawyer Agent" shortcut on your desktop with the icon. Double-click to launch.
-
-Or paste this into PowerShell:
+**One-click (Windows):**
 
 ```powershell
 irm https://raw.githubusercontent.com/drc10101/sawyer-agent/master/install-sawyer.bat -OutFile install-sawyer.bat; .\install-sawyer.bat
 ```
 
-**Manual install:**
+**Manual (any platform):**
 
 ```bash
 pip install git+https://github.com/drc10101/sawyer-agent.git
 ```
+
+Requires Python 3.11 or later.
 
 ## Quick Start
 
 After installing, run:
 
 ```bash
-sawyer-web
+python -m sawyer_harness
 ```
+
+On first run, Sawyer prompts you to configure your AI provider. Mistyped your key? Reconfigure anytime:
+
+```bash
+python -m sawyer_harness setup
+```
+
+All commands:
+
+| Command | What it does |
+|---------|--------------|
+| `python -m sawyer_harness` | Start the web server |
+| `python -m sawyer_harness web` | Start the web server |
+| `python -m sawyer_harness setup` | Configure or reconfigure API key and provider |
+| `python -m sawyer_harness uninstall` | Remove Sawyer completely (data, config, package) |
+| `python -m sawyer_harness version` | Show version |
+| `sawyer-web` | Start the web server (short form, if on PATH) |
 
 On first run, Sawyer prompts you interactively:
 
@@ -74,7 +89,15 @@ After setup, Sawyer starts the web UI at http://127.0.0.1:8765 -- ready to chat.
 
 The setup wizard also offers to create a desktop shortcut with the Sawyer icon.
 
-To reconfigure later, edit `~/.sawyer-harness/config.yaml` or delete it and run `sawyer-web` again.
+**Mistyped your API key?** Run `python -m sawyer_harness setup`. It shows your current values as defaults -- press Enter to keep them, or type new ones.
+
+## Uninstall
+
+```bash
+python -m sawyer_harness uninstall
+```
+
+This stops any running server, deletes `~/.sawyer-harness/` (config, memory, skills, keys), removes the desktop shortcut, and uninstalls the pip package. On Windows it handles the locked-exe problem automatically.
 
 ## Configuration
 

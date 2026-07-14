@@ -37,7 +37,7 @@ dev = [
 ]
 
 [project.scripts]
-sawyer-web = "sawyer_harness.web.server:main"
+sawyer-web = "sawyer_harness.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["sawyer_harness*"]

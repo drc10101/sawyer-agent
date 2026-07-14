@@ -149,13 +149,27 @@ class HarnessConfig:
 
 
 def setup_wizard(config_path: str | Path | None = None) -> HarnessConfig:
-    """Interactive first-run setup. Prompts for provider, model, and API key, then saves config."""
+    """Interactive setup wizard. Works for first run and reconfiguration.
+
+    On first run: prompts for provider, model, and API key.
+    On reconfiguration: shows current values as defaults (API key masked).
+    Press Enter to keep any value.
+    """
     if config_path is None:
         config_path = DEFAULT_CONFIG_PATH
     config_path = Path(config_path).expanduser().resolve()
 
+    # Load existing config for defaults when reconfiguring
+    existing = None
+    if config_path.exists():
+        existing = HarnessConfig.from_file(config_path)
+
     print("\n=== Sawyer Agent Setup ===\n")
-    print("First run detected -- let's configure your AI provider.\n")
+
+    if existing and existing.llm.api_key:
+        print("Reconfiguring existing setup. Press Enter to keep current values.\n")
+    else:
+        print("First run detected -- let's configure your AI provider.\n")
 
     providers = {
         "1": ("ollama", "Ollama (cloud or local)", "glm-5.1:cloud", "https://ollama.com/v1"),
@@ -164,20 +178,33 @@ def setup_wizard(config_path: str | Path | None = None) -> HarnessConfig:
         "4": ("custom", "Custom OpenAI-compatible endpoint", "", ""),
     }
 
+    # Map provider name back to menu number for pre-selection
+    provider_to_num = {v[0]: k for k, v in providers.items()}
+
     for key, (pid, label, _, _) in providers.items():
-        print(f"  {key}. {label}")
+        marker = " (current)" if existing and existing.llm.provider == pid else ""
+        print(f"  {key}. {label}{marker}")
 
-    choice = input("\nProvider [1]: ").strip() or "1"
-    provider_id, _, default_model, default_url = providers.get(choice, providers["1"])
+    default_choice = provider_to_num.get(existing.llm.provider, "1") if existing else "1"
+    choice = input(f"\nProvider [{default_choice}]: ").strip() or default_choice
+    provider_id, _, default_model, default_url = providers.get(choice, providers[default_choice])
 
-    model = input(f"Model [{default_model}]: ").strip() or default_model
-    base_url = input(f"Base URL [{default_url}]: ").strip() or default_url
+    # Use existing values as defaults when reconfiguring
+    cur_model = existing.llm.model if existing else default_model
+    cur_url = existing.llm.base_url if existing and existing.llm.base_url else default_url
+    cur_key = existing.llm.api_key if existing else ""
+
+    model = input(f"Model [{cur_model}]: ").strip() or cur_model
+    base_url = input(f"Base URL [{cur_url}]: ").strip() or cur_url
 
     print()
-    api_key = input("API Key: ").strip()
+    key_prompt = f"API Key [{cur_key[:4]}...]: " if cur_key else "API Key: "
+    api_key = input(key_prompt).strip()
+    if not api_key:
+        api_key = cur_key
     if not api_key:
         print(f"\nNo API key provided. Sawyer will start but won't chat until you add one.")
-        print(f"Edit {config_path} later to add your key.\n")
+        print(f"Run `python -m sawyer_harness setup` later to reconfigure.\n")
 
     config = HarnessConfig(
         llm=LLMConfig(
@@ -223,7 +250,7 @@ def _create_desktop_shortcut() -> None:
         'echo   Press Ctrl+C to stop.\n'
         'echo.\n'
         'start http://127.0.0.1:8765\n'
-        f'"{sys.executable}" -m sawyer_harness.web.server --host 127.0.0.1 --port 8765\n'
+        f'"{sys.executable}" -m sawyer_harness --host 127.0.0.1 --port 8765\n'
         'pause\n',
         encoding="utf-8",
     )

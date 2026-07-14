@@ -10,8 +10,8 @@ echo.
 :: Check for Python
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
-    echo  Python not found. Please install Python 3.11+ from https://python.org
-    echo  Then re-run this script.
+    echo  Python not found. Install Python 3.11+ from https://python.org
+    echo  Check "Add Python to PATH" during installation, then re-run.
     pause
     exit /b 1
 )
@@ -27,93 +27,27 @@ if %errorlevel% neq 0 (
 echo  Installed.
 echo.
 
-:: Config path (matches Python default: ~/.sawyer-harness/config.yaml)
-set "CFG_DIR=%USERPROFILE%\.sawyer-harness"
-set "CFG=%CFG_DIR%\config.yaml"
-
-if exist "%CFG%" goto :shortcut
-
-echo  [2/3] First-time setup -- configuring your AI provider.
-echo.
-echo  Choose your provider:
-echo    1. Ollama - default
-echo    2. OpenAI
-echo    3. Anthropic - Claude
-echo    4. Custom
-echo.
-set /p "P=Provider [1]: "
-if "%P%"=="" set "P=1"
-
-if "%P%"=="1" set "PN=ollama" & set "DM=glm-5.1:cloud" & set "DU=https://ollama.com/v1"
-if "%P%"=="2" set "PN=openai" & set "DM=gpt-4o" & set "DU=https://api.openai.com/v1"
-if "%P%"=="3" set "PN=anthropic" & set "DM=claude-sonnet-4-20250514" & set "DU=https://api.anthropic.com"
-if "%P%"=="4" set "PN=custom" & set "DM=" & set "DU="
-
-set /p "M=Model [%DM%]: "
-if "%M%"=="" set "M=%DM%"
-set /p "U=Base URL [%DU%]: "
-if "%U%"=="" set "U=%DU%"
-echo.
-set /p "K=API Key: "
-
-if not exist "%CFG_DIR%" mkdir "%CFG_DIR%"
-(
-echo llm:
-echo   provider: %PN%
-echo   model: %M%
-echo   api_key: %K%
-echo   base_url: %U%
-echo   max_tokens: 4096
-echo   temperature: 0.7
-echo security:
-echo   sandbox: true
-echo   max_command_timeout: 300
-echo memory:
-echo   backend: sqlite
-echo   path: ~/.sawyer-harness/memory.db
-) > "%CFG%"
-echo  Config saved to %CFG%
-echo.
-
-:shortcut
-echo  [3/3] Creating desktop shortcut...
-
-:: Find the Sawyer icon that ships with the package
-for /f "delims=" %%i in ('python -c "import sawyer_harness, os; print(os.path.join(os.path.dirname(sawyer_harness.__file__), 'web', 'static', 'sawyer.ico'))"') do set ICON=%%i
-
-:: Create launcher batch file
-set "DIR=%LOCALAPPDATA%\Sawyer Agent"
-if not exist "%DIR%" mkdir "%DIR%"
-set "BAT=%DIR%\launch.bat"
-
-> "%BAT%" echo @echo off
->> "%BAT%" echo title Sawyer Agent
->> "%BAT%" echo echo.
->> "%BAT%" echo echo   Sawyer Agent -- http://127.0.0.1:8765
->> "%BAT%" echo echo   Press Ctrl+C to stop.
->> "%BAT%" echo echo.
->> "%BAT%" echo start http://127.0.0.1:8765
->> "%BAT%" echo sawyer-web --host 127.0.0.1 --port 8765
->> "%BAT%" echo pause
-
-:: Create desktop shortcut with icon
-set "LNK=%USERPROFILE%\Desktop\Sawyer Agent.lnk"
-powershell -Command "$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut('%LNK%'); $s.TargetPath='%BAT%'; $s.WorkingDirectory='%DIR%'; $s.Description='Sawyer Agent'; if(Test-Path '%ICON%'){$s.IconLocation='%ICON%'};$s.Save()" >nul 2>&1
-
-if exist "%LNK%" (
-    echo  Desktop shortcut created with Sawyer icon.
-) else (
-    echo  Desktop shortcut created.
+:: Run setup (uses Python -- no YAML, no name collisions, no PATH games)
+python -m sawyer_harness setup
+if %errorlevel% neq 0 (
+    echo.
+    echo  Setup did not complete. Run this to configure manually:
+    echo    python -m sawyer_harness setup
 )
 
 echo.
 echo   ============================================
 echo    Done!
 echo.
-echo    Double-click "Sawyer Agent" on your Desktop
-echo    to start. It opens at:
+echo    Start the server:
+echo      python -m sawyer_harness
 echo.
-echo    http://127.0.0.1:8765
+echo    Other commands:
+echo      python -m sawyer_harness setup        Reconfigure
+echo      python -m sawyer_harness uninstall     Remove everything
+echo      python -m sawyer_harness version        Show version
+echo.
+echo    Or double-click "Sawyer Agent" on your Desktop.
 echo   ============================================
 echo.
 pause
