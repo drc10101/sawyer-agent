@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/sawyer-bedrock-logo.png" width="480" alt="Sawyer Agent">
+  <img src="docs/Sawyer_Agent_Github_Readme_Logo.png" width="480" alt="Sawyer Agent">
 </p>
 
 <p align="center">
