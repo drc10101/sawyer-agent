@@ -32,6 +32,8 @@ Sawyer is a standalone AI agent that runs on your machine with no telemetry, no 
 irm https://raw.githubusercontent.com/drc10101/sawyer-agent/master/install-sawyer.bat -OutFile install-sawyer.bat; .\install-sawyer.bat
 ```
 
+Or download `install-sawyer.bat` and double-click it.
+
 **Manual (any platform):**
 
 ```bash
@@ -47,6 +49,8 @@ After installing, run:
 ```bash
 python -m sawyer_harness
 ```
+
+The server starts and **automatically opens your browser** once it's ready -- no more racing to a dead page.
 
 On first run, Sawyer prompts you to configure your AI provider. Mistyped your key? Reconfigure anytime:
 
@@ -64,6 +68,16 @@ All commands:
 | `python -m sawyer_harness uninstall` | Remove Sawyer completely (data, config, package) |
 | `python -m sawyer_harness version` | Show version |
 | `sawyer-web` | Start the web server (short form, if on PATH) |
+
+**Installer commands** (Windows, via `install-sawyer.bat`):
+
+| Command | What it does |
+|---------|--------------|
+| `install-sawyer.bat` | Full install: pip install + setup + desktop shortcut |
+| `install-sawyer.bat reinstall` | Update package and reconfigure |
+| `install-sawyer.bat setup` | Reconfigure API key and provider |
+| `install-sawyer.bat uninstall` | Remove Sawyer completely |
+| `install-sawyer.bat start` | Start the server |
 
 On first run, Sawyer prompts you interactively:
 
@@ -85,11 +99,7 @@ API Key: sk-...
 Config saved to ~/.sawyer-harness/config.yaml
 ```
 
-After setup, Sawyer starts the web UI at http://127.0.0.1:8765 -- ready to chat.
-
-The setup wizard also offers to create a desktop shortcut with the Sawyer icon.
-
-**Mistyped your API key?** Run `python -m sawyer_harness setup`. It shows your current values as defaults -- press Enter to keep them, or type new ones.
+The setup wizard also offers to create a desktop shortcut with the Sawyer icon. Double-clicking it starts the server and opens your browser when ready.
 
 ## Uninstall
 

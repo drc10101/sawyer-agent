@@ -1720,10 +1720,39 @@ def _register_routes(app: FastAPI, state: _AppState):
 
 
 def run_server(config: HarnessConfig | None = None, host: str = "0.0.0.0", port: int = 8765):
-    """Run the web server."""
+    """Run the web server.
+
+    Starts uvicorn and, once the server is accepting connections,
+    opens the default web browser to the UI.  This avoids the race
+    condition where the browser opens before the server is ready.
+    """
     import uvicorn
+    import webbrowser
+    import threading
 
     app = create_app(config)
+
+    opened = [False]  # mutable flag in closure
+
+    def open_browser_when_ready():
+        """Poll until the server responds, then open the browser once."""
+        import socket
+        import time
+        for _ in range(60):  # up to 60 seconds
+            time.sleep(0.5)
+            try:
+                with socket.create_connection((host, port), timeout=1):
+                    pass
+            except OSError:
+                continue
+            # Server is up -- open browser once
+            if not opened[0]:
+                opened[0] = True
+                webbrowser.open(f"http://{host}:{port}")
+            return
+
+    thread = threading.Thread(target=open_browser_when_ready, daemon=True)
+    thread.start()
     uvicorn.run(app, host=host, port=port)
 
 

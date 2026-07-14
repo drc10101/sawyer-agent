@@ -230,14 +230,18 @@ def setup_wizard(config_path: str | Path | None = None) -> HarnessConfig:
 
 
 def _create_desktop_shortcut() -> None:
-    """Create a desktop shortcut with the Sawyer icon."""
+    """Create a desktop shortcut with the Sawyer icon.
+
+    The launcher simply starts the server.  The server itself opens
+    the browser once it's ready (see run_server in web/server.py).
+    """
     import subprocess
     import sys
 
     # Find the Sawyer icon that ships with the package
     icon_path = Path(__file__).parent / "web" / "static" / "sawyer.ico"
 
-    # Launcher batch file
+    # Launcher batch file -- starts server, waits for ready, then opens browser
     app_dir = Path.home() / ".sawyer-harness"
     app_dir.mkdir(parents=True, exist_ok=True)
     launcher = app_dir / "launch.bat"
@@ -246,10 +250,10 @@ def _create_desktop_shortcut() -> None:
         '@echo off\n'
         'title Sawyer Agent\n'
         'echo.\n'
-        'echo   Sawyer Agent -- http://127.0.0.1:8765\n'
+        'echo   Starting Sawyer Agent...\n'
+        'echo   Browser will open automatically when ready.\n'
         'echo   Press Ctrl+C to stop.\n'
         'echo.\n'
-        'start http://127.0.0.1:8765\n'
         f'"{sys.executable}" -m sawyer_harness --host 127.0.0.1 --port 8765\n'
         'pause\n',
         encoding="utf-8",
