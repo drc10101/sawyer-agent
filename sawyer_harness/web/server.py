@@ -1719,16 +1719,113 @@ def _register_routes(app: FastAPI, state: _AppState):
         app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
+def _kill_port_holder(host: str, port: int) -> None:
+    """Kill any process already listening on host:port.
+
+    Works cross-platform (Windows and Linux/macOS).  On Windows the
+    PID is found via ``netstat -ano`` and terminated with ``taskkill``.
+    On POSIX systems ``lsof`` or ``fuser`` is used, falling back to
+    ``pkill`` on the Sawyer process name.
+
+    The current process is never killed (we skip our own PID).
+    """
+    import os
+    import signal
+    import subprocess
+    import platform
+
+    my_pid = os.getpid()
+
+    # ── Fast check: is anything even listening? ──────────────────
+    import socket
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            pass  # something is listening
+    except OSError:
+        return  # port is free -- nothing to kill
+
+    # ── Find and kill the process holding the port ───────────────
+    system = platform.system()
+
+    if system == "Windows":
+        try:
+            result = subprocess.run(
+                ["netstat", "-ano"],
+                capture_output=True, text=True, timeout=10,
+            )
+            for line in result.stdout.splitlines():
+                # Match lines like:  TCP    127.0.0.1:8765    0.0.0.0:0    LISTENING    12345
+                parts = line.split()
+                if len(parts) < 5:
+                    continue
+                local_addr = parts[1]
+                state = parts[3]
+                pid_str = parts[4]
+                if f":{port}" in local_addr and state == "LISTENING":
+                    try:
+                        pid = int(pid_str)
+                    except ValueError:
+                        continue
+                    if pid == my_pid:
+                        continue
+                    subprocess.run(
+                        ["taskkill", "/F", "/PID", str(pid)],
+                        capture_output=True, timeout=10,
+                    )
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+    else:
+        # POSIX: try lsof first, then fuser
+        for cmd in [
+            ["lsof", "-ti", f":{port}"],
+            ["fuser", f"{port}/tcp"],
+        ]:
+            try:
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=10,
+                )
+                for token in result.stdout.split():
+                    try:
+                        pid = int(token.strip())
+                    except ValueError:
+                        continue
+                    if pid == my_pid:
+                        continue
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                continue
+            # If we found and killed something, stop trying alternatives
+            if result.stdout.strip():
+                break
+
+    # ── Wait for the port to be released ─────────────────────────
+    import time
+    for _ in range(20):
+        time.sleep(0.25)
+        try:
+            with socket.create_connection((host, port), timeout=0.5):
+                pass
+        except OSError:
+            return  # port is now free
+
+
 def run_server(config: HarnessConfig | None = None, host: str = "0.0.0.0", port: int = 8765):
     """Run the web server.
 
-    Starts uvicorn and, once the server is accepting connections,
-    opens the default web browser to the UI.  This avoids the race
-    condition where the browser opens before the server is ready.
+    If another process is already listening on the same host:port,
+    it is terminated first so Sawyer always starts cleanly.
+    Then uvicorn binds and, once the server is accepting connections,
+    opens the default web browser to the UI.
     """
     import uvicorn
     import webbrowser
     import threading
+
+    # ── Kill any existing process on this port ──────────────────────
+    _kill_port_holder(host, port)
 
     app = create_app(config)
 
