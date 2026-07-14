@@ -1732,7 +1732,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Sawyer Agent Web UI")
-    parser.add_argument("--config", "-c", default="config.yaml", help="Config file path")
+    parser.add_argument("--config", "-c", default="~/.sawyer-harness/config.yaml", help="Config file path")
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind")
     parser.add_argument("--port", "-p", type=int, default=8765, help="Port to bind")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose logging")
@@ -1746,8 +1746,9 @@ def main():
     config = HarnessConfig.from_file(args.config)
 
     # First-run setup: if no config file or no API key, run interactive wizard
-    if not Path(args.config).exists() or config.needs_setup():
+    config_path = Path(args.config).expanduser()
+    if not config_path.exists() or config.needs_setup():
         from sawyer_harness.config import setup_wizard
-        config = setup_wizard(args.config)
+        config = setup_wizard(str(config_path))
 
     run_server(config, host=args.host, port=args.port)

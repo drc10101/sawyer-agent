@@ -61,7 +61,7 @@ class HarnessConfig:
     @classmethod
     def from_file(cls, path: str | Path) -> HarnessConfig:
         """Load config from YAML file with env var interpolation."""
-        path = Path(path)
+        path = Path(path).expanduser()
         if not path.exists():
             return cls()
 
