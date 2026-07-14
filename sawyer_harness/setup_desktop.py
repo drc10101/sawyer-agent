@@ -12,7 +12,7 @@ def create_shortcut():
         # Fallback: use the Python entry point
         bat_path = sys.executable
 
-    icon_path = os.path.join(os.path.dirname(__file__), "web", "static", "sawyer-icon.ico")
+    icon_path = os.path.join(os.path.dirname(__file__), "web", "static", "sawyer.ico")
     if not os.path.exists(icon_path):
         icon_path = ""
 

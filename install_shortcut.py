@@ -21,7 +21,7 @@ def create_shortcut_win32():
     python_exe = sys.executable
     project_dir = os.path.join(os.path.expanduser("~"), "development", "sawyer-harness")
     launcher = os.path.join(project_dir, "sawyer_harness", "launcher.py")
-    icon_path = os.path.join(project_dir, "sawyer_harness", "web", "static", "sawyer-icon.ico")
+    icon_path = os.path.join(project_dir, "sawyer_harness", "web", "static", "sawyer.ico")
 
     shell = Dispatch("WScript.Shell")
     shortcut = shell.CreateShortCut(shortcut_path)
@@ -45,7 +45,7 @@ def create_shortcut_powershell():
     python_exe = sys.executable
     project_dir = os.path.join(os.path.expanduser("~"), "development", "sawyer-harness")
     launcher = os.path.join(project_dir, "sawyer_harness", "launcher.py")
-    icon_path = os.path.join(project_dir, "sawyer_harness", "web", "static", "sawyer-icon.ico")
+    icon_path = os.path.join(project_dir, "sawyer_harness", "web", "static", "sawyer.ico")
 
     # PowerShell script to create the shortcut
     ps_script = (

@@ -28,7 +28,7 @@ echo  Installed.
 echo.
 
 :: Find the installed icon
-for /f "delims=" %%i in ('python -c "import sawyer_harness, os; print(os.path.join(os.path.dirname(sawyer_harness.__file__), 'web', 'static', 'sawyer-icon.ico'))"') do set ICON=%%i
+for /f "delims=" %%i in ('python -c "import sawyer_harness, os; print(os.path.join(os.path.dirname(sawyer_harness.__file__), 'web', 'static', 'sawyer.ico'))"') do set ICON=%%i
 
 :: Config
 set "CFG=%USERPROFILE%\sawyer-agent-config.yaml"

@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="docs/sawyer-icon.ico" width="128" height="128" alt="Sawyer Agent">
+  <img src="docs/sawyer-bedrock-logo.png" width="480" alt="Sawyer Agent">
 </p>
-
-<h1 align="center">Sawyer Agent</h1>
 
 <p align="center">
   Secure, model-agnostic, self-hosted AI agent framework
