@@ -84,7 +84,7 @@ set "BAT=%DIR%\launch.bat"
 >> "%BAT%" echo title Sawyer Agent
 >> "%BAT%" echo echo   Sawyer Agent starting... http://127.0.0.1:8765
 >> "%BAT%" echo start http://127.0.0.1:8765
->> "%BAT%" echo python -m sawyer_harness.web.server --config "%CFG%" --host 127.0.0.1 --port 8765
+>> "%BAT%" echo sawyer-web --config "%CFG%" --host 127.0.0.1 --port 8765
 >> "%BAT%" echo pause
 
 :: Create desktop shortcut with icon
