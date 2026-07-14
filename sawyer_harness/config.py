@@ -117,7 +117,13 @@ class HarnessConfig:
         )
 
     def needs_setup(self) -> bool:
-        """Check if the config is missing required values (first-run)."""
+        """Check if the config is missing required values (first-run).
+
+        Ollama and local providers don't require an API key, so an empty
+        key is fine for them.  Only OpenAI and Anthropic need one.
+        """
+        if self.llm.provider in ("ollama", "local"):
+            return not self.llm.base_url
         return not self.llm.api_key
 
     def save(self, path: str | Path | None = None) -> Path:

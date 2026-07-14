@@ -103,8 +103,9 @@ class LLMClient:
         """OpenAI-compatible chat completion (Sawyer, OpenAI, Ollama, local)."""
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self._api_key}",
         }
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
 
         # Sawyer-specific headers
         if self.config.provider == "sawyer":
