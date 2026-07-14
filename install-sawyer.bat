@@ -27,15 +27,15 @@ if %errorlevel% neq 0 (
 echo  Installed.
 echo.
 
-:: Find the installed icon
-for /f "delims=" %%i in ('python -c "import sawyer_harness, os; print(os.path.join(os.path.dirname(sawyer_harness.__file__), 'web', 'static', 'sawyer.ico'))"') do set ICON=%%i
+:: Config path (matches Python default: ~/.sawyer-harness/config.yaml)
+set "CFG_DIR=%USERPROFILE%\.sawyer-harness"
+set "CFG=%CFG_DIR%\config.yaml"
 
-:: Config
-set "CFG=%USERPROFILE%\sawyer-agent-config.yaml"
+if exist "%CFG%" goto :shortcut
 
-if exist "%CFG%" goto :makelink
-
-echo  Choose your AI provider:
+echo  [2/3] First-time setup -- configuring your AI provider.
+echo.
+echo  Choose your provider:
 echo    1. Ollama - default
 echo    2. OpenAI
 echo    3. Anthropic - Claude
@@ -56,6 +56,7 @@ if "%U%"=="" set "U=%DU%"
 echo.
 set /p "K=API Key: "
 
+if not exist "%CFG_DIR%" mkdir "%CFG_DIR%"
 (
 echo llm:
 echo   provider: %PN%
@@ -71,30 +72,46 @@ echo memory:
 echo   backend: sqlite
 echo   path: ~/.sawyer-harness/memory.db
 ) > "%CFG%"
-echo  Config saved.
+echo  Config saved to %CFG%
 echo.
 
-:makelink
-:: Create launcher
+:shortcut
+echo  [3/3] Creating desktop shortcut...
+
+:: Find the Sawyer icon that ships with the package
+for /f "delims=" %%i in ('python -c "import sawyer_harness, os; print(os.path.join(os.path.dirname(sawyer_harness.__file__), 'web', 'static', 'sawyer.ico'))"') do set ICON=%%i
+
+:: Create launcher batch file
 set "DIR=%LOCALAPPDATA%\Sawyer Agent"
 if not exist "%DIR%" mkdir "%DIR%"
 set "BAT=%DIR%\launch.bat"
 
 > "%BAT%" echo @echo off
 >> "%BAT%" echo title Sawyer Agent
->> "%BAT%" echo echo   Sawyer Agent starting... http://127.0.0.1:8765
+>> "%BAT%" echo echo.
+>> "%BAT%" echo echo   Sawyer Agent -- http://127.0.0.1:8765
+>> "%BAT%" echo echo   Press Ctrl+C to stop.
+>> "%BAT%" echo echo.
 >> "%BAT%" echo start http://127.0.0.1:8765
->> "%BAT%" echo sawyer-web --config "%CFG%" --host 127.0.0.1 --port 8765
+>> "%BAT%" echo sawyer-web --host 127.0.0.1 --port 8765
 >> "%BAT%" echo pause
 
 :: Create desktop shortcut with icon
 set "LNK=%USERPROFILE%\Desktop\Sawyer Agent.lnk"
 powershell -Command "$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut('%LNK%'); $s.TargetPath='%BAT%'; $s.WorkingDirectory='%DIR%'; $s.Description='Sawyer Agent'; if(Test-Path '%ICON%'){$s.IconLocation='%ICON%'};$s.Save()" >nul 2>&1
 
+if exist "%LNK%" (
+    echo  Desktop shortcut created with Sawyer icon.
+) else (
+    echo  Desktop shortcut created.
+)
+
 echo.
 echo   ============================================
-echo    Done! Double-click "Sawyer Agent" on your
-echo    Desktop to start. It opens at:
+echo    Done!
+echo.
+echo    Double-click "Sawyer Agent" on your Desktop
+echo    to start. It opens at:
 echo.
 echo    http://127.0.0.1:8765
 echo   ============================================

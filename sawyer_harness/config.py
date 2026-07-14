@@ -2,7 +2,7 @@
 Configuration loader.
 
 Loads from YAML config file with env var interpolation.
-All paths are relative to the config file location or absolute.
+Default config path: ~/.sawyer-harness/config.yaml
 """
 
 from __future__ import annotations
@@ -15,27 +15,29 @@ from typing import Any
 
 import yaml
 
+DEFAULT_CONFIG_PATH = Path.home() / ".sawyer-harness" / "config.yaml"
+
 
 @dataclass
 class LLMConfig:
-    provider: str = "openai"  # sawyer, openai, anthropic, ollama, local
-    model: str = "gpt-4o"
+    provider: str = "ollama"
+    model: str = "glm-5.1:cloud"
     api_key: str = ""
-    base_url: str = ""
+    base_url: str = "https://ollama.com/v1"
     max_tokens: int = 4096
     temperature: float = 0.7
-    context_length: int | None = None  # Override model context window; None = lookup
+    context_length: int | None = None
 
 
 @dataclass
 class SecurityConfig:
     sandbox: bool = True
-    allowed_tools: list[str] = field(default_factory=list)  # empty = all
+    allowed_tools: list[str] = field(default_factory=list)
     denied_paths: list[str] = field(default_factory=lambda: [
         "/etc/passwd", "/etc/shadow", "/root/.ssh",
     ])
-    max_command_timeout: int = 300  # seconds
-    audit_log: str = ""  # path to audit log, empty = stderr
+    max_command_timeout: int = 300
+    audit_log: str = ""
 
 
 @dataclass
@@ -59,13 +61,15 @@ class HarnessConfig:
     channels: list[ChannelConfig] = field(default_factory=list)
 
     @classmethod
-    def from_file(cls, path: str | Path) -> HarnessConfig:
+    def from_file(cls, path: str | Path | None = None) -> HarnessConfig:
         """Load config from YAML file with env var interpolation."""
-        path = Path(path).expanduser()
+        if path is None:
+            path = DEFAULT_CONFIG_PATH
+        path = Path(path).expanduser().resolve()
         if not path.exists():
             return cls()
 
-        raw = path.read_text()
+        raw = path.read_text(encoding="utf-8")
         # Interpolate environment variables: ${VAR_NAME}
         interpolated = re.sub(
             r"\$\{(\w+)\}",
@@ -79,20 +83,21 @@ class HarnessConfig:
         mem_data = data.get("memory", {})
         chan_data = data.get("channels", [])
 
-        channels = []
-        for c in chan_data:
-            channels.append(ChannelConfig(
+        channels = [
+            ChannelConfig(
                 name=c.get("name", ""),
                 enabled=c.get("enabled", False),
-                config=c.get("config", c),  # pass through all channel-specific keys
-            ))
+                config=c.get("config", c),
+            )
+            for c in chan_data
+        ]
 
         return cls(
             llm=LLMConfig(
-                provider=llm_data.get("provider", "openai"),
-                model=llm_data.get("model", "gpt-4o"),
+                provider=llm_data.get("provider", "ollama"),
+                model=llm_data.get("model", "glm-5.1:cloud"),
                 api_key=llm_data.get("api_key", ""),
-                base_url=llm_data.get("base_url", ""),
+                base_url=llm_data.get("base_url", "https://ollama.com/v1"),
                 max_tokens=llm_data.get("max_tokens", 4096),
                 temperature=llm_data.get("temperature", 0.7),
                 context_length=llm_data.get("context_length", None),
@@ -115,9 +120,11 @@ class HarnessConfig:
         """Check if the config is missing required values (first-run)."""
         return not self.llm.api_key
 
-    def save(self, path: str | Path) -> None:
-        """Save config to a YAML file."""
-        path = Path(path)
+    def save(self, path: str | Path | None = None) -> Path:
+        """Save config to a YAML file. Returns the resolved path."""
+        if path is None:
+            path = DEFAULT_CONFIG_PATH
+        path = Path(path).expanduser().resolve()
         path.parent.mkdir(parents=True, exist_ok=True)
         data = {
             "llm": {
@@ -138,10 +145,15 @@ class HarnessConfig:
             },
         }
         path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False), encoding="utf-8")
+        return path
 
 
-def setup_wizard(config_path: str = "config.yaml") -> HarnessConfig:
+def setup_wizard(config_path: str | Path | None = None) -> HarnessConfig:
     """Interactive first-run setup. Prompts for provider, model, and API key, then saves config."""
+    if config_path is None:
+        config_path = DEFAULT_CONFIG_PATH
+    config_path = Path(config_path).expanduser().resolve()
+
     print("\n=== Sawyer Agent Setup ===\n")
     print("First run detected -- let's configure your AI provider.\n")
 
@@ -164,7 +176,7 @@ def setup_wizard(config_path: str = "config.yaml") -> HarnessConfig:
     print()
     api_key = input("API Key: ").strip()
     if not api_key:
-        print("\nNo API key provided. Sawyer will start but won't be able to chat until you add one.")
+        print(f"\nNo API key provided. Sawyer will start but won't chat until you add one.")
         print(f"Edit {config_path} later to add your key.\n")
 
     config = HarnessConfig(
@@ -175,17 +187,69 @@ def setup_wizard(config_path: str = "config.yaml") -> HarnessConfig:
             base_url=base_url,
         ),
     )
-    config.save(config_path)
-    print(f"\nConfig saved to {config_path}")
+    saved_path = config.save(config_path)
+    print(f"\nConfig saved to {saved_path}")
 
     # Offer to create a desktop shortcut
     try:
         desktop_choice = input("\nCreate a desktop shortcut? [Y/n]: ").strip().lower()
         if desktop_choice in ("", "y", "yes"):
-            from .setup_desktop import create_shortcut
-            create_shortcut()
+            _create_desktop_shortcut()
     except (EOFError, KeyboardInterrupt):
         pass
 
     print()
     return config
+
+
+def _create_desktop_shortcut() -> None:
+    """Create a desktop shortcut with the Sawyer icon."""
+    import subprocess
+    import sys
+
+    # Find the Sawyer icon that ships with the package
+    icon_path = Path(__file__).parent / "web" / "static" / "sawyer.ico"
+
+    # Launcher batch file
+    app_dir = Path.home() / ".sawyer-harness"
+    app_dir.mkdir(parents=True, exist_ok=True)
+    launcher = app_dir / "launch.bat"
+
+    launcher.write_text(
+        '@echo off\n'
+        'title Sawyer Agent\n'
+        'echo.\n'
+        'echo   Sawyer Agent -- http://127.0.0.1:8765\n'
+        'echo   Press Ctrl+C to stop.\n'
+        'echo.\n'
+        'start http://127.0.0.1:8765\n'
+        f'"{sys.executable}" -m sawyer_harness.web.server --host 127.0.0.1 --port 8765\n'
+        'pause\n',
+        encoding="utf-8",
+    )
+
+    # Create .lnk shortcut with icon via PowerShell
+    shortcut_path = Path.home() / "Desktop" / "Sawyer Agent.lnk"
+    icon_arg = str(icon_path) if icon_path.exists() else ""
+    ps_cmd = (
+        f"$w=New-Object -ComObject WScript.Shell;"
+        f"$s=$w.CreateShortcut('{shortcut_path}');"
+        f"$s.TargetPath='{launcher}';"
+        f"$s.WorkingDirectory='{app_dir}';"
+        f"$s.Description='Sawyer Agent';"
+    )
+    if icon_arg:
+        ps_cmd += f"$s.IconLocation='{icon_arg}';"
+    ps_cmd += "$s.Save()"
+
+    result = subprocess.run(
+        ["powershell", "-Command", ps_cmd],
+        capture_output=True, timeout=10,
+    )
+    if result.returncode == 0:
+        print("  Desktop shortcut created with Sawyer icon.")
+    else:
+        # Fallback: just copy the bat to desktop
+        desktop_bat = Path.home() / "Desktop" / "Sawyer Agent.bat"
+        desktop_bat.write_text(launcher.read_text(), encoding="utf-8")
+        print("  Desktop shortcut created.")

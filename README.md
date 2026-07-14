@@ -28,7 +28,7 @@ Sawyer is a standalone AI agent that runs on your machine with no telemetry, no 
 
 **One-click setup (Windows):**
 
-Download and double-click [`install-sawyer.bat`](install-sawyer.bat). It installs Python if needed, installs Sawyer, walks you through provider/API key setup, and puts a "Sawyer Agent" shortcut on your desktop. After that, just double-click the shortcut to chat.
+Download and double-click [`install-sawyer.bat`](install-sawyer.bat). It installs Sawyer, walks you through provider/API key setup, and puts a "Sawyer Agent" shortcut on your desktop with the icon. Double-click to launch.
 
 Or paste this into PowerShell:
 
@@ -42,19 +42,11 @@ irm https://raw.githubusercontent.com/drc10101/sawyer-agent/master/install-sawye
 pip install git+https://github.com/drc10101/sawyer-agent.git
 ```
 
-Or clone and install editable:
-
-```bash
-git clone https://github.com/drc10101/sawyer-agent.git
-cd sawyer-agent
-pip install -e .
-```
-
 ## Quick Start
 
+After installing, run:
+
 ```bash
-# Install and launch
-pip install git+https://github.com/drc10101/sawyer-agent.git
 sawyer-web
 ```
 
@@ -75,28 +67,32 @@ Model [glm-5.1:cloud]:
 Base URL [https://ollama.com/v1]:
 API Key: sk-...
 
-Config saved to config.yaml
+Config saved to ~/.sawyer-harness/config.yaml
 ```
 
 After setup, Sawyer starts the web UI at http://127.0.0.1:8765 -- ready to chat.
 
-The setup wizard also offers to create a desktop shortcut (with the Sawyer icon) so you can launch Sawyer with one click anytime.
+The setup wizard also offers to create a desktop shortcut with the Sawyer icon.
 
-To reconfigure later, edit `config.yaml` directly or delete it and run `sawyer-web` again.
+To reconfigure later, edit `~/.sawyer-harness/config.yaml` or delete it and run `sawyer-web` again.
 
 ## Configuration
 
 ```yaml
-# config.yaml
+# ~/.sawyer-harness/config.yaml
 llm:
   provider: ollama           # ollama, openai, anthropic
   model: glm-5.1:cloud
   api_key: YOUR_KEY_HERE
   base_url: https://ollama.com/v1
-
-server:
-  host: 127.0.0.1
-  port: 8765
+  max_tokens: 4096
+  temperature: 0.7
+security:
+  sandbox: true
+  max_command_timeout: 300
+memory:
+  backend: sqlite
+  path: ~/.sawyer-harness/memory.db
 ```
 
 ## Tools

@@ -3,12 +3,15 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sawyer-harness"
-version = "0.1.0"
+name = "sawyer-agent"
+version = "0.6.0"
 description = "Secure, model-agnostic, self-hosted AI agent framework"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
+authors = [
+    {name = "David Campbell"},
+]
 dependencies = [
     "openai>=1.30.0",
     "anthropic>=0.25.0",
@@ -32,12 +35,8 @@ dev = [
     "black>=24.0",
     "mypy>=1.10",
 ]
-sawyer = [
-    "sawyer-sdk>=0.1.0",  # placeholder for Sawyer inference client
-]
 
 [project.scripts]
-sawyer-harness = "sawyer_harness.cli:main"
 sawyer-web = "sawyer_harness.web.server:main"
 
 [tool.setuptools.packages.find]
@@ -47,9 +46,6 @@ include = ["sawyer_harness*"]
 sawyer_harness = [
     "capabilities.yaml",
     "web/static/**/*",
-    "web/static/icons/*",
-    "web/static/lib/*",
-    "web/static/styles/*",
 ]
 
 [tool.ruff]
