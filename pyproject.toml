@@ -40,6 +40,18 @@ sawyer = [
 sawyer-harness = "sawyer_harness.cli:main"
 sawyer-web = "sawyer_harness.web.server:main"
 
+[tool.setuptools.packages.find]
+include = ["sawyer_harness*"]
+
+[tool.setuptools.package-data]
+sawyer_harness = [
+    "capabilities.yaml",
+    "web/static/**/*",
+    "web/static/icons/*",
+    "web/static/lib/*",
+    "web/static/styles/*",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
