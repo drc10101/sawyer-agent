@@ -553,11 +553,10 @@ function updateUptimeDisplay() {
 // Bridge: expose key functions on window for legacy inline code
 // Do NOT override window.switchPanel -- the inline switchPanel in index.html
 // handles DOM rendering for panels. setActivePanel only updates Preact signals.
+// Do NOT override inline load* functions that render DOM (loadTools, loadGoals, etc.)
+// Only expose functions that have NO inline equivalent in index.html.
 window.toggleSidebar = toggleSidebar;
 window.toggleTheme = toggleTheme;
 window.showToast = function(msg, type) { addToast(msg, type); };
-
-// State.js functions are for Preact signal updates only.
-// The inline load* functions in index.html handle DOM rendering.
-// Do NOT overwrite them with window.loadX = loadX or the panels
-// will stop rendering (the signal-only versions don't update the DOM).
+window.loadContextStats = loadContextStats;
+window.loadMemory = loadMemory;

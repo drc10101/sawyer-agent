@@ -951,6 +951,10 @@ async function setModelContext(model) {
 
 // New session -- clear chat, reset state
 function newSession() {
+  // If there's an existing session, clear its conversation on the server
+  if (sessionId) {
+    fetch(API + '/api/session/' + sessionId + '/clear', {method: 'POST'}).catch(() => {});
+  }
   sessionId = '';
   const sessionClearEl = document.getElementById('status-session');
   if (sessionClearEl) sessionClearEl.textContent = '';
@@ -958,7 +962,15 @@ function newSession() {
   document.getElementById('chat-input').value = '';
   const tokensEl = document.getElementById('status-tokens');
   if (tokensEl) tokensEl.textContent = 'CTX 0/128K';
+  // Reset context stats to zero
+  if (typeof loadContextStats === 'function') {
+    // Clear the display immediately
+    const ctxFill = document.getElementById('ctx-meter-fill');
+    if (ctxFill) ctxFill.style.width = '0%';
+  }
   appendMsg('assistant', 'New session started. How can I help?');
+  // Refresh context stats from server (will show zero for new session)
+  updateContextBar();
 }
 
 async function compressCurrentSession() {

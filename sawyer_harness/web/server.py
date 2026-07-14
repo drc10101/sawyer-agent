@@ -223,6 +223,34 @@ def _register_routes(app: FastAPI, state: _AppState):
             async for chunk in agent.run(msg.message):
                 response_parts.append(chunk)
             response = "".join(response_parts)
+
+            # Auto-compress if context exceeds budget
+            system_prompt = agent._build_system_prompt()
+            memory_text = "; ".join(e["content"] for e in agent.memory.all_entries()[:5])
+            message_tokens = sum(
+                len(m.content) // 4 if hasattr(m, 'content') else 0
+                for m in agent.conversation
+            )
+            system_tokens = len(system_prompt) // 4
+            mem_tokens = len(memory_text) // 4
+            if state.context_manager.needs_compression(
+                system_prompt_tokens=system_tokens,
+                memory_tokens=mem_tokens,
+                current_messages_tokens=message_tokens,
+            ):
+                logger.info(f"Auto-compressing session {session_id}")
+                compressed, result = state.compressor.compress(
+                    messages=agent.conversation,
+                    system_prompt=system_prompt,
+                    memory_text=memory_text,
+                )
+                agent.conversation = compressed
+                logger.info(
+                    f"Compressed {result.original_tokens} -> {result.compressed_tokens} tokens "
+                    f"({result.messages_kept} kept, {result.messages_summarized} summarized, "
+                    f"{result.messages_dropped} dropped)"
+                )
+
             return {
                 "session_id": session_id,
                 "response": response,
