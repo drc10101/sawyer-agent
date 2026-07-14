@@ -197,16 +197,16 @@ export function setActivePanel(panel) {
 function loadPanelData(panel) {
   switch (panel) {
     case 'models': loadModels(); break;
-    case 'sessions': loadSessions(); break;
-    case 'skill-creator': loadSkills(); loadSkillSessions(); break;
-    case 'tools': loadTools(); break;
-    case 'goals': loadGoals(); break;
+    case 'sessions': if (typeof window.loadSessions === 'function') window.loadSessions(); else loadSessions(); break;
+    case 'skill-creator': if (typeof window.loadSkills === 'function') window.loadSkills(); else loadSkills(); if (typeof window.loadSkillSessions === 'function') window.loadSkillSessions(); else loadSkillSessions(); break;
+    case 'tools': if (typeof window.loadTools === 'function') window.loadTools(); else loadTools(); break;
+    case 'goals': if (typeof window.loadGoals === 'function') window.loadGoals(); else loadGoals(); break;
     case 'context': loadContextStats(); break;
-    case 'projects': loadProjects(); break;
-    case 'cron': loadCronJobs(); break;
-    case 'keys': loadKeys(); break;
-    case 'rules': loadRulesState(); break;
-    case 'agents': loadAgentsState(); break;
+    case 'projects': if (typeof window.loadProjects === 'function') window.loadProjects(); else loadProjects(); break;
+    case 'cron': if (typeof window.loadCron === 'function') window.loadCron(); else loadCronJobs(); break;
+    case 'keys': if (typeof window.loadKeys === 'function') window.loadKeys(); else loadKeys(); break;
+    case 'rules': if (typeof window.loadRules === 'function') window.loadRules(); else loadRulesState(); break;
+    case 'agents': if (typeof window.loadAgents === 'function') window.loadAgents(); else loadAgentsState(); break;
     case 'files': loadProjectFiles(); break;
   }
 }
@@ -551,22 +551,13 @@ function updateUptimeDisplay() {
 }
 
 // Bridge: expose key functions on window for legacy inline code
-window.switchPanel = setActivePanel;
+// Do NOT override window.switchPanel -- the inline switchPanel in index.html
+// handles DOM rendering for panels. setActivePanel only updates Preact signals.
 window.toggleSidebar = toggleSidebar;
 window.toggleTheme = toggleTheme;
 window.showToast = function(msg, type) { addToast(msg, type); };
 
-// Also expose loaders for legacy onclick handlers
-window.loadModels = loadModels;
-window.loadContextStats = loadContextStats;
-window.loadSkills = loadSkills;
-window.loadSkillSessions = loadSkillSessions;
-window.loadGoals = loadGoals;
-window.loadTools = loadTools;
-window.loadSessions = loadSessions;
-window.loadProjects = loadProjects;
-window.loadCronJobs = loadCronJobs;
-window.loadKeys = loadKeys;
-window.loadStatus = loadStatus;
-window.loadMemory = loadMemory;
-window.loadProjectFiles = loadProjectFiles;
+// State.js functions are for Preact signal updates only.
+// The inline load* functions in index.html handle DOM rendering.
+// Do NOT overwrite them with window.loadX = loadX or the panels
+// will stop rendering (the signal-only versions don't update the DOM).
