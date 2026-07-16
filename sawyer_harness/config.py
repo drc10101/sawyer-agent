@@ -29,6 +29,18 @@ class LLMConfig:
     context_length: int | None = None
 
 
+# Verbosity levels: concise (short answers, no tool output streaming),
+# normal (balanced), thorough (full detail, stream everything)
+VERBOSITY_LEVELS = ("concise", "normal", "thorough")
+
+@dataclass
+class AgentConfig:
+    """Agent behavior settings — separate from LLM provider config."""
+    max_tool_rounds: int = 20      # Safety ceiling for tool-call loops
+    verbosity: str = "normal"      # concise | normal | thorough
+    stream_tool_output: bool = True  # Show tool results in chat as they arrive
+
+
 @dataclass
 class SecurityConfig:
     sandbox: bool = True
@@ -58,6 +70,7 @@ class HarnessConfig:
     llm: LLMConfig = field(default_factory=LLMConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
+    agent: AgentConfig = field(default_factory=AgentConfig)
     channels: list[ChannelConfig] = field(default_factory=list)
 
     @classmethod
@@ -81,6 +94,7 @@ class HarnessConfig:
         llm_data = data.get("llm", {})
         sec_data = data.get("security", {})
         mem_data = data.get("memory", {})
+        agent_data = data.get("agent", {})
         chan_data = data.get("channels", [])
 
         channels = [
@@ -91,6 +105,11 @@ class HarnessConfig:
             )
             for c in chan_data
         ]
+
+        # Validate verbosity
+        verbosity = agent_data.get("verbosity", "normal")
+        if verbosity not in VERBOSITY_LEVELS:
+            verbosity = "normal"
 
         return cls(
             llm=LLMConfig(
@@ -112,6 +131,11 @@ class HarnessConfig:
             memory=MemoryConfig(
                 backend=mem_data.get("backend", "sqlite"),
                 path=mem_data.get("path", "~/.sawyer-harness/memory.db"),
+            ),
+            agent=AgentConfig(
+                max_tool_rounds=agent_data.get("max_tool_rounds", 20),
+                verbosity=verbosity,
+                stream_tool_output=agent_data.get("stream_tool_output", True),
             ),
             channels=channels,
         )
@@ -148,6 +172,11 @@ class HarnessConfig:
             "memory": {
                 "backend": self.memory.backend,
                 "path": self.memory.path,
+            },
+            "agent": {
+                "max_tool_rounds": self.agent.max_tool_rounds,
+                "verbosity": self.agent.verbosity,
+                "stream_tool_output": self.agent.stream_tool_output,
             },
         }
         path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False), encoding="utf-8")

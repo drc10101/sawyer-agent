@@ -30,7 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from ..agent import Agent
-from ..config import HarnessConfig
+from ..config import HarnessConfig, VERBOSITY_LEVELS
 from ..llm import LLMClient
 from ..memory import MemoryStore
 from ..routing import ModelRouter, ProviderEndpoint, ProviderHealth, TaskType
@@ -85,6 +85,11 @@ class ConfigUpdate(BaseModel):
     model: str = ""
     api_key: str = ""
     base_url: str = ""
+
+class AgentConfigUpdate(BaseModel):
+    max_tool_rounds: int | None = None
+    verbosity: str | None = None      # concise | normal | thorough
+    stream_tool_output: bool | None = None
 
 class ToolToggle(BaseModel):
     tool_name: str
@@ -406,6 +411,34 @@ def _register_routes(app: FastAPI, state: _AppState):
             "provider": state.config.llm.provider,
             "model": state.config.llm.model,
             "base_url": state.config.llm.base_url,
+        }}
+
+    @app.get("/api/agent-config")
+    async def get_agent_config():
+        """Get current agent configuration."""
+        return {
+            "max_tool_rounds": state.config.agent.max_tool_rounds,
+            "verbosity": state.config.agent.verbosity,
+            "stream_tool_output": state.config.agent.stream_tool_output,
+        }
+
+    @app.post("/api/agent-config")
+    async def update_agent_config(update: AgentConfigUpdate):
+        """Update agent behavior configuration at runtime."""
+        if update.max_tool_rounds is not None:
+            if update.max_tool_rounds < 1 or update.max_tool_rounds > 50:
+                raise HTTPException(status_code=400, detail="max_tool_rounds must be between 1 and 50")
+            state.config.agent.max_tool_rounds = update.max_tool_rounds
+        if update.verbosity is not None:
+            if update.verbosity not in VERBOSITY_LEVELS:
+                raise HTTPException(status_code=400, detail=f"verbosity must be one of: {', '.join(VERBOSITY_LEVELS)}")
+            state.config.agent.verbosity = update.verbosity
+        if update.stream_tool_output is not None:
+            state.config.agent.stream_tool_output = update.stream_tool_output
+        return {"status": "updated", "agent_config": {
+            "max_tool_rounds": state.config.agent.max_tool_rounds,
+            "verbosity": state.config.agent.verbosity,
+            "stream_tool_output": state.config.agent.stream_tool_output,
         }}
 
     # ----------------------------------------------------------
@@ -1157,9 +1190,10 @@ def _register_routes(app: FastAPI, state: _AppState):
     @app.get("/api/status")
     async def get_status():
         """Get overall system status."""
+        from .. import __version__
         return {
             "status": "running",
-            "version": "0.4.0",
+            "version": __version__,
             "pid": os.getpid(),
             "sessions": len(state.sessions),
             "memory_chars": state.memory.total_chars(),
@@ -1176,6 +1210,33 @@ def _register_routes(app: FastAPI, state: _AppState):
             "agent_templates": len(state.agent_creator.list_templates()),
             "orchestration_runs": state.orchestrator.count(),
         }
+
+    @app.get("/api/update-check")
+    async def check_for_updates():
+        """Check GitHub for the latest release version."""
+        from .. import __version__
+        import httpx as _httpx
+        try:
+            resp = await _httpx.AsyncClient(timeout=5.0).get(
+                "https://api.github.com/repos/drc10101/sawyer-agent/releases/latest"
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                latest = data.get("tag_name", "").lstrip("v")
+                # Compare versions
+                current_parts = [int(x) for x in __version__.split(".")]
+                latest_parts = [int(x) for x in latest.split(".")] if latest else [0, 0, 0]
+                update_available = latest_parts > current_parts
+                return {
+                    "current_version": __version__,
+                    "latest_version": latest,
+                    "update_available": update_available,
+                    "release_url": data.get("html_url", ""),
+                    "release_notes": data.get("body", "")[:500] if data.get("body") else "",
+                }
+            return {"current_version": __version__, "latest_version": "unknown", "update_available": False, "error": f"GitHub returned {resp.status_code}"}
+        except Exception as e:
+            return {"current_version": __version__, "latest_version": "unknown", "update_available": False, "error": str(e)}
 
     @app.get("/api/capabilities")
     async def get_capabilities():

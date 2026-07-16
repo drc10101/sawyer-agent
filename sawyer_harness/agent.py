@@ -22,7 +22,30 @@ from .tools import ToolRegistry, ToolResult
 
 logger = logging.getLogger("sawyer-harness.agent")
 
-MAX_TOOL_ROUNDS = 20  # Safety limit: stop after this many tool rounds
+# Default safety limit — overridden by config.agent.max_tool_rounds
+DEFAULT_MAX_TOOL_ROUNDS = 20
+
+# Verbosity-specific system prompt additions
+VERBOSITY_PROMPTS = {
+    "concise": (
+        "\n## Response Style: Concise\n"
+        "Be brief and to the point. Answer in as few words as possible. "
+        "No explanations unless asked. No step-by-step commentary. "
+        "If the answer is a single word or number, give just that. "
+        "Never narrate your reasoning process. Never say 'Let me think' or 'I'll check'. "
+        "Just give the answer directly.\n"
+    ),
+    "normal": (
+        "\n## Response Style: Balanced\n"
+        "Be helpful, direct, and thorough.\n"
+    ),
+    "thorough": (
+        "\n## Response Style: Thorough\n"
+        "Be detailed and comprehensive. Explain your reasoning. "
+        "Show your work. Include context and alternatives. "
+        "When in doubt, provide more detail rather than less.\n"
+    ),
+}
 
 
 class Agent:
@@ -50,6 +73,14 @@ class Agent:
     def _build_system_prompt(self, user_message: str = "") -> str:
         """Assemble system prompt with injected memory, skills, capabilities, and tool descriptions."""
         parts = [self.system_prompt]
+
+        # Inject verbosity style from config
+        verbosity = getattr(self.config, "agent", None)
+        if verbosity:
+            vlevel = getattr(verbosity, "verbosity", "normal")
+        else:
+            vlevel = "normal"
+        parts.append(VERBOSITY_PROMPTS.get(vlevel, VERBOSITY_PROMPTS["normal"]))
 
         # Inject capabilities rules (always present)
         try:
@@ -111,11 +142,18 @@ class Agent:
 
         Yields text chunks as they arrive. Handles tool calls internally.
         Stops when the LLM produces a final text response with no tool calls,
-        or after MAX_TOOL_ROUNDS rounds.
+        or after max_tool_rounds rounds.
         """
         self.conversation.append(Message(role="user", content=user_message))
 
-        for round_num in range(MAX_TOOL_ROUNDS):
+        # Get configurable limits from agent config
+        agent_cfg = getattr(self.config, "agent", None)
+        max_rounds = getattr(agent_cfg, "max_tool_rounds", DEFAULT_MAX_TOOL_ROUNDS) if agent_cfg else DEFAULT_MAX_TOOL_ROUNDS
+        verbosity = getattr(agent_cfg, "verbosity", "normal") if agent_cfg else "normal"
+        stream_tools = getattr(agent_cfg, "stream_tool_output", True) if agent_cfg else True
+        is_concise = verbosity == "concise"
+
+        for round_num in range(max_rounds):
             # Call LLM
             system_prompt = self._build_system_prompt(user_message)
             response: LLMResponse = await self.llm.chat(
@@ -141,8 +179,8 @@ class Agent:
             )
             self.conversation.append(assistant_msg)
 
-            # Yield any text content before tool calls
-            if response.content:
+            # Yield any text content before tool calls (suppressed in concise mode)
+            if response.content and not is_concise:
                 yield response.content + "\n"
 
             # Execute each tool call
@@ -159,14 +197,18 @@ class Agent:
                 )
                 self.conversation.append(tool_msg)
 
-                # Yield tool result for streaming
-                if result.success:
-                    yield f"[{tc.name}] {result.output[:2000]}\n"
-                else:
+                # Yield tool result for streaming (suppressed in concise mode unless error)
+                if stream_tools and not is_concise:
+                    if result.success:
+                        yield f"[{tc.name}] {result.output[:2000]}\n"
+                    else:
+                        yield f"[{tc.name}] ERROR: {result.error}\n"
+                elif not result.success:
+                    # Always show errors even in concise mode
                     yield f"[{tc.name}] ERROR: {result.error}\n"
 
         # Safety: if we hit max rounds, yield a warning
-        yield "\n[Agent reached maximum tool rounds. Stopping.]"
+        yield f"\n[Agent reached maximum tool rounds ({max_rounds}). Stopping.]"
 
     def save_memory(self, key: str, content: str, category: str = "general"):
         """Save a fact to persistent memory."""

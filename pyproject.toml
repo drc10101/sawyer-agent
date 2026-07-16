@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sawyer-agent"
-version = "0.6.0"
+version = "0.7.0"
 description = "Secure, model-agnostic, self-hosted AI agent framework"
 readme = "README.md"
 license = {text = "MIT"}

@@ -7,6 +7,12 @@ llm:
   api_key: YOUR_KEY_HERE     # Get from https://ollama.com
   base_url: https://ollama.com/v1
 
+# Agent behavior settings
+agent:
+  max_tool_rounds: 20        # Max tool-call loops (1-50). Lower = faster answers for simple questions
+  verbosity: normal          # concise (short answers, no tool output), normal (balanced), thorough (detailed)
+  stream_tool_output: true   # Show tool results in chat as they arrive
+
 server:
   host: 127.0.0.1
   port: 8765
