@@ -33,7 +33,7 @@
       </div>
       <div class="sidebar-nav-item" data-panel="goals" onclick="switchPanel('goals')">
         <span class="nav-icon"><i data-lucide="target"></i></span>
-        <span class="nav-label">Goals</span>
+        <span class="nav-label">Goal Loops</span>
       </div>
       <div class="sidebar-nav-item" data-panel="skill-creator" onclick="switchPanel('skill-creator')">
         <span class="nav-icon"><i data-lucide="sparkles"></i></span>
@@ -51,7 +51,6 @@
         <span class="nav-icon"><i data-lucide="cpu"></i></span>
         <span class="nav-label">Models</span>
       </div>
-
       <div class="sidebar-nav-item" data-panel="sessions" onclick="switchPanel('sessions')">
         <span class="nav-icon"><i data-lucide="users"></i></span>
         <span class="nav-label">Sessions</span>
@@ -83,10 +82,6 @@
       <div class="sidebar-nav-item" data-panel="orchestration" onclick="switchPanel('orchestration')">
         <span class="nav-icon"><i data-lucide="network"></i></span>
         <span class="nav-label">Orchestrate</span>
-      </div>
-      <div class="sidebar-nav-item" data-panel="settings" onclick="switchPanel('settings')">
-        <span class="nav-icon"><i data-lucide="settings"></i></span>
-        <span class="nav-label">Settings</span>
       </div>
 
     </nav>
@@ -120,7 +115,6 @@
           <span>Tasks</span>
           <span class="metric-value" id="metric-tasks">0</span>
         </div>
-        <span id="update-badge" style="display:none;align-items:center;gap:6px;margin-left:4px"><a href="https://github.com/drc10101/sawyer-agent/releases" target="_blank" rel="noopener" style="text-decoration:none;background:var(--brand);color:#fff;font-size:11px;font-weight:600;padding:3px 10px;border-radius:12px" id="update-badge-link" title="Update available"></a><button class="btn btn--primary btn-sm" id="upgrade-btn" style="font-size:10px;padding:2px 8px;display:none" onclick="upgradeSawyer()">Upgrade Now</button></span>
         <button class="btn btn--subtle btn-sm" onclick="newSession()" title="New session">+ NEW SESSION</button>
       </div>
     </header>
@@ -181,104 +175,6 @@
       <!-- Models Panel -->
       <div class="panel" id="panel-models">
         <div class="ctrl-grid" id="models-grid"></div>
-      </div>
-
-      <!-- Settings Panel -->
-      <div class="panel" id="panel-settings">
-        <div style="max-width:600px">
-          <h3 style="color:var(--brand);font-size:1rem;margin-bottom:16px">Settings</h3>
-
-          <!-- Main Model -->
-          <div class="ctrl-card" style="margin-bottom:12px">
-            <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Main Model</h4>
-            <p style="font-size:12px;color:var(--text-2);margin-bottom:10px">
-              The LLM that powers the main agent. Changes take effect on the next message.
-            </p>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-              <div style="flex:1;min-width:180px">
-                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px">Provider</label>
-                <select id="main-provider" style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px;width:100%"
-                  onchange="toggleBaseUrl(); updateAgentConfig()">
-                  <option value="ollama">Ollama</option>
-                  <option value="openai">OpenAI</option>
-                  <option value="anthropic">Anthropic</option>
-                  <option value="sawyer">Sawyer Network</option>
-                  <option value="local">Local</option>
-                </select>
-              </div>
-              <div style="flex:2;min-width:240px">
-                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px">Model</label>
-                <input id="main-model" placeholder="e.g. glm-5.1:cloud, gpt-4o, claude-sonnet-4-20250514"
-                  style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px;width:100%"
-                  onchange="updateAgentConfig()">
-              </div>
-            </div>
-            <div style="flex:1;min-width:240px;display:none" id="base-url-row">
-              <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px">Base URL</label>
-              <input id="main-base-url" placeholder="https://api.openai.com/v1"
-                style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px;width:100%"
-                onchange="updateAgentConfig()">
-            </div>
-          </div>
-
-          <!-- Agent Mode -->
-          <div class="ctrl-card" style="margin-bottom:12px">
-            <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Agent Mode</h4>
-            <p style="font-size:12px;color:var(--text-2);margin-bottom:10px">
-              <strong>Direct</strong> answers you itself, uses its own tools. Fast, cheap, good for most conversations.
-              <strong>Orchestrator</strong> decomposes goals into subtasks, delegates to sub-agents, evaluates results. Slower but more capable for complex work.
-              <strong>Auto</strong> starts direct, escalates to orchestration when needed.
-            </p>
-            <div style="display:flex;gap:8px" id="mode-buttons">
-              <button class="btn btn--primary btn-sm" data-mode="direct" onclick="setMode('direct')">Direct</button>
-              <button class="btn btn--subtle btn-sm" data-mode="orchestrator" onclick="setMode('orchestrator')">Orchestrator</button>
-              <button class="btn btn--subtle btn-sm" data-mode="auto" onclick="setMode('auto')">Auto</button>
-            </div>
-          </div>
-
-          <!-- Verbosity -->
-          <div class="ctrl-card" style="margin-bottom:12px">
-            <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Response Style</h4>
-            <p style="font-size:12px;color:var(--text-2);margin-bottom:10px">
-              Controls how verbose the agent's responses are. <strong>Concise</strong> gives short answers with no tool output. <strong>Normal</strong> is balanced. <strong>Thorough</strong> explains reasoning in detail.
-            </p>
-            <div style="display:flex;gap:8px" id="verbosity-buttons">
-              <button class="btn btn--subtle btn-sm" data-verbosity="concise" onclick="setVerbosity('concise')">Concise</button>
-              <button class="btn btn--primary btn-sm" data-verbosity="normal" onclick="setVerbosity('normal')">Normal</button>
-              <button class="btn btn--subtle btn-sm" data-verbosity="thorough" onclick="setVerbosity('thorough')">Thorough</button>
-            </div>
-          </div>
-
-          <!-- Max Tool Rounds -->
-          <div class="ctrl-card" style="margin-bottom:12px">
-            <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Max Tool Rounds</h4>
-            <p style="font-size:12px;color:var(--text-2);margin-bottom:10px">
-              Maximum number of tool-call loops before the agent stops. Lower values prevent runaway tool usage for simple questions.
-            </p>
-            <div style="display:flex;align-items:center;gap:12px">
-              <input type="range" id="max-tool-rounds-slider" min="1" max="50" value="20"
-                style="flex:1;accent-color:var(--brand)"
-                oninput="document.getElementById('max-tool-rounds-value').textContent=this.value; updateAgentConfig();">
-              <span id="max-tool-rounds-value" style="font-size:14px;font-weight:600;color:var(--brand);min-width:24px;text-align:center">20</span>
-            </div>
-          </div>
-
-          <!-- Stream Tool Output -->
-          <div class="ctrl-card" style="margin-bottom:12px">
-            <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Show Tool Output</h4>
-            <p style="font-size:12px;color:var(--text-2);margin-bottom:10px">
-              When enabled, tool results are streamed into the chat as they arrive. Disable for cleaner output.
-            </p>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-              <input type="checkbox" id="stream-tool-output-toggle" checked
-                style="accent-color:var(--brand);width:16px;height:16px"
-                onchange="updateAgentConfig()">
-              <span style="font-size:13px;color:var(--text-0)">Stream tool output in chat</span>
-            </label>
-          </div>
-
-          <div id="agent-config-status" style="font-size:12px;color:var(--text-2);margin-top:8px"></div>
-        </div>
       </div>
 
       <!-- Skills Panel -->
@@ -367,25 +263,48 @@
 
       <!-- Goals Panel -->
       <div class="panel" id="panel-goals">
-        <div style="max-width:900px">
+        <div style="max-width:1100px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-            <h3 style="color:var(--brand);font-size:1rem">Goals</h3>
-            <button class="btn btn--subtle btn-sm" onclick="loadGoals()">Refresh</button>
+            <h3 style="color:var(--brand);font-size:1rem">Goal Loops</h3>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn--primary btn-sm" onclick="showNewGoalForm()">+ New Loop</button>
+              <button class="btn btn--subtle btn-sm" onclick="loadGoals()">Refresh</button>
+            </div>
           </div>
           <div style="font-size:13px;color:var(--text-2);margin-bottom:16px">
-            Create a goal and the agent decomposes it into subtasks. Start a <strong>goal-seeking loop</strong> to have
-            the agent work through each subtask automatically -- with a hard stop so it can never loop forever.
+            Define a named, reusable goal with success criteria and iteration budget.
+            Each loop runs the Ralph Loop: <strong>decompose → execute → evaluate → improve → repeat</strong> up to max iterations.
           </div>
 
-          <!-- New Goal Form -->
-          <div class="ctrl-card" style="margin-bottom:16px">
-            <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">New Goal</h4>
-            <textarea id="goal-input" placeholder="What do you want to accomplish?" style="width:100%;min-height:60px;resize:vertical"></textarea>
-            <textarea id="goal-context" placeholder="Additional context (optional)" rows="2" style="width:100%;margin-top:6px;resize:vertical"></textarea>
-            <button class="btn btn--primary btn-sm" style="margin-top:8px" onclick="createGoal()">Decompose Goal</button>
+          <!-- New goal form -->
+          <div id="goal-new-form" class="ctrl-card" style="display:none;margin-bottom:16px">
+            <h3 id="goal-form-title">Create Goal Loop</h3>
+            <input type="hidden" id="goal-edit-id" value="">
+            <div style="display:flex;gap:16px;flex-wrap:wrap">
+              <div style="flex:1;min-width:240px">
+                <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Name *</label><br>
+                <input id="goal-name" placeholder="e.g. Fix auth regression" style="width:100%"></div>
+                <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Goal *</label><br>
+                <textarea id="goal-input" placeholder="What do you want to accomplish?" style="width:100%;min-height:80px"></textarea></div>
+                <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Success Criteria</label><br>
+                <textarea id="goal-success-criteria" placeholder="How do you know it's done? e.g. All auth tests pass with no regressions" style="width:100%;min-height:60px"></textarea></div>
+              </div>
+              <div style="flex:1;min-width:240px">
+                <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Context (optional)</label><br>
+                <textarea id="goal-context" placeholder="Additional context, files, prior work..." style="width:100%;min-height:60px"></textarea></div>
+                <div style="display:flex;gap:12px;margin-top:8px">
+                  <div><label style="font-size:11px;color:var(--text-2)">Max Iterations</label><br>
+                  <input id="goal-max-iterations" type="number" min="1" max="10" value="3" style="width:80px"></div>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <button class="btn btn--primary" onclick="createGoal()">Create Loop</button>
+              <button class="btn btn--subtle" onclick="hideGoalForm()">Cancel</button>
+            </div>
           </div>
 
-          <!-- Goals List -->
+          <!-- Goal loops list -->
           <div id="goals-list"></div>
         </div>
       </div>
@@ -592,20 +511,19 @@
         </div>
       </div>
 
-      <!-- Agent Creator Panel -->
+      <!-- Sub-Agent Creator Panel -->
       <div class="panel" id="panel-agents">
         <div style="max-width:1100px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-            <h3 style="color:var(--brand);font-size:1rem">Sub-Agents</h3>
+            <h3 style="color:var(--brand);font-size:1rem">Sub-Agent Creator</h3>
             <div style="display:flex;gap:8px">
-              <button class="btn btn--primary btn-sm" onclick="showAddAgentForm()">+ New Agent</button>
+              <button class="btn btn--primary btn-sm" onclick="showAddAgentForm()">+ New Sub-Agent</button>
               <button class="btn btn--subtle btn-sm" onclick="loadAgents()">Refresh</button>
             </div>
           </div>
           <div style="font-size:13px;color:var(--text-2);margin-bottom:16px">
-            Sub-agents are specialized templates that run under your main agent. Each sub-agent has its own
-            system prompt, personality, rules, and model settings. Create a template, then spawn a session
-            from it to get a focused agent ready for a specific task.
+            Define sub-agent templates (system prompt, soul, rules, model) then spawn standalone sessions from them.
+            Use <strong>Orchestrate</strong> when multiple sub-agents must collaborate on a goal.
           </div>
 
           <!-- Category filter -->
@@ -616,14 +534,14 @@
 
           <!-- Add/Edit agent form -->
           <div id="agents-add-form" class="ctrl-card" style="display:none;margin-top:16px">
-            <h3 id="agents-form-title">Create Agent</h3>
+            <h3 id="agents-form-title">Create Sub-Agent</h3>
             <input type="hidden" id="agent-edit-id" value="">
             <div style="display:flex;gap:16px;flex-wrap:wrap">
               <div style="flex:1;min-width:240px">
                 <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Name *</label><br>
                 <input id="agent-name" placeholder="e.g. Security Scanner" style="width:100%"></div>
                 <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Description</label><br>
-                <input id="agent-description" placeholder="What this agent specializes in" style="width:100%"></div>
+                <input id="agent-description" placeholder="What this sub-agent specializes in" style="width:100%"></div>
                 <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Category</label><br>
                 <select id="agent-category" style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px;width:100%">
                   <option value="general">General</option>
@@ -639,7 +557,7 @@
               <div style="flex:1;min-width:240px">
                 <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">System Prompt</label><br>
                 <textarea id="agent-system-prompt" placeholder="You are a specialized agent..." style="width:100%;min-height:120px"></textarea></div>
-                <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Agent-Specific Rules (one per line: rule | detail)</label><br>
+                <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Sub-Agent Rules (one per line: rule | detail)</label><br>
                 <textarea id="agent-rules" placeholder="Always run tests before reporting done | Run pytest after every change&#10;Never describe code -- write it | Don't tell the user to write code" style="width:100%;min-height:60px;font-family:var(--font-mono);font-size:12px"></textarea></div>
               </div>
             </div>
@@ -659,7 +577,7 @@
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
                 <i data-lucide="sparkles" style="width:14px;height:14px;color:var(--brand)"></i>
                 <span style="font-size:13px;font-weight:600;color:var(--text-0)">Soul</span>
-                <span style="font-size:11px;color:var(--text-2)">-- who this agent is, what it values, how it behaves</span>
+                <span style="font-size:11px;color:var(--text-2)">-- who this sub-agent is, what it values, how it behaves</span>
               </div>
               <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Identity</label><br>
               <input id="agent-soul-identity" placeholder="e.g. A focused executor. Give me a briefing and I deliver." style="width:100%"></div>
@@ -875,12 +793,11 @@ function switchPanel(panel) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelector('[data-panel="' + panel + '"]').classList.add('active');
   document.getElementById('panel-' + panel).classList.add('active');
-  const titles = {chat:'Chat',goals:'Goals','skill-creator':'Skill Creator',
-    tools:'Tools',files:'Files',models:'Models',settings:'Settings',sessions:'Sessions',projects:'Projects',
+  const titles = {chat:'Chat',goals:'Goal Loops','skill-creator':'Skill Creator',
+    tools:'Tools',files:'Files',models:'Models',sessions:'Sessions',projects:'Projects',
     cron:'Cron',context:'Memory',keys:'Keys',rules:'Rules',agents:'Sub-Agents',orchestration:'Orchestrate'};
   document.getElementById('panel-title').textContent = titles[panel] || panel;
   if (panel === 'models') loadModels();
-  if (panel === 'settings') loadAgentConfig();
   if (panel === 'goals') loadGoals();
   if (panel === 'tools') loadTools();
   if (panel === 'cron') loadCron();
@@ -1000,12 +917,7 @@ async function sendMessage() {
   if (!msg) return;
   input.value = '';
   appendMsg('user', msg);
-
-  // Show typing indicator while agent is thinking
-  const typingEl = appendTypingIndicator();
-  const sendBtn = document.getElementById('send-btn');
-  if (sendBtn) sendBtn.disabled = true;
-  input.disabled = true;
+  appendMsg('assistant', '...');
 
   try {
     const res = await fetch(API + '/api/chat', {
@@ -1017,31 +929,13 @@ async function sendMessage() {
     sessionId = data.session_id;
     const sessionEl = document.getElementById('status-session');
     if (sessionEl) sessionEl.textContent = sessionId;
-    let responseHtml = formatResponse(data.response);
-
-    // Detect session handoff signal and show continue button
-    if (data.response && data.response.includes('*Session context is full') || data.response && data.response.includes('*Tool round limit reached')) {
-      responseHtml += '<div style="margin-top:12px;padding:10px 14px;background:rgba(18,199,239,0.1);border:1px solid var(--brand);border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
-        + '<span style="color:var(--brand);font-weight:600;font-size:13px">Context full — handoff notes saved</span>'
-        + '<button class="btn btn--primary btn-sm" onclick="continueInNewSession()">Continue in New Session</button>'
-        + '</div>';
-    }
-
-    typingEl.innerHTML = responseHtml;
+    const msgs = document.getElementById('chat-messages');
+    msgs.lastChild.innerHTML = formatResponse(data.response);
     updateContextBar();
   } catch (e) {
-    typingEl.innerHTML = '<span style="color:var(--danger)">Error: ' + e.message + '</span>';
-  } finally {
-    if (sendBtn) sendBtn.disabled = false;
-    input.disabled = false;
-    input.focus();
+    const msgs = document.getElementById('chat-messages');
+    msgs.lastChild.innerHTML = '<span style="color:var(--danger)">Error: ' + e.message + '</span>';
   }
-}
-
-// Start a new session — handoff notes are already saved in memory
-// so the new session will automatically pick up where we left off
-function continueInNewSession() {
-  newSession();
 }
 
 function appendMsg(role, text) {
@@ -1052,48 +946,14 @@ function appendMsg(role, text) {
   div.scrollIntoView({behavior: 'smooth'});
 }
 
-function appendTypingIndicator() {
-  const div = document.createElement('div');
-  div.className = 'msg assistant typing-indicator-msg';
-  div.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
-  document.getElementById('chat-messages').appendChild(div);
-  div.scrollIntoView({behavior: 'smooth'});
-  return div;
-}
-
 function formatResponse(text) {
   if (!text) return '';
-  // Extract and style thinking/reasoning blocks before HTML escaping
-  // Supports: <think>...</think>, <thinking>...</thinking>, <reasoning>...</reasoning>
-  // These are rendered as teal-tinted collapsible blocks so the user can
-  // skip straight to the distilled answer.
-  const thinkRegex = /<(?:think|thinking|reasoning)>([\s\S]*?)<\/(?:think|thinking|reasoning)>/gi;
-  let thinkingParts = [];
-  let cleaned = text.replace(thinkRegex, (_, content) => {
-    const idx = thinkingParts.length;
-    thinkingParts.push(content.trim());
-    return `__THINKING_${idx}__`;
-  });
-
-  let html = cleaned
+  let html = text
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\n/g, '<br>');
-
-  // Re-insert thinking blocks as teal-tinted details
-  for (let i = 0; i < thinkingParts.length; i++) {
-    const thinkHtml = thinkingParts[i]
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
-      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/\n/g, '<br>');
-    const details = `<details style="margin:6px 0;border-left:3px solid var(--brand);border-radius:0 6px 6px 0;background:var(--brand-subtle);padding:8px 12px;font-size:0.9em;color:var(--brand)"><summary style="cursor:pointer;color:var(--brand);font-weight:600;font-size:0.85em;list-style:none">Reasoning</summary>${thinkHtml}</details>`;
-    html = html.replace(`__THINKING_${i}__`, details);
-  }
-
   return html;
 }
 
@@ -1397,139 +1257,6 @@ function formatBytes(bytes) {
 }
 
 // Models
-// Agent Config
-async function loadAgentConfig() {
-  try {
-    const res = await fetch(API + '/api/agent-config');
-    const data = await res.json();
-    // Set verbosity button states
-    document.querySelectorAll('#verbosity-buttons button').forEach(btn => {
-      const v = btn.getAttribute('data-verbosity');
-      btn.className = v === data.verbosity ? 'btn btn--primary btn-sm' : 'btn btn--subtle btn-sm';
-    });
-    // Set mode button states
-    document.querySelectorAll('#mode-buttons button').forEach(btn => {
-      const m = btn.getAttribute('data-mode');
-      btn.className = m === data.mode ? 'btn btn--primary btn-sm' : 'btn btn--subtle btn-sm';
-    });
-    // Set max tool rounds slider
-    const slider = document.getElementById('max-tool-rounds-slider');
-    const valueSpan = document.getElementById('max-tool-rounds-value');
-    slider.value = data.max_tool_rounds;
-    valueSpan.textContent = data.max_tool_rounds;
-    // Set stream toggle
-    document.getElementById('stream-tool-output-toggle').checked = data.stream_tool_output;
-    // Set main model
-    document.getElementById('main-model').value = data.model || '';
-    // Set provider dropdown
-    const providerSelect = document.getElementById('main-provider');
-    providerSelect.value = data.provider || 'ollama';
-    // Set base URL if present
-    if (data.base_url) {
-      document.getElementById('main-base-url').value = data.base_url;
-    }
-    // Show/hide base URL based on provider
-    toggleBaseUrl();
-  } catch(e) {
-    console.error('loadAgentConfig error:', e);
-    document.getElementById('agent-config-status').textContent = 'Failed to load agent config';
-    document.getElementById('agent-config-status').style.color = 'var(--danger, #f44)';
-  }
-}
-
-function toggleBaseUrl() {
-  const provider = document.getElementById('main-provider').value;
-  const row = document.getElementById('base-url-row');
-  // Show base URL for local and custom providers
-  row.style.display = (provider === 'local') ? 'block' : 'none';
-}
-
-async function setVerbosity(level) {
-  try {
-    const res = await fetch(API + '/api/agent-config', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({verbosity: level})
-    });
-    const data = await res.json();
-    if (res.ok) {
-      document.querySelectorAll('#verbosity-buttons button').forEach(btn => {
-        btn.className = btn.getAttribute('data-verbosity') === level ? 'btn btn--primary btn-sm' : 'btn btn--subtle btn-sm';
-      });
-      document.getElementById('agent-config-status').textContent = 'Response style: ' + level;
-      document.getElementById('agent-config-status').style.color = 'var(--brand)';
-    } else {
-      document.getElementById('agent-config-status').textContent = 'Error: ' + (data.detail || 'Unknown error');
-      document.getElementById('agent-config-status').style.color = 'var(--danger, #f44)';
-    }
-  } catch(e) {
-    console.error('setVerbosity error:', e);
-  }
-}
-
-async function setMode(mode) {
-  try {
-    const res = await fetch(API + '/api/agent-config', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({mode: mode})
-    });
-    const data = await res.json();
-    if (res.ok) {
-      document.querySelectorAll('#mode-buttons button').forEach(btn => {
-        btn.className = btn.getAttribute('data-mode') === mode ? 'btn btn--primary btn-sm' : 'btn btn--subtle btn-sm';
-      });
-      document.getElementById('agent-config-status').textContent = 'Agent mode: ' + mode;
-      document.getElementById('agent-config-status').style.color = 'var(--brand)';
-    } else {
-      document.getElementById('agent-config-status').textContent = 'Error: ' + (data.detail || 'Unknown error');
-      document.getElementById('agent-config-status').style.color = 'var(--danger, #f44)';
-    }
-  } catch(e) {
-    console.error('setMode error:', e);
-  }
-}
-
-let agentConfigDebounce = null;
-async function updateAgentConfig() {
-  // Debounce to avoid rapid API calls from slider
-  clearTimeout(agentConfigDebounce);
-  agentConfigDebounce = setTimeout(async () => {
-    const maxRounds = parseInt(document.getElementById('max-tool-rounds-slider').value);
-    const streamOutput = document.getElementById('stream-tool-output-toggle').checked;
-    const model = document.getElementById('main-model').value.trim();
-    const provider = document.getElementById('main-provider').value;
-    const baseUrl = document.getElementById('main-base-url').value.trim();
-    const body = {
-      max_tool_rounds: maxRounds,
-      stream_tool_output: streamOutput,
-    };
-    if (model) body.model = model;
-    if (provider) body.provider = provider;
-    if (baseUrl) body.base_url = baseUrl;
-    try {
-      const res = await fetch(API + '/api/agent-config', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(body)
-      });
-      const data = await res.json();
-      if (res.ok) {
-        document.getElementById('agent-config-status').textContent = 'Saved';
-        document.getElementById('agent-config-status').style.color = 'var(--brand)';
-        setTimeout(() => {
-          document.getElementById('agent-config-status').textContent = '';
-        }, 2000);
-      } else {
-        document.getElementById('agent-config-status').textContent = 'Error: ' + (data.detail || 'Unknown');
-        document.getElementById('agent-config-status').style.color = 'var(--danger, #f44)';
-      }
-    } catch(e) {
-      console.error('updateAgentConfig error:', e);
-    }
-  }, 500);
-}
-
 async function loadModels() {
   try {
     const res = await fetch(API + '/api/models');
@@ -1622,167 +1349,181 @@ async function createSkill() {
 }
 
 // Goals
+// Goal Loops
+function showNewGoalForm() {
+  document.getElementById('goal-new-form').style.display = 'block';
+  document.getElementById('goal-form-title').textContent = 'Create Goal Loop';
+  document.getElementById('goal-edit-id').value = '';
+  document.getElementById('goal-name').value = '';
+  document.getElementById('goal-input').value = '';
+  document.getElementById('goal-success-criteria').value = '';
+  document.getElementById('goal-context').value = '';
+  document.getElementById('goal-max-iterations').value = '3';
+}
+
+function hideGoalForm() {
+  document.getElementById('goal-new-form').style.display = 'none';
+}
+
 async function loadGoals() {
   try {
     const res = await fetch(API + '/api/goals');
     const data = await res.json();
     const list = document.getElementById('goals-list');
     let html = '';
+
+    if (!data.goals || !data.goals.length) {
+      list.innerHTML = '<div style="color:var(--text-2);font-size:13px;padding:16px 0">No goal loops yet. Create one above.</div>';
+      return;
+    }
+
     for (const g of data.goals) {
-      const pct = Math.round(g.progress * 100);
-      const statusBadge = g.status === 'complete' ? 'badge--success' : g.status === 'looping' ? 'badge--warning' : g.status === 'paused' ? 'badge--warning' : g.status === 'decomposed' ? 'badge--warning' : 'badge--neutral';
-      const statusText = g.status === 'looping' ? 'running' : g.status;
+      const statusColors = {
+        draft: 'var(--text-2)',
+        running: 'var(--brand)',
+        paused: 'var(--warning)',
+        completed: 'var(--success)',
+        failed: 'var(--danger)',
+      };
+      const statusColor = statusColors[g.status] || 'var(--text-2)';
+      const pct = g.max_iterations > 0 ? Math.round((g.current_iteration / g.max_iterations) * 100) : 0;
+
       html += '<div class="ctrl-card" style="margin-bottom:12px">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center">';
-      html += '<h4 style="color:var(--text-0)">' + g.goal + ' <span class="badge ' + statusBadge + '">' + statusText + '</span></h4>';
-      html += '<div style="display:flex;gap:6px">';
-      // Loop controls -- only show for decomposed/paused goals
-      if (g.status === 'decomposed' || g.status === 'paused') {
-        html += '<button class="btn btn--primary btn-sm" onclick="startGoalLoop(\'' + g.id + '\')">Start Loop</button>';
+      html += '<div style="display:flex;align-items:center;gap:8px">';
+      html += '<i data-lucide="target" style="width:18px;height:18px;color:var(--brand)"></i>';
+      html += '<strong>' + (g.name || g.id) + '</strong>';
+      html += '<span class="badge" style="background:' + statusColor + ';color:#fff;font-size:10px;padding:2px 6px;border-radius:10px">' + g.status + '</span>';
+      html += '</div>';
+      html += '<div style="display:flex;gap:4px;align-items:center">';
+      if (g.status === 'draft') {
+        html += '<button class="btn btn--primary btn-sm" onclick="runGoalLoop(\'' + g.id + '\')">Run</button>';
       }
-      if (g.status === 'looping') {
-        html += '<button class="btn btn--danger btn-sm" onclick="stopGoalLoop(\'' + g.id + '\')">Stop Loop</button>';
-        html += '<button class="btn btn--subtle btn-sm" onclick="checkLoopStatus(\'' + g.id + '\')">Status</button>';
+      if (g.status === 'running' && g.current_iteration < g.max_iterations) {
+        html += '<button class="btn btn--primary btn-sm" onclick="runGoalLoop(\'' + g.id + '\')">Next Iteration</button>';
       }
-      if (g.status !== 'looping') {
-        html += '<button class="btn btn--subtle btn-sm" onclick="deleteGoal(\'' + g.id + '\')" style="color:var(--danger)">Delete</button>';
+      if (g.status === 'running') {
+        html += '<button class="btn btn--subtle btn-sm" onclick="markGoalComplete(\'' + g.id + '\')">Mark Complete</button>';
       }
-      html += '</div></div>';
-      html += '<div style="font-size:11px;color:var(--text-2);margin:4px 0">Created: ' + g.created + ' | Progress: ' + pct + '%</div>';
-      html += '<div class="progress" style="margin:8px 0"><div class="progress-bar" style="width:' + pct + '%"></div></div>';
-      // Show diagnosis if loop ended without completing
-      if (g.status === 'paused' || g.status === 'max_iterations_reached') {
-        html += '<div id="diagnosis-' + g.id + '" style="font-size:12px;color:var(--warning, #f0a030);margin:8px 0;padding:8px;background:var(--bg-0);border-radius:6px;border-left:3px solid var(--warning, #f0a030)">Loading diagnosis...</div>';
-        // Fetch diagnosis
-        fetchDiagnosis(g.id);
+      if (g.status === 'completed' || g.status === 'failed') {
+        html += '<button class="btn btn--subtle btn-sm" onclick="resetGoalLoop(\'' + g.id + '\')">Reset & Re-run</button>';
       }
-      for (const st of g.subtasks) {
-        const done = st.status === 'complete';
-        html += '<div class="subtask' + (done ? ' done' : '') + '" style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px">';
-        html += '<div class="check' + (done ? ' done' : '') + '" style="width:18px;height:18px;border-radius:4px;border:1.5px solid var(--border-1);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;' + (done ? 'background:var(--brand);border-color:var(--brand);color:white' : '') + '" onclick="toggleSubtask(\'' + g.id + '\',\'' + st.id + '\')">' + (done ? '&#10003;' : '') + '</div>';
-        html += '<span style="' + (done ? 'text-decoration:line-through;color:var(--text-2)' : 'color:var(--text-0)') + '">' + st.task + '</span>';
-        html += '</div>';
+      html += '<button class="btn btn--danger btn-sm" onclick="deleteGoalLoop(\'' + g.id + '\')" title="Delete"><i data-lucide="trash-2" style="width:12px;height:12px"></i></button>';
+      html += '</div>';
+      html += '</div>';
+
+      html += '<div style="font-size:13px;color:var(--text-1);margin-top:6px">' + g.goal + '</div>';
+
+      if (g.success_criteria) {
+        html += '<div style="font-size:12px;color:var(--brand);margin-top:4px">&#10003; ' + g.success_criteria + '</div>';
       }
+
+      // Progress bar
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-top:8px">';
+      html += '<div style="flex:1;background:var(--bg-0);border-radius:4px;height:6px;overflow:hidden">';
+      html += '<div style="width:' + pct + '%;height:100%;background:var(--brand);border-radius:4px;transition:width 0.3s"></div>';
+      html += '</div>';
+      html += '<span style="font-size:11px;color:var(--text-2);white-space:nowrap">Iteration ' + g.current_iteration + '/' + g.max_iterations + '</span>';
+      html += '</div>';
+
+      // Show current iteration subtasks
+      if (g.iterations && g.iterations.length > 0) {
+        const latest = g.iterations[g.iterations.length - 1];
+        if (latest.subtasks && latest.subtasks.length > 0) {
+          html += '<div style="margin-top:8px">';
+          html += '<div style="font-size:11px;color:var(--text-2);margin-bottom:4px">Iteration ' + latest.number + ' subtasks:</div>';
+          for (const st of latest.subtasks) {
+            const done = st.status === 'complete';
+            html += '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px">';
+            html += '<span style="cursor:pointer;color:' + (done ? 'var(--success)' : 'var(--text-2)') + '" onclick="toggleSubtask(\'' + g.id + '\',\'' + st.id + '\')">' + (done ? '&#10003;' : '&#9675;') + '</span>';
+            html += '<span style="' + (done ? 'text-decoration:line-through;color:var(--text-2)' : 'color:var(--text-0)') + '">' + st.task + '</span>';
+            html += '</div>';
+          }
+          html += '</div>';
+        }
+        // Show evaluation/improvements from latest completed iteration
+        if (latest.evaluation) {
+          html += '<div style="margin-top:8px;padding:8px;background:var(--bg-0);border-radius:6px;font-size:12px;color:var(--text-1)">';
+          html += '<strong style="color:var(--brand)">Evaluation:</strong> ' + latest.evaluation.substring(0, 300) + (latest.evaluation.length > 300 ? '...' : '');
+          html += '</div>';
+        }
+        if (latest.improvements && latest.improvements.length > 0) {
+          html += '<div style="margin-top:6px;font-size:12px;color:var(--text-2)">';
+          html += '<strong>Improvements for next iteration:</strong>';
+          for (const imp of latest.improvements) {
+            html += '<div style="margin-left:8px">- ' + imp + '</div>';
+          }
+          html += '</div>';
+        }
+      }
+
+      html += '<div style="font-size:11px;color:var(--text-2);margin-top:6px">Created: ' + (g.created || '').substring(0, 10) + (g.last_run ? ' | Last run: ' + g.last_run.substring(0, 10) : '') + '</div>';
       html += '</div>';
     }
-    if (!data.goals.length) html = '<div style="color:var(--text-2);text-align:center;padding:32px">No goals yet. Create one above.</div>';
+
     list.innerHTML = html;
-  } catch(e) { console.error(e); }
+    if (window.lucide) window.lucide.createIcons();
+  } catch(e) { console.error('loadGoals error:', e); }
 }
 
 async function createGoal() {
+  const name = document.getElementById('goal-name').value.trim();
   const goal = document.getElementById('goal-input').value.trim();
-  if (!goal) return;
-  document.getElementById('goal-input').value = '';
+  if (!name || !goal) { alert('Name and Goal are required.'); return; }
+  const success_criteria = document.getElementById('goal-success-criteria').value.trim();
   const context = document.getElementById('goal-context').value.trim();
-  document.getElementById('goal-context').value = '';
+  const max_iterations = parseInt(document.getElementById('goal-max-iterations').value) || 3;
+
   try {
     await fetch(API + '/api/goals', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({goal, context})
+      body: JSON.stringify({name, goal, success_criteria, context, max_iterations}),
     });
+    hideGoalForm();
+    loadGoals();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function runGoalLoop(loopId) {
+  try {
+    const res = await fetch(API + '/api/goals/' + loopId + '/run', {method: 'POST'});
+    if (!res.ok) {
+      const err = await res.json();
+      alert('Error: ' + (err.detail || 'Failed to run loop'));
+      return;
+    }
+    loadGoals();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function markGoalComplete(loopId) {
+  try {
+    await fetch(API + '/api/goals/' + loopId + '/complete', {method: 'POST'});
     loadGoals();
   } catch(e) { console.error(e); }
 }
 
-async function toggleSubtask(goalId, subtaskId) {
-  await fetch(API + '/api/goals/' + goalId + '/subtask/' + subtaskId + '/complete', {method: 'POST'});
-  loadGoals();
-}
-
-async function startGoalLoop(goalId) {
-  const maxIter = prompt('Maximum loop iterations (hard stop):', '10');
-  if (!maxIter) return;
+async function resetGoalLoop(loopId) {
+  if (!confirm('Reset this loop? Iteration history will be cleared.')) return;
   try {
-    const res = await fetch(API + '/api/goals/' + goalId + '/start-loop', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        goal_id: goalId,
-        max_iterations: parseInt(maxIter) || 10,
-        stop_on_complete: true,
-        auto_advance: true,
-      })
-    });
-    const data = await res.json();
-    if (res.ok) {
-      loadGoals();
-      // Poll loop status
-      pollLoopStatus(goalId);
-    } else {
-      alert('Error: ' + (data.detail || 'Could not start loop'));
-    }
-  } catch(e) { console.error(e); }
-}
-
-async function stopGoalLoop(goalId) {
-  try {
-    await fetch(API + '/api/goals/' + goalId + '/stop-loop', {method: 'POST'});
+    await fetch(API + '/api/goals/' + loopId + '/reset', {method: 'POST'});
     loadGoals();
   } catch(e) { console.error(e); }
 }
 
-async function checkLoopStatus(goalId) {
+async function deleteGoalLoop(loopId) {
+  if (!confirm('Delete this goal loop?')) return;
   try {
-    const res = await fetch(API + '/api/goals/' + goalId + '/loop-status');
-    const data = await res.json();
-    let msg = 'Loop status: ' + data.status + '\n';
-    msg += 'Iteration: ' + data.iteration + ' / ' + data.max_iterations + '\n';
-    msg += 'Goal progress: ' + Math.round((data.goal_progress || 0) * 100) + '%';
-    if (data.diagnosis) {
-      msg += '\n\nWhy the goal was not met:\n' + data.diagnosis;
-    }
-    if (data.log && data.log.length > 0) {
-      msg += '\n\nLast activity:\n';
-      for (const entry of data.log.slice(-5)) {
-        msg += '  #' + entry.iteration + ': ' + (entry.task || entry.status || '') + ' - ' + entry.status + '\n';
-      }
-    }
-    alert(msg);
-  } catch(e) { console.error(e); }
-}
-
-let loopPollTimers = {};
-function pollLoopStatus(goalId) {
-  // Clear existing timer for this goal
-  if (loopPollTimers[goalId]) clearInterval(loopPollTimers[goalId]);
-  loopPollTimers[goalId] = setInterval(async () => {
-    try {
-      const res = await fetch(API + '/api/goals/' + goalId + '/loop-status');
-      const data = await res.json();
-      if (data.status !== 'running') {
-        clearInterval(loopPollTimers[goalId]);
-        delete loopPollTimers[goalId];
-        loadGoals();
-      } else {
-        loadGoals(); // Refresh goal list to show progress
-      }
-    } catch(e) {
-      clearInterval(loopPollTimers[goalId]);
-      delete loopPollTimers[goalId];
-    }
-  }, 3000);
-}
-
-async function deleteGoal(goalId) {
-  if (!confirm('Delete this goal?')) return;
-  try {
-    await fetch(API + '/api/goals/' + goalId, {method: 'DELETE'});
+    await fetch(API + '/api/goals/' + loopId, {method: 'DELETE'});
     loadGoals();
   } catch(e) { console.error(e); }
 }
 
-async function fetchDiagnosis(goalId) {
+async function toggleSubtask(loopId, subtaskId) {
   try {
-    const res = await fetch(API + '/api/goals/' + goalId + '/loop-status');
-    const data = await res.json();
-    const el = document.getElementById('diagnosis-' + goalId);
-    if (el && data.diagnosis) {
-      el.textContent = data.diagnosis;
-    } else if (el && !data.diagnosis) {
-      el.style.display = 'none';
-    }
+    await fetch(API + '/api/goals/' + loopId + '/subtask/' + subtaskId + '/complete', {method: 'POST'});
+    loadGoals();
   } catch(e) { console.error(e); }
 }
 
@@ -2594,7 +2335,7 @@ async function deleteRule(id) {
   loadRules();
 }
 
-// Agent Creator
+// Sub-Agent Creator
 let agentCategoryFilter = '';
 
 async function loadAgents() {
@@ -2616,7 +2357,7 @@ async function loadAgents() {
     catEl.innerHTML = catHtml;
 
     if (!data.templates || !data.templates.length) {
-      grid.innerHTML = '<div style="color:var(--text-2);font-size:13px;padding:16px 0">No agent templates found.</div>';
+      grid.innerHTML = '<div style="color:var(--text-2);font-size:13px;padding:16px 0">No sub-agent templates found.</div>';
       return;
     }
 
@@ -2660,7 +2401,7 @@ function filterAgentCategory(cat) {
 
 function showAddAgentForm() {
   document.getElementById('agents-add-form').style.display = 'block';
-  document.getElementById('agents-form-title').textContent = 'Create Agent';
+  document.getElementById('agents-form-title').textContent = 'Create Sub-Agent';
   document.getElementById('agent-edit-id').value = '';
   ['agent-name','agent-description','agent-system-prompt','agent-rules'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('agent-category').value = 'general';
@@ -2742,9 +2483,9 @@ async function spawnAgent(templateId) {
     if (data.session_id) {
       sessionId = data.session_id;
       { const el = document.getElementById('status-session'); if (el) el.textContent = sessionId; }
-      showToast('Agent spawned: ' + data.template_name + ' (session ' + data.session_id + ')', 'success');
+      showToast('Sub-Agent spawned: ' + data.template_name + ' (session ' + data.session_id + ')', 'success');
       switchPanel('chat');
-      appendMsg('assistant', 'Session started with **' + data.template_name + '** agent template.\nModel: ' + data.model + '\n\nSystem prompt preview: ' + data.system_prompt_preview.substring(0, 200) + '...');
+      appendMsg('assistant', 'Session started with **' + data.template_name + '** sub-agent template.\nModel: ' + data.model + '\n\nSystem prompt preview: ' + data.system_prompt_preview.substring(0, 200) + '...');
     }
   } catch(e) { alert('Error spawning agent: ' + e.message); }
 }
@@ -2780,7 +2521,7 @@ function viewAgent(id) {
 }
 
 async function deleteAgent(id) {
-  if (!confirm('Delete this agent template?')) return;
+  if (!confirm('Delete this sub-agent template?')) return;
   await fetch(API + '/api/agents/' + id, {method:'DELETE'});
   loadAgents();
 }
@@ -2817,97 +2558,6 @@ async function loadStatus() {
     { const el = document.getElementById('status-model'); if (el) el.textContent = 'Offline'; }
     { const el = document.getElementById('status-dot'); if (el) el.classList.add('down'); }
   }
-}
-
-// Check for updates (runs once on load, then every 6 hours)
-async function checkForUpdates() {
-  try {
-    const res = await fetch(API + '/api/update-check');
-    const data = await res.json();
-    const badge = document.getElementById('update-badge');
-    const upgradeBtn = document.getElementById('upgrade-btn');
-    if (badge && data.update_available) {
-      const link = document.getElementById('update-badge-link');
-      if (link) {
-        link.textContent = 'v' + data.latest_version;
-        link.href = data.release_url || 'https://github.com/drc10101/sawyer-agent/releases';
-        link.title = 'Update available: v' + data.latest_version + ' (current: v' + data.current_version + ')';
-      }
-      badge.style.display = 'inline-flex';
-      if (upgradeBtn) upgradeBtn.style.display = 'inline-block';
-    } else if (badge) {
-      badge.style.display = 'none';
-    }
-  } catch(e) {
-    // Silently fail — update check is non-critical
-    console.log('Update check failed:', e);
-  }
-}
-
-// One-click upgrade: download new version, restart server, reconnect
-async function upgradeSawyer() {
-  const overlay = document.getElementById('upgrade-overlay');
-  const status = document.getElementById('upgrade-status');
-  const bar = document.getElementById('upgrade-bar');
-  if (!overlay || !status || !bar) return;
-
-  // Show overlay
-  overlay.style.display = 'flex';
-  status.textContent = 'Downloading latest version...';
-  bar.style.width = '10%';
-
-  try {
-    const res = await fetch(API + '/api/upgrade', { method: 'POST' });
-    if (res.ok) {
-      const data = await res.json();
-      status.textContent = 'Upgraded to v' + data.new_version + '. Restarting server...';
-      bar.style.width = '70%';
-      // Start polling for server to come back
-      pollForReconnect(status, bar);
-    } else {
-      const err = await res.json().catch(() => ({}));
-      status.textContent = 'Upgrade failed: ' + (err.detail || 'Unknown error');
-      bar.style.width = '100%';
-      bar.style.background = '#f44';
-      setTimeout(() => { overlay.style.display = 'none'; }, 5000);
-    }
-  } catch(e) {
-    // Network error = server already shut down for restart (good sign!)
-    status.textContent = 'Server restarting...';
-    bar.style.width = '70%';
-    pollForReconnect(status, bar);
-  }
-}
-
-function pollForReconnect(statusEl, barEl) {
-  let attempts = 0;
-  const maxAttempts = 60; // 60 seconds
-  const interval = setInterval(async () => {
-    attempts++;
-    barEl.style.width = (70 + (attempts / maxAttempts) * 30) + '%';
-    try {
-      const res = await fetch(API + '/api/status', { signal: AbortSignal.timeout(2000) });
-      if (res.ok) {
-        const data = await res.json();
-        clearInterval(interval);
-        barEl.style.width = '100%';
-        barEl.style.background = '#22c55e';
-        statusEl.textContent = 'Back online! v' + data.version;
-        setTimeout(() => {
-          overlay.style.display = 'none';
-          location.reload();
-        }, 1500);
-      }
-    } catch(e) {
-      // Server not up yet — keep polling
-      if (attempts >= maxAttempts) {
-        clearInterval(interval);
-        statusEl.textContent = 'Server is taking longer than expected. Please refresh manually.';
-        barEl.style.width = '100%';
-        barEl.style.background = '#eab308';
-      }
-    }
-  }, 1000);
 }
 
 // Show notification in chat that keys changed, offer session restart
@@ -2964,24 +2614,10 @@ function updateUptime() {
 setInterval(updateUptime, 1000);
 
 loadStatus();
-checkForUpdates();
-setInterval(checkForUpdates, 6 * 60 * 60 * 1000);  // Recheck every 6 hours
 lucide.createIcons();
 </script>
 
-<!-- Upgrade overlay -->
-<div id="upgrade-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);display:none;align-items:center;justify-content:center">
-  <div style="text-align:center;color:#fff;max-width:400px;padding:40px">
-    <div style="font-size:48px;margin-bottom:16px">&#9889;</div>
-    <h2 style="margin:0 0 12px;font-size:20px">Upgrading Sawyer Agent</h2>
-    <p id="upgrade-status" style="font-size:14px;color:var(--text-2,#aaa);margin:0 0 20px">Downloading latest version...</p>
-    <div id="upgrade-progress" style="width:100%;height:4px;background:rgba(255,255,255,0.2);border-radius:2px;overflow:hidden">
-      <div id="upgrade-bar" style="width:10%;height:100%;background:var(--brand,#12c7ef);border-radius:2px;transition:width 0.5s"></div>
-    </div>
-  </div>
-</div>
-
-<!-- Preact App Module -- reactive state management + component rendering -->
+<!-- Preact App Module — reactive state management + component rendering -->
 <script type="module" src="/static/lib/app.js"></script>
 </body>
 </html>

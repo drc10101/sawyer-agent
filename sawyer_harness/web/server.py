@@ -30,8 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from ..agent import Agent
-from ..config import HarnessConfig, VERBOSITY_LEVELS
-from .. import __version__
+from ..config import HarnessConfig
 from ..llm import LLMClient
 from ..memory import MemoryStore
 from ..routing import ModelRouter, ProviderEndpoint, ProviderHealth, TaskType
@@ -47,6 +46,7 @@ from ..key_storage import KeyStorage
 from ..rules import RulesStore, RulePriority, RuleScope
 from ..agent_creator import AgentCreator
 from ..orchestrator import OrchestratorEngine, TaskStatus, TaskPriority, AgentBriefing
+from ..goal_loop import GoalLoopStore, GoalLoop, LoopStatus, IterationStatus
 
 logger = logging.getLogger("sawyer-harness.web")
 
@@ -81,32 +81,19 @@ class GoalCreate(BaseModel):
     goal: str
     context: str = ""
 
-class GoalLoopStart(BaseModel):
-    """Start a goal-seeking loop with a predetermined stopping point."""
-    goal_id: str
-    max_iterations: int = 10       # Hard ceiling: stop after this many agent turns
-    stop_on_complete: bool = True  # Stop when all subtasks are done
-    auto_advance: bool = True     # Automatically move to next subtask after completion
+class GoalLoopCreate(BaseModel):
+    name: str
+    goal: str
+    success_criteria: str = ""
+    context: str = ""
+    max_iterations: int = 3
+    sub_agents: list[str] = []
 
 class ConfigUpdate(BaseModel):
     provider: str = ""
     model: str = ""
     api_key: str = ""
     base_url: str = ""
-
-class AgentConfigUpdate(BaseModel):
-    max_tool_rounds: int | None = None
-    verbosity: str | None = None      # concise | normal | thorough
-    stream_tool_output: bool | None = None
-    mode: str | None = None           # direct | orchestrator | auto
-    model: str | None = None          # LLM model name (e.g. "glm-5.1:cloud")
-    provider: str | None = None       # LLM provider (e.g. "ollama")
-    base_url: str | None = None       # LLM base URL
-
-class ToolToggle(BaseModel):
-    max_tool_rounds: int | None = None
-    verbosity: str | None = None      # concise | normal | thorough
-    stream_tool_output: bool | None = None
 
 class ToolToggle(BaseModel):
     tool_name: str
@@ -125,7 +112,7 @@ def create_app(config: HarnessConfig | None = None) -> FastAPI:
     app = FastAPI(
         title="Sawyer Agent",
         description="Secure, model-agnostic, self-hosted AI agent framework",
-        version=__version__,
+        version="0.2.0",
     )
 
     # CORS for development
@@ -189,10 +176,8 @@ class _AppState:
         self.session_notes: dict[str, dict] = {}
         self.session_engines: dict[str, SessionEngine] = {}
         self.goals: dict[str, dict] = {}
-        self.goal_loops: dict[str, dict] = {}  # goal_id -> loop state
         self.compressor = ContextCompressor(
             max_tokens=config.llm.context_length or ContextManager(model_name=config.llm.model or "gpt-4o").window_size,
-            model=config.llm.model or "gpt-4o",
         )
         self.context_manager = ContextManager(
             model_name=config.llm.model or "gpt-4o",
@@ -204,6 +189,7 @@ class _AppState:
         self.rules_store = RulesStore()
         self.agent_creator = AgentCreator()
         self.orchestrator = OrchestratorEngine()
+        self.goal_loops = GoalLoopStore()
         self.current_project: Project | None = None
         self.upload_dir = Path("~/.sawyer-harness/uploads").expanduser()
         self.upload_dir.mkdir(parents=True, exist_ok=True)
@@ -223,7 +209,6 @@ class _AppState:
             system_prompt="You are Sawyer Agent, a secure AI agent. Be helpful, direct, and thorough.",
             skills=self.skills,
             rules_store=self.rules_store,
-            context_window=self.context_manager.window_size,
         )
         self.sessions[new_id] = agent
         return new_id, agent
@@ -252,9 +237,12 @@ def _register_routes(app: FastAPI, state: _AppState):
             # Auto-compress if context exceeds budget
             system_prompt = agent._build_system_prompt()
             memory_text = "; ".join(e["content"] for e in agent.memory.all_entries()[:5])
-            message_tokens = state.context_manager.count_message_tokens(agent.conversation)
-            system_tokens = state.context_manager.count_tokens(system_prompt)
-            mem_tokens = state.context_manager.count_tokens(memory_text)
+            message_tokens = sum(
+                len(m.content) // 4 if hasattr(m, 'content') else 0
+                for m in agent.conversation
+            )
+            system_tokens = len(system_prompt) // 4
+            mem_tokens = len(memory_text) // 4
             if state.context_manager.needs_compression(
                 system_prompt_tokens=system_tokens,
                 memory_tokens=mem_tokens,
@@ -272,17 +260,6 @@ def _register_routes(app: FastAPI, state: _AppState):
                     f"({result.messages_kept} kept, {result.messages_summarized} summarized, "
                     f"{result.messages_dropped} dropped)"
                 )
-
-            # Clean up session handoff notes after they've been injected
-            # into the response (they're one-shot — only needed for the first
-            # message of a new session that's continuing from a full one)
-            handoff_keys = [
-                e["key"] for e in agent.memory.all_entries()
-                if e.get("category") == "session-handoff"
-            ]
-            for key in handoff_keys:
-                agent.memory.delete(key)
-                logger.info(f"Cleaned up handoff note: {key}")
 
             return {
                 "session_id": session_id,
@@ -438,61 +415,6 @@ def _register_routes(app: FastAPI, state: _AppState):
         return {"status": "updated", "config": {
             "provider": state.config.llm.provider,
             "model": state.config.llm.model,
-            "base_url": state.config.llm.base_url,
-        }}
-
-    @app.get("/api/agent-config")
-    async def get_agent_config():
-        """Get current agent configuration including model and mode."""
-        return {
-            "max_tool_rounds": state.config.agent.max_tool_rounds,
-            "verbosity": state.config.agent.verbosity,
-            "stream_tool_output": state.config.agent.stream_tool_output,
-            "mode": state.config.agent.mode,
-            "model": state.config.llm.model,
-            "provider": state.config.llm.provider,
-            "base_url": state.config.llm.base_url,
-        }
-
-    @app.post("/api/agent-config")
-    async def update_agent_config(update: AgentConfigUpdate):
-        """Update agent behavior configuration at runtime."""
-        if update.max_tool_rounds is not None:
-            if update.max_tool_rounds < 1 or update.max_tool_rounds > 50:
-                raise HTTPException(status_code=400, detail="max_tool_rounds must be between 1 and 50")
-            state.config.agent.max_tool_rounds = update.max_tool_rounds
-        if update.verbosity is not None:
-            if update.verbosity not in VERBOSITY_LEVELS:
-                raise HTTPException(status_code=400, detail=f"verbosity must be one of: {', '.join(VERBOSITY_LEVELS)}")
-            state.config.agent.verbosity = update.verbosity
-        if update.stream_tool_output is not None:
-            state.config.agent.stream_tool_output = update.stream_tool_output
-        if update.mode is not None:
-            if update.mode not in ("direct", "orchestrator", "auto"):
-                raise HTTPException(status_code=400, detail="mode must be one of: direct, orchestrator, auto")
-            state.config.agent.mode = update.mode
-        if update.model is not None:
-            state.config.llm.model = update.model
-            # Update context manager for the new model
-            state.context_manager = ContextManager(
-                model_name=update.model,
-                context_length_override=state.config.llm.context_length,
-            )
-            state.compressor = ContextCompressor(
-                max_tokens=state.config.llm.context_length or state.context_manager.window_size,
-                model=update.model,
-            )
-        if update.provider is not None:
-            state.config.llm.provider = update.provider
-        if update.base_url is not None:
-            state.config.llm.base_url = update.base_url
-        return {"status": "updated", "agent_config": {
-            "max_tool_rounds": state.config.agent.max_tool_rounds,
-            "verbosity": state.config.agent.verbosity,
-            "stream_tool_output": state.config.agent.stream_tool_output,
-            "mode": state.config.agent.mode,
-            "model": state.config.llm.model,
-            "provider": state.config.llm.provider,
             "base_url": state.config.llm.base_url,
         }}
 
@@ -746,31 +668,99 @@ def _register_routes(app: FastAPI, state: _AppState):
         return {"status": "deleted", "key": key}
 
     # ----------------------------------------------------------
-    # Goals / Orchestration
+    # Goal Loops (named, reusable goals with iteration control)
     # ----------------------------------------------------------
 
     @app.post("/api/goals")
-    async def create_goal(goal_data: GoalCreate):
-        """Create a new goal for the orchestrator to decompose."""
-        goal_id = str(uuid.uuid4())[:8]
-        goal = {
-            "id": goal_id,
-            "goal": goal_data.goal,
-            "context": goal_data.context,
-            "status": "pending",
-            "created": datetime.now(timezone.utc).isoformat(),
-            "subtasks": [],
-            "progress": 0.0,
-        }
-
-        # Decompose the goal into subtasks using a structured prompt
-        session_id, agent = state.get_or_create_session(f"goal-{goal_id}")
-        decompose_prompt = (
-            f"Decompose this goal into 3-7 concrete, actionable subtasks.\n\n"
-            f"Goal: {goal_data.goal}\n"
-            f"Context: {goal_data.context or 'None'}\n\n"
-            f"List each subtask as a numbered item. Be specific and actionable."
+    async def create_goal_loop(data: GoalLoopCreate):
+        """Create a new named goal loop."""
+        loop = state.goal_loops.create(
+            name=data.name,
+            goal=data.goal,
+            success_criteria=data.success_criteria,
+            context=data.context,
+            max_iterations=data.max_iterations,
+            sub_agents=data.sub_agents,
         )
+        return loop.to_dict()
+
+    @app.get("/api/goals")
+    async def list_goal_loops():
+        """List all goal loops."""
+        loops = state.goal_loops.list_loops()
+        return {"goals": [l.to_dict() for l in loops]}
+
+    @app.get("/api/goals/{loop_id}")
+    async def get_goal_loop(loop_id: str):
+        """Get a specific goal loop."""
+        loop = state.goal_loops.get(loop_id)
+        if not loop:
+            raise HTTPException(status_code=404, detail="Goal loop not found")
+        return loop.to_dict()
+
+    @app.put("/api/goals/{loop_id}")
+    async def update_goal_loop(loop_id: str, updates: dict):
+        """Update a goal loop's fields."""
+        loop = state.goal_loops.update(loop_id, **updates)
+        if not loop:
+            raise HTTPException(status_code=404, detail="Goal loop not found")
+        return loop.to_dict()
+
+    @app.delete("/api/goals/{loop_id}")
+    async def delete_goal_loop(loop_id: str):
+        """Delete a goal loop."""
+        if not state.goal_loops.delete(loop_id):
+            raise HTTPException(status_code=404, detail="Goal loop not found")
+        return {"status": "deleted", "id": loop_id}
+
+    @app.post("/api/goals/{loop_id}/run")
+    async def run_goal_loop(loop_id: str):
+        """Start the next iteration of a goal loop.
+
+        Decomposes the goal into subtasks using the agent, then stores
+        the iteration. The Ralph Loop: decompose -> execute -> evaluate -> improve.
+        """
+        loop = state.goal_loops.get(loop_id)
+        if not loop:
+            raise HTTPException(status_code=404, detail="Goal loop not found")
+
+        # Check iteration budget
+        if loop.current_iteration >= loop.max_iterations:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Max iterations ({loop.max_iterations}) reached. Reset the loop to run again.",
+            )
+
+        # Start a new iteration
+        iteration = state.goal_loops.start_iteration(loop_id)
+        if not iteration:
+            raise HTTPException(status_code=500, detail="Failed to start iteration")
+
+        # Decompose the goal into subtasks using the agent
+        session_id, agent = state.get_or_create_session(f"loop-{loop_id}")
+
+        # Build a richer prompt that includes success criteria and iteration context
+        prompt_parts = [
+            f"Decompose this goal into 3-7 concrete, actionable subtasks.",
+            f"\nGoal: {loop.goal}",
+        ]
+        if loop.success_criteria:
+            prompt_parts.append(f"\nSuccess Criteria: {loop.success_criteria}")
+        if loop.context:
+            prompt_parts.append(f"\nContext: {loop.context}")
+
+        # If we have previous iterations, include learnings
+        if loop.iterations and len(loop.iterations) > 1:
+            prev = loop.iterations[-2] if len(loop.iterations) >= 2 else None
+            if prev and prev.improvements:
+                prompt_parts.append(
+                    f"\nPrevious iteration found these improvements:\n"
+                    + "\n".join(f"- {imp}" for imp in prev.improvements)
+                )
+
+        prompt_parts.append("\nList each subtask as a numbered item. Be specific and actionable.")
+
+        decompose_prompt = "".join(prompt_parts)
 
         try:
             response_parts = []
@@ -786,312 +776,153 @@ def _register_routes(app: FastAPI, state: _AppState):
                     task_text = line.split(".", 1)[1].strip()
                     if task_text:
                         subtasks.append({
-                            "id": f"{goal_id}-{len(subtasks)+1}",
+                            "id": f"{loop_id}-it{iteration.number}-{len(subtasks)+1}",
                             "task": task_text,
                             "status": "pending",
                         })
 
             if not subtasks:
-                # Fallback: treat the whole response as a single subtask
                 subtasks.append({
-                    "id": f"{goal_id}-1",
-                    "task": goal_data.goal,
+                    "id": f"{loop_id}-it{iteration.number}-1",
+                    "task": loop.goal,
                     "status": "pending",
                 })
 
-            goal["subtasks"] = subtasks
-            goal["status"] = "decomposed"
+            # Update the iteration with subtasks
+            state.goal_loops.update_iteration(
+                loop_id,
+                iteration.number,
+                status=IterationStatus.EXECUTING,
+                subtasks=subtasks,
+            )
+
+            # Re-fetch the updated loop
+            loop = state.goal_loops.get(loop_id)
+            return loop.to_dict()
 
         except Exception as e:
-            logger.error(f"Goal decomposition error: {e}")
-            goal["subtasks"] = [{"id": f"{goal_id}-1", "task": goal_data.goal, "status": "pending"}]
-            goal["status"] = "decomposed"
-
-        state.goals[goal_id] = goal
-        return goal
-
-    @app.get("/api/goals")
-    async def list_goals():
-        """List all goals."""
-        return {"goals": list(state.goals.values())}
-
-    @app.get("/api/goals/{goal_id}")
-    async def get_goal(goal_id: str):
-        """Get a specific goal."""
-        if goal_id not in state.goals:
-            raise HTTPException(status_code=404, detail="Goal not found")
-        return state.goals[goal_id]
-
-    @app.post("/api/goals/{goal_id}/subtask/{subtask_id}/complete")
-    async def complete_subtask(goal_id: str, subtask_id: str):
-        """Mark a subtask as complete."""
-        if goal_id not in state.goals:
-            raise HTTPException(status_code=404, detail="Goal not found")
-
-        goal = state.goals[goal_id]
-        for st in goal["subtasks"]:
-            if st["id"] == subtask_id:
-                st["status"] = "complete"
-                break
-
-        # Update progress
-        total = len(goal["subtasks"])
-        complete = sum(1 for st in goal["subtasks"] if st["status"] == "complete")
-        goal["progress"] = complete / total if total > 0 else 0.0
-
-        if complete == total:
-            goal["status"] = "complete"
-
-        return goal
-
-    @app.delete("/api/goals/{goal_id}")
-    async def delete_goal(goal_id: str):
-        """Delete a goal and its loop state."""
-        if goal_id not in state.goals:
-            raise HTTPException(status_code=404, detail="Goal not found")
-        # Stop any running loop
-        if goal_id in state.goal_loops:
-            state.goal_loops[goal_id]["status"] = "stopped"
-            del state.goal_loops[goal_id]
-        del state.goals[goal_id]
-        return {"status": "deleted"}
-
-    # ----------------------------------------------------------
-    # Goal-Seeking Loops
-    # ----------------------------------------------------------
-
-    @app.post("/api/goals/{goal_id}/start-loop")
-    async def start_goal_loop(goal_id: str, loop_config: GoalLoopStart):
-        """Start a goal-seeking loop: the orchestrator works through subtasks with a hard stop."""
-        if goal_id not in state.goals:
-            raise HTTPException(status_code=404, detail="Goal not found")
-
-        goal = state.goals[goal_id]
-        if goal["status"] not in ("decomposed", "pending"):
-            raise HTTPException(status_code=400, detail=f"Goal status is '{goal['status']}', cannot start loop. Only decomposed or pending goals can loop.")
-
-        # Find next pending subtask
-        pending = [st for st in goal["subtasks"] if st["status"] == "pending"]
-        if not pending:
-            goal["status"] = "complete"
-            goal["progress"] = 1.0
-            return {"status": "complete", "message": "All subtasks already complete.", "goal": goal}
-
-        # Create loop state
-        loop_state = {
-            "goal_id": goal_id,
-            "status": "running",
-            "iteration": 0,
-            "max_iterations": loop_config.max_iterations,
-            "stop_on_complete": loop_config.stop_on_complete,
-            "auto_advance": loop_config.auto_advance,
-            "current_subtask": pending[0]["id"],
-            "log": [],
-            "started_at": datetime.now(timezone.utc).isoformat(),
-            "stopped_at": None,
-        }
-        state.goal_loops[goal_id] = loop_state
-
-        # Mark goal as running
-        goal["status"] = "looping"
-
-        # Run the first subtask iteration
-        subtask = pending[0]
-        loop_state["iteration"] = 1
-        loop_state["log"].append({
-            "iteration": 1,
-            "subtask_id": subtask["id"],
-            "task": subtask["task"],
-            "status": "started",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
-
-        # Kick off the loop task in the background
-        asyncio.create_task(_run_goal_loop(goal_id, loop_config))
-
-        return {
-            "status": "running",
-            "goal_id": goal_id,
-            "iteration": 1,
-            "max_iterations": loop_config.max_iterations,
-            "current_subtask": subtask["id"],
-            "current_task": subtask["task"],
-        }
-
-    @app.post("/api/goals/{goal_id}/stop-loop")
-    async def stop_goal_loop(goal_id: str):
-        """Stop a running goal-seeking loop."""
-        if goal_id not in state.goal_loops:
-            raise HTTPException(status_code=404, detail="No loop running for this goal")
-
-        loop = state.goal_loops[goal_id]
-        loop["status"] = "stopped"
-        loop["stopped_at"] = datetime.now(timezone.utc).isoformat()
-
-        if goal_id in state.goals:
-            state.goals[goal_id]["status"] = "paused"
-
-            # Diagnose why the loop was stopped
-            goal = state.goals[goal_id]
-            remaining = [st for st in goal["subtasks"] if st["status"] == "pending"]
-            completed = [st for st in goal["subtasks"] if st["status"] == "complete"]
-            diag = (
-                f"Loop stopped manually after {loop['iteration']} iteration(s). "
-                f"{len(completed)} of {len(goal['subtasks'])} subtask(s) completed. "
-                f"{len(remaining)} subtask(s) remain: "
-                + ", ".join(st["task"] for st in remaining[:5])
+            logger.error(f"Goal loop iteration error: {e}")
+            state.goal_loops.update_iteration(
+                loop_id,
+                iteration.number,
+                status=IterationStatus.FAILED,
             )
-            loop["diagnosis"] = diag
+            state.goal_loops.fail_loop(loop_id)
+            raise HTTPException(status_code=500, detail=str(e))
 
-        return {"status": "stopped", "goal_id": goal_id, "iterations_completed": loop["iteration"]}
+    @app.post("/api/goals/{loop_id}/iterate/{iteration_number}/complete")
+    async def complete_iteration(loop_id: str, iteration_number: int):
+        """Mark an iteration's subtask results and evaluate.
 
-    @app.get("/api/goals/{goal_id}/loop-status")
-    async def get_loop_status(goal_id: str):
-        """Get the status of a goal-seeking loop."""
-        if goal_id not in state.goal_loops:
-            # No loop exists -- return idle status
-            goal = state.goals.get(goal_id)
-            if not goal:
-                raise HTTPException(status_code=404, detail="Goal not found")
-            return {
-                "status": "idle",
-                "goal_id": goal_id,
-                "goal_status": goal["status"],
-                "progress": goal["progress"],
-            }
-
-        loop = state.goal_loops[goal_id]
-        goal = state.goals.get(goal_id, {})
-        return {
-            "status": loop["status"],
-            "goal_id": goal_id,
-            "iteration": loop["iteration"],
-            "max_iterations": loop["max_iterations"],
-            "current_subtask": loop.get("current_subtask"),
-            "log": loop["log"][-10:],  # Last 10 log entries
-            "goal_progress": goal.get("progress", 0),
-            "goal_status": goal.get("status"),
-            "diagnosis": loop.get("diagnosis"),
-            "started_at": loop["started_at"],
-            "stopped_at": loop.get("stopped_at"),
-        }
-
-    async def _run_goal_loop(goal_id: str, config: GoalLoopStart):
-        """Background task: iterate through subtasks with a hard stop."""
-        loop = state.goal_loops.get(goal_id)
+        After subtasks are executed, evaluate the results and determine
+        if the loop should continue or the goal is met.
+        """
+        loop = state.goal_loops.get(loop_id)
         if not loop:
-            return
+            raise HTTPException(status_code=404, detail="Goal loop not found")
 
-        goal = state.goals.get(goal_id)
-        if not goal:
-            loop["status"] = "error"
-            loop["log"].append({"error": "Goal removed during loop"})
-            return
+        # Evaluate the iteration results
+        iteration = next(
+            (it for it in loop.iterations if it.number == iteration_number), None
+        )
+        if not iteration:
+            raise HTTPException(status_code=404, detail="Iteration not found")
 
-        while loop["status"] == "running" and loop["iteration"] < loop["max_iterations"]:
-            # Find next pending subtask
-            pending = [st for st in goal["subtasks"] if st["status"] == "pending"]
-            if not pending:
-                # All subtasks complete
-                goal["status"] = "complete"
-                goal["progress"] = 1.0
-                loop["status"] = "complete"
-                loop["log"].append({
-                    "iteration": loop["iteration"],
-                    "status": "all_subtasks_complete",
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                })
-                return
+        # Check if all subtasks are completed
+        all_complete = all(st.get("status") == "complete" for st in iteration.subtasks)
 
-            subtask = pending[0]
-            loop["current_subtask"] = subtask["id"]
-            loop["iteration"] += 1
-
-            loop["log"].append({
-                "iteration": loop["iteration"],
-                "subtask_id": subtask["id"],
-                "task": subtask["task"],
-                "status": "working",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            })
-
-            # Send the subtask to the orchestrator
-            try:
-                session_id, agent = state.get_or_create_session(f"goal-loop-{goal_id}")
-                prompt = (
-                    f"You are working on subtask {subtask['id']} of goal: {goal['goal']}\n"
-                    f"Context: {goal.get('context', 'None')}\n"
-                    f"Subtask: {subtask['task']}\n\n"
-                    f"Complete this subtask. Use any tools available. "
-                    f"When done, briefly state what you accomplished."
+        if all_complete:
+            # Evaluate: was the success criteria met?
+            if loop.success_criteria:
+                session_id, agent = state.get_or_create_session(f"loop-{loop_id}-eval")
+                eval_prompt = (
+                    f"Evaluate whether this goal has been achieved.\n\n"
+                    f"Goal: {loop.goal}\n"
+                    f"Success Criteria: {loop.success_criteria}\n\n"
+                    f"Subtasks completed:\n"
+                    + "\n".join(f"- {st['task']}: {st.get('result', 'completed')}" for st in iteration.subtasks)
+                    + "\n\nIs the success criteria met? Answer YES or NO, then explain briefly."
                 )
-                response_parts = []
-                async for chunk in agent.run(prompt):
-                    response_parts.append(chunk)
-                response = "".join(response_parts)
+                try:
+                    response_parts = []
+                    async for chunk in agent.run(eval_prompt):
+                        response_parts.append(chunk)
+                    evaluation = "".join(response_parts)
 
-                # Mark subtask complete
-                subtask["status"] = "complete"
-                total = len(goal["subtasks"])
-                complete = sum(1 for st in goal["subtasks"] if st["status"] == "complete")
-                goal["progress"] = complete / total if total > 0 else 0.0
+                    # Check if the goal is met
+                    criteria_met = "YES" in evaluation[:50].upper()
 
-                loop["log"][-1]["status"] = "complete"
-                loop["log"][-1]["response_preview"] = response[:200]
+                    state.goal_loops.update_iteration(
+                        loop_id,
+                        iteration_number,
+                        status=IterationStatus.COMPLETED,
+                        evaluation=evaluation,
+                    )
 
-            except Exception as e:
-                logger.error(f"Goal loop iteration {loop['iteration']} error: {e}")
-                loop["log"][-1]["status"] = "error"
-                loop["log"][-1]["error"] = str(e)
+                    if criteria_met:
+                        state.goal_loops.complete_loop(loop_id)
+                        loop = state.goal_loops.get(loop_id)
+                        return {**loop.to_dict(), "criteria_met": True, "evaluation": evaluation}
+                    else:
+                        # Goal not met yet -- improvements needed
+                        improvements = [line.strip().lstrip("- ") for line in evaluation.split("\n") if line.strip().startswith("-")]
+                        if not improvements:
+                            improvements = ["Refine approach based on evaluation feedback."]
 
-            # Check if we should stop
-            if config.stop_on_complete:
-                remaining = [st for st in goal["subtasks"] if st["status"] == "pending"]
-                if not remaining:
-                    goal["status"] = "complete"
-                    goal["progress"] = 1.0
-                    loop["status"] = "complete"
-                    return
+                        state.goal_loops.update_iteration(
+                            loop_id,
+                            iteration_number,
+                            improvements=improvements,
+                        )
+                        loop = state.goal_loops.get(loop_id)
+                        return {**loop.to_dict(), "criteria_met": False, "evaluation": evaluation, "improvements": improvements}
 
-            # Brief pause between iterations
-            await asyncio.sleep(0.5)
+                except Exception as e:
+                    logger.error(f"Goal evaluation error: {e}")
 
-        # Hit max iterations -- diagnose why the goal wasn't met
-        if loop["status"] == "running":
-            loop["status"] = "max_iterations_reached"
-            loop["log"].append({
-                "iteration": loop["iteration"],
-                "status": "max_iterations_reached",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            })
-            goal["status"] = "paused"
-
-            # Ask the agent to diagnose what went wrong
-            remaining = [st for st in goal["subtasks"] if st["status"] == "pending"]
-            failed = [st for st in goal["subtasks"] if st.get("status") not in ("complete", "pending")]
-            completed = [st for st in goal["subtasks"] if st["status"] == "complete"]
-            diag_prompt = (
-                f"The goal-seeking loop for \"{goal['goal']}\" hit its maximum iteration limit ({loop['max_iterations']}) "
-                f"before completing all subtasks.\n\n"
-                f"Completed subtasks ({len(completed)}):\n"
-                + "\n".join(f"  - {st['task']}" for st in completed) + "\n"
-                f"\nRemaining subtasks ({len(remaining)}):\n"
-                + "\n".join(f"  - {st['task']}" for st in remaining) + "\n"
-                f"\nFailed subtasks ({len(failed)}):\n"
-                + "\n".join(f"  - {st['task']}" for st in failed) + "\n"
-                f"\nIn 2-3 sentences, explain why the goal was not fully achieved and what the user could do differently. "
-                f"Be specific about what's missing."
+            # No success criteria -- just mark iteration complete
+            state.goal_loops.update_iteration(
+                loop_id, iteration_number, status=IterationStatus.COMPLETED
             )
-            try:
-                session_id, agent = state.get_or_create_session(f"goal-loop-{goal_id}")
-                diag_parts = []
-                async for chunk in agent.run(diag_prompt):
-                    diag_parts.append(chunk)
-                loop["diagnosis"] = "".join(diag_parts)
-                loop["log"][-1]["diagnosis"] = loop["diagnosis"]
-            except Exception as e:
-                logger.error(f"Goal loop diagnosis error: {e}")
-                loop["diagnosis"] = f"Loop hit {loop['max_iterations']} iterations. {len(remaining)} subtask(s) remain unfinished."
+            loop = state.goal_loops.get(loop_id)
+            return {**loop.to_dict(), "criteria_met": None, "message": "Iteration completed. No success criteria defined -- mark as complete manually if satisfied."}
+        else:
+            # Not all subtasks complete yet
+            return {**loop.to_dict(), "criteria_met": None, "message": "Not all subtasks are complete yet."}
+
+    @app.post("/api/goals/{loop_id}/complete")
+    async def mark_goal_complete(loop_id: str):
+        """Manually mark a goal loop as completed (success criteria met by user judgment)."""
+        loop = state.goal_loops.complete_loop(loop_id)
+        if not loop:
+            raise HTTPException(status_code=404, detail="Goal loop not found")
+        return loop.to_dict()
+
+    @app.post("/api/goals/{loop_id}/subtask/{subtask_id}/complete")
+    async def complete_loop_subtask(loop_id: str, subtask_id: str):
+        """Mark a subtask within a loop iteration as complete."""
+        loop = state.goal_loops.get(loop_id)
+        if not loop:
+            raise HTTPException(status_code=404, detail="Goal loop not found")
+
+        # Find the subtask in the current iteration
+        for iteration in loop.iterations:
+            for st in iteration.subtasks:
+                if st.get("id") == subtask_id:
+                    st["status"] = "complete"
+                    state.goal_loops._save()
+                    loop = state.goal_loops.get(loop_id)
+                    return loop.to_dict()
+
+        raise HTTPException(status_code=404, detail="Subtask not found")
+
+    @app.post("/api/goals/{loop_id}/reset")
+    async def reset_goal_loop(loop_id: str):
+        """Reset a loop to draft so it can be re-run."""
+        loop = state.goal_loops.reset_loop(loop_id)
+        if not loop:
+            raise HTTPException(status_code=404, detail="Goal loop not found")
+        return loop.to_dict()
 
     # ----------------------------------------------------------
     # Tools / Audit
@@ -1185,21 +1016,14 @@ def _register_routes(app: FastAPI, state: _AppState):
 
     @app.get("/api/context/stats")
     async def get_context_stats(session_id: str = ""):
-        """Get context window statistics for a session.
-
-        Uses real token counting (tiktoken BPE) for accurate measurements.
-        Also includes API-reported token counts when available (ground truth).
-        """
+        """Get context window statistics for a session."""
         messages = []
         if session_id and session_id in state.sessions:
             messages = state.sessions[session_id].conversation
 
-        system_prompt = "You are Sawyer Agent, a secure AI agent."
-        memory_text = "; ".join(e["content"] for e in state.memory.all_entries()[:5])
-
         stats = state.context_manager.get_context_stats(
-            system_prompt=system_prompt,
-            memory_text=memory_text,
+            system_prompt="You are Sawyer Agent, a secure AI agent.",
+            memory_text="; ".join(e["content"] for e in state.memory.all_entries()[:5]),
             messages=messages,
         )
         return stats
@@ -1503,7 +1327,7 @@ def _register_routes(app: FastAPI, state: _AppState):
         """Get overall system status."""
         return {
             "status": "running",
-            "version": __version__,
+            "version": "0.4.0",
             "pid": os.getpid(),
             "sessions": len(state.sessions),
             "memory_chars": state.memory.total_chars(),
@@ -1519,151 +1343,6 @@ def _register_routes(app: FastAPI, state: _AppState):
             "rules_count": state.rules_store.count(),
             "agent_templates": len(state.agent_creator.list_templates()),
             "orchestration_runs": state.orchestrator.count(),
-        }
-
-    @app.get("/api/update-check")
-    async def check_for_updates():
-        """Check GitHub for the latest release version."""
-        import httpx as _httpx
-        try:
-            resp = await _httpx.AsyncClient(timeout=5.0).get(
-                "https://api.github.com/repos/drc10101/sawyer-agent/releases/latest"
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                latest = data.get("tag_name", "").lstrip("v")
-                # Compare versions
-                current_parts = [int(x) for x in __version__.split(".")]
-                latest_parts = [int(x) for x in latest.split(".")] if latest else [0, 0, 0]
-                update_available = latest_parts > current_parts
-                return {
-                    "current_version": __version__,
-                    "latest_version": latest,
-                    "update_available": update_available,
-                    "release_url": data.get("html_url", ""),
-                    "release_notes": data.get("body", "")[:500] if data.get("body") else "",
-                }
-            return {"current_version": __version__, "latest_version": "unknown", "update_available": False, "error": f"GitHub returned {resp.status_code}"}
-        except Exception as e:
-            return {"current_version": __version__, "latest_version": "unknown", "update_available": False, "error": str(e)}
-
-
-    # ----------------------------------------------------------
-    # Self-upgrade
-    # ----------------------------------------------------------
-
-    @app.post("/api/upgrade")
-    async def upgrade_sawyer():
-        """Upgrade Sawyer Agent to the latest version from GitHub.
-
-        Downloads the new package via pip, then spawns a restart script
-        that waits for this process to exit and starts the server again.
-        All user data in ~/.sawyer-harness/ (config, memory, skills, keys, cron)
-        is preserved -- only the Python package code changes.
-
-        Returns the new version number on success, or an error message.
-        The server process exits after responding, so the client should
-        show a reconnect overlay while waiting.
-        """
-        import subprocess
-        import sys
-        import time
-        import platform
-
-        old_version = __version__
-        logger.info(f"Starting upgrade from v{old_version}")
-
-        # Step 1: pip install --upgrade
-        try:
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--upgrade",
-                 "git+https://github.com/drc10101/sawyer-agent.git", "--quiet"],
-                capture_output=True, text=True, timeout=120,
-            )
-            if result.returncode != 0:
-                logger.error(f"Upgrade pip install failed: {result.stderr}")
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"pip install failed: {result.stderr[:500]}",
-                )
-        except subprocess.TimeoutExpired:
-            raise HTTPException(status_code=500, detail="pip install timed out after 120s")
-
-        # Step 2: Verify the new version
-        try:
-            import importlib
-            import sawyer_harness as _sh
-            importlib.reload(_sh)
-            new_version = _sh.__version__
-        except Exception:
-            new_version = "unknown"
-
-        logger.info(f"Upgrade complete: v{old_version} -> v{new_version}")
-
-        # Step 3: Write restart script and schedule exit
-        is_windows = platform.system() == "Windows"
-        my_pid = os.getpid()
-
-        if is_windows:
-            script_path = Path.home() / ".sawyer-harness" / "_restart.bat"
-            # Windows batch: kill old PID, wait for it to die, restart server
-            script_lines = [
-                "@echo off",
-                "echo Sawyer Agent - Restarting after upgrade...",
-                f"echo Waiting for PID {my_pid} to exit...",
-                f"taskkill /PID {my_pid} /F >nul 2>&1",
-                ":wait",
-                f'tasklist /FI "PID eq {my_pid}" 2>nul | find "{my_pid}" >nul',
-                "if %errorlevel%==0 (timeout /t 1 /nobreak >nul & goto wait)",
-                "echo Starting Sawyer Agent...",
-                f'"{sys.executable}" -m sawyer_harness --host 127.0.0.1 --port 8765',
-                "pause",
-            ]
-            script_content = "\n".join(script_lines)
-        else:
-            script_path = Path.home() / ".sawyer-harness" / "_restart.sh"
-            script_lines = [
-                "#!/bin/bash",
-                "echo 'Sawyer Agent - Restarting after upgrade...'",
-                f"echo 'Waiting for PID {my_pid} to exit...'",
-                f"kill {my_pid} 2>/dev/null",
-                f"while kill -0 {my_pid} 2>/dev/null; do sleep 1; done",
-                "echo 'Starting Sawyer Agent...'",
-                f"{sys.executable} -m sawyer_harness --host 127.0.0.1 --port 8765",
-            ]
-            script_content = "\n".join(script_lines)
-
-        script_path.parent.mkdir(parents=True, exist_ok=True)
-        script_path.write_text(script_content, encoding="utf-8")
-
-        if not is_windows:
-            script_path.chmod(0o755)
-
-        # Step 4: Launch restart script in background and schedule our exit
-        restart_delay = 2  # seconds to let the HTTP response go out first
-
-        def _exit_after_delay():
-            time.sleep(restart_delay)
-            if is_windows:
-                subprocess.Popen(
-                    ["cmd", "/c", str(script_path)],
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-                )
-            else:
-                subprocess.Popen(["bash", str(script_path)],
-                    start_new_session=True,
-                )
-            os._exit(0)  # Hard exit -- uvicorn won't stop gracefully
-
-        import threading
-        exit_thread = threading.Thread(target=_exit_after_delay, daemon=True)
-        exit_thread.start()
-
-        return {
-            "status": "upgrading",
-            "old_version": old_version,
-            "new_version": new_version,
-            "message": f"Upgraded from v{old_version} to v{new_version}. Restarting server.",
         }
 
     @app.get("/api/capabilities")
@@ -2018,7 +1697,6 @@ def _register_routes(app: FastAPI, state: _AppState):
             tools=tools,
             system_prompt=system_prompt,
             skills=state.skills,
-            context_window=state.context_manager.window_size,
         )
 
         session_id = str(uuid.uuid4())[:8]
@@ -2237,43 +1915,6 @@ def _register_routes(app: FastAPI, state: _AppState):
         app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
-def _ensure_shortcuts() -> None:
-    """Auto-install desktop/start menu shortcuts on first run.
-
-    Checks if shortcuts already exist. If not, silently creates them
-    using the same logic as 'python -m sawyer_harness install-shortcuts'.
-    This ensures the Sawyer icon appears on first run without requiring
-    the user to run a separate command.
-    """
-    import platform
-    import subprocess
-
-    system = platform.system()
-
-    if system == "Windows":
-        # Check if desktop shortcut already exists
-        desktop_lnk = Path.home() / "Desktop" / "Sawyer Agent.lnk"
-        if desktop_lnk.exists():
-            return  # Already installed
-    elif system == "Darwin":
-        app_bundle = Path.home() / "Applications" / "Sawyer Agent.app"
-        if app_bundle.exists():
-            return
-    else:
-        desktop_file = Path.home() / ".local" / "share" / "applications" / "sawyer-agent.desktop"
-        if desktop_file.exists():
-            return
-
-    # Run install-shortcuts silently
-    try:
-        from sawyer_harness.cli import _cmd_install_shortcuts
-        import argparse
-        args = argparse.Namespace()
-        _cmd_install_shortcuts(args)
-    except Exception as e:
-        logger.info(f"Shortcut auto-install skipped: {e}")
-
-
 def _kill_port_holder(host: str, port: int) -> None:
     """Kill any process already listening on host:port.
 
@@ -2374,17 +2015,10 @@ def run_server(config: HarnessConfig | None = None, host: str = "0.0.0.0", port:
     it is terminated first so Sawyer always starts cleanly.
     Then uvicorn binds and, once the server is accepting connections,
     opens the default web browser to the UI.
-
-    On first run, automatically creates desktop/start menu shortcuts
-    with the Sawyer icon.
     """
     import uvicorn
     import webbrowser
     import threading
-    import platform
-
-    # ── Auto-install shortcuts on first run ───────────────────────
-    _ensure_shortcuts()
 
     # ── Kill any existing process on this port ──────────────────────
     _kill_port_holder(host, port)

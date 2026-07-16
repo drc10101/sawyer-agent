@@ -173,7 +173,7 @@ export function setActivePanel(panel) {
     chat: 'Chat', goals: 'Goals', 'skill-creator': 'Skill Creator',
     tools: 'Tools', files: 'Files', models: 'Models',
     sessions: 'Sessions', projects: 'Projects', cron: 'Cron',
-    context: 'Memory', keys: 'Keys', rules: 'Rules', agents: 'Agents',
+    context: 'Memory', keys: 'Keys', rules: 'Rules', agents: 'Sub-Agents', goals: 'Goal Loops',
   };
   const titleEl = document.getElementById('panel-title');
   if (titleEl) titleEl.textContent = titles[panel] || panel;
@@ -207,6 +207,7 @@ function loadPanelData(panel) {
     case 'keys': if (typeof window.loadKeys === 'function') window.loadKeys(); else loadKeys(); break;
     case 'rules': if (typeof window.loadRules === 'function') window.loadRules(); else loadRulesState(); break;
     case 'agents': if (typeof window.loadAgents === 'function') window.loadAgents(); else loadAgentsState(); break;
+    case 'orchestration': if (typeof window.loadOrchestrations === 'function') window.loadOrchestrations(); break;
     case 'files': loadProjectFiles(); break;
   }
 }
