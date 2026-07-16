@@ -91,6 +91,10 @@ class AgentConfigUpdate(BaseModel):
     max_tool_rounds: int | None = None
     verbosity: str | None = None      # concise | normal | thorough
     stream_tool_output: bool | None = None
+    mode: str | None = None           # direct | orchestrator | auto
+    model: str | None = None          # LLM model name (e.g. "glm-5.1:cloud")
+    provider: str | None = None       # LLM provider (e.g. "ollama")
+    base_url: str | None = None       # LLM base URL
 
 class ToolToggle(BaseModel):
     max_tool_rounds: int | None = None
@@ -431,11 +435,15 @@ def _register_routes(app: FastAPI, state: _AppState):
 
     @app.get("/api/agent-config")
     async def get_agent_config():
-        """Get current agent configuration."""
+        """Get current agent configuration including model and mode."""
         return {
             "max_tool_rounds": state.config.agent.max_tool_rounds,
             "verbosity": state.config.agent.verbosity,
             "stream_tool_output": state.config.agent.stream_tool_output,
+            "mode": state.config.agent.mode,
+            "model": state.config.llm.model,
+            "provider": state.config.llm.provider,
+            "base_url": state.config.llm.base_url,
         }
 
     @app.post("/api/agent-config")
@@ -451,38 +459,33 @@ def _register_routes(app: FastAPI, state: _AppState):
             state.config.agent.verbosity = update.verbosity
         if update.stream_tool_output is not None:
             state.config.agent.stream_tool_output = update.stream_tool_output
+        if update.mode is not None:
+            if update.mode not in ("direct", "orchestrator", "auto"):
+                raise HTTPException(status_code=400, detail="mode must be one of: direct, orchestrator, auto")
+            state.config.agent.mode = update.mode
+        if update.model is not None:
+            state.config.llm.model = update.model
+            # Update context manager for the new model
+            state.context_manager = ContextManager(
+                model_name=update.model,
+                context_length_override=state.config.llm.context_length,
+            )
+            state.compressor = ContextCompressor(
+                max_tokens=state.config.llm.context_length or state.context_manager.window_size,
+                model=update.model,
+            )
+        if update.provider is not None:
+            state.config.llm.provider = update.provider
+        if update.base_url is not None:
+            state.config.llm.base_url = update.base_url
         return {"status": "updated", "agent_config": {
             "max_tool_rounds": state.config.agent.max_tool_rounds,
             "verbosity": state.config.agent.verbosity,
             "stream_tool_output": state.config.agent.stream_tool_output,
-        }}
-
-    @app.get("/api/agent-config")
-    async def get_agent_config():
-        """Get current agent configuration."""
-        return {
-            "max_tool_rounds": state.config.agent.max_tool_rounds,
-            "verbosity": state.config.agent.verbosity,
-            "stream_tool_output": state.config.agent.stream_tool_output,
-        }
-
-    @app.post("/api/agent-config")
-    async def update_agent_config(update: AgentConfigUpdate):
-        """Update agent behavior configuration at runtime."""
-        if update.max_tool_rounds is not None:
-            if update.max_tool_rounds < 1 or update.max_tool_rounds > 50:
-                raise HTTPException(status_code=400, detail="max_tool_rounds must be between 1 and 50")
-            state.config.agent.max_tool_rounds = update.max_tool_rounds
-        if update.verbosity is not None:
-            if update.verbosity not in VERBOSITY_LEVELS:
-                raise HTTPException(status_code=400, detail=f"verbosity must be one of: {', '.join(VERBOSITY_LEVELS)}")
-            state.config.agent.verbosity = update.verbosity
-        if update.stream_tool_output is not None:
-            state.config.agent.stream_tool_output = update.stream_tool_output
-        return {"status": "updated", "agent_config": {
-            "max_tool_rounds": state.config.agent.max_tool_rounds,
-            "verbosity": state.config.agent.verbosity,
-            "stream_tool_output": state.config.agent.stream_tool_output,
+            "mode": state.config.agent.mode,
+            "model": state.config.llm.model,
+            "provider": state.config.llm.provider,
+            "base_url": state.config.llm.base_url,
         }}
 
     # ----------------------------------------------------------

@@ -39,6 +39,7 @@ class AgentConfig:
     max_tool_rounds: int = 20      # Safety ceiling for tool-call loops
     verbosity: str = "normal"      # concise | normal | thorough
     stream_tool_output: bool = True  # Show tool results in chat as they arrive
+    mode: str = "direct"           # direct | orchestrator | auto
 
 
 @dataclass

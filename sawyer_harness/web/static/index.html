@@ -188,6 +188,54 @@
         <div style="max-width:600px">
           <h3 style="color:var(--brand);font-size:1rem;margin-bottom:16px">Settings</h3>
 
+          <!-- Main Model -->
+          <div class="ctrl-card" style="margin-bottom:12px">
+            <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Main Model</h4>
+            <p style="font-size:12px;color:var(--text-2);margin-bottom:10px">
+              The LLM that powers the main agent. Changes take effect on the next message.
+            </p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+              <div style="flex:1;min-width:180px">
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px">Provider</label>
+                <select id="main-provider" style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px;width:100%"
+                  onchange="toggleBaseUrl(); updateAgentConfig()">
+                  <option value="ollama">Ollama</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="sawyer">Sawyer Network</option>
+                  <option value="local">Local</option>
+                </select>
+              </div>
+              <div style="flex:2;min-width:240px">
+                <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px">Model</label>
+                <input id="main-model" placeholder="e.g. glm-5.1:cloud, gpt-4o, claude-sonnet-4-20250514"
+                  style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px;width:100%"
+                  onchange="updateAgentConfig()">
+              </div>
+            </div>
+            <div style="flex:1;min-width:240px;display:none" id="base-url-row">
+              <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px">Base URL</label>
+              <input id="main-base-url" placeholder="https://api.openai.com/v1"
+                style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px;width:100%"
+                onchange="updateAgentConfig()">
+            </div>
+          </div>
+
+          <!-- Agent Mode -->
+          <div class="ctrl-card" style="margin-bottom:12px">
+            <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Agent Mode</h4>
+            <p style="font-size:12px;color:var(--text-2);margin-bottom:10px">
+              <strong>Direct</strong> answers you itself, uses its own tools. Fast, cheap, good for most conversations.
+              <strong>Orchestrator</strong> decomposes goals into subtasks, delegates to sub-agents, evaluates results. Slower but more capable for complex work.
+              <strong>Auto</strong> starts direct, escalates to orchestration when needed.
+            </p>
+            <div style="display:flex;gap:8px" id="mode-buttons">
+              <button class="btn btn--primary btn-sm" data-mode="direct" onclick="setMode('direct')">Direct</button>
+              <button class="btn btn--subtle btn-sm" data-mode="orchestrator" onclick="setMode('orchestrator')">Orchestrator</button>
+              <button class="btn btn--subtle btn-sm" data-mode="auto" onclick="setMode('auto')">Auto</button>
+            </div>
+          </div>
+
           <!-- Verbosity -->
           <div class="ctrl-card" style="margin-bottom:12px">
             <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Response Style</h4>
@@ -1343,11 +1391,12 @@ async function loadAgentConfig() {
     // Set verbosity button states
     document.querySelectorAll('#verbosity-buttons button').forEach(btn => {
       const v = btn.getAttribute('data-verbosity');
-      if (v === data.verbosity) {
-        btn.className = 'btn btn--primary btn-sm';
-      } else {
-        btn.className = 'btn btn--subtle btn-sm';
-      }
+      btn.className = v === data.verbosity ? 'btn btn--primary btn-sm' : 'btn btn--subtle btn-sm';
+    });
+    // Set mode button states
+    document.querySelectorAll('#mode-buttons button').forEach(btn => {
+      const m = btn.getAttribute('data-mode');
+      btn.className = m === data.mode ? 'btn btn--primary btn-sm' : 'btn btn--subtle btn-sm';
     });
     // Set max tool rounds slider
     const slider = document.getElementById('max-tool-rounds-slider');
@@ -1356,11 +1405,29 @@ async function loadAgentConfig() {
     valueSpan.textContent = data.max_tool_rounds;
     // Set stream toggle
     document.getElementById('stream-tool-output-toggle').checked = data.stream_tool_output;
+    // Set main model
+    document.getElementById('main-model').value = data.model || '';
+    // Set provider dropdown
+    const providerSelect = document.getElementById('main-provider');
+    providerSelect.value = data.provider || 'ollama';
+    // Set base URL if present
+    if (data.base_url) {
+      document.getElementById('main-base-url').value = data.base_url;
+    }
+    // Show/hide base URL based on provider
+    toggleBaseUrl();
   } catch(e) {
     console.error('loadAgentConfig error:', e);
     document.getElementById('agent-config-status').textContent = 'Failed to load agent config';
     document.getElementById('agent-config-status').style.color = 'var(--danger, #f44)';
   }
+}
+
+function toggleBaseUrl() {
+  const provider = document.getElementById('main-provider').value;
+  const row = document.getElementById('base-url-row');
+  // Show base URL for local and custom providers
+  row.style.display = (provider === 'local') ? 'block' : 'none';
 }
 
 async function setVerbosity(level) {
@@ -1372,10 +1439,8 @@ async function setVerbosity(level) {
     });
     const data = await res.json();
     if (res.ok) {
-      // Update button states
       document.querySelectorAll('#verbosity-buttons button').forEach(btn => {
-        const v = btn.getAttribute('data-verbosity');
-        btn.className = v === level ? 'btn btn--primary btn-sm' : 'btn btn--subtle btn-sm';
+        btn.className = btn.getAttribute('data-verbosity') === level ? 'btn btn--primary btn-sm' : 'btn btn--subtle btn-sm';
       });
       document.getElementById('agent-config-status').textContent = 'Response style: ' + level;
       document.getElementById('agent-config-status').style.color = 'var(--brand)';
@@ -1388,6 +1453,29 @@ async function setVerbosity(level) {
   }
 }
 
+async function setMode(mode) {
+  try {
+    const res = await fetch(API + '/api/agent-config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({mode: mode})
+    });
+    const data = await res.json();
+    if (res.ok) {
+      document.querySelectorAll('#mode-buttons button').forEach(btn => {
+        btn.className = btn.getAttribute('data-mode') === mode ? 'btn btn--primary btn-sm' : 'btn btn--subtle btn-sm';
+      });
+      document.getElementById('agent-config-status').textContent = 'Agent mode: ' + mode;
+      document.getElementById('agent-config-status').style.color = 'var(--brand)';
+    } else {
+      document.getElementById('agent-config-status').textContent = 'Error: ' + (data.detail || 'Unknown error');
+      document.getElementById('agent-config-status').style.color = 'var(--danger, #f44)';
+    }
+  } catch(e) {
+    console.error('setMode error:', e);
+  }
+}
+
 let agentConfigDebounce = null;
 async function updateAgentConfig() {
   // Debounce to avoid rapid API calls from slider
@@ -1395,14 +1483,21 @@ async function updateAgentConfig() {
   agentConfigDebounce = setTimeout(async () => {
     const maxRounds = parseInt(document.getElementById('max-tool-rounds-slider').value);
     const streamOutput = document.getElementById('stream-tool-output-toggle').checked;
+    const model = document.getElementById('main-model').value.trim();
+    const provider = document.getElementById('main-provider').value;
+    const baseUrl = document.getElementById('main-base-url').value.trim();
+    const body = {
+      max_tool_rounds: maxRounds,
+      stream_tool_output: streamOutput,
+    };
+    if (model) body.model = model;
+    if (provider) body.provider = provider;
+    if (baseUrl) body.base_url = baseUrl;
     try {
       const res = await fetch(API + '/api/agent-config', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          max_tool_rounds: maxRounds,
-          stream_tool_output: streamOutput
-        })
+        body: JSON.stringify(body)
       });
       const data = await res.json();
       if (res.ok) {

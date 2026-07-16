@@ -11,7 +11,7 @@
   &nbsp;&middot;&nbsp;
   <a href="#quick-start"><strong>Quick Start &rarr;</strong></a>
   &nbsp;&middot;&nbsp;
-  <a href="#tools"><strong>19 Built-in Tools &rarr;</strong></a>
+  <a href="#tools"><strong>20 Built-in Tools &rarr;</strong></a>
 </p>
 
 ---
@@ -20,9 +20,23 @@
   <img src="docs/sawyer-screenshot.png" alt="Sawyer Agent web UI" width="768">
 </p>
 
-Sawyer is a standalone AI agent that runs on your machine with no telemetry, no phone-home, and no data leaving your network. It ships with 19 tools, 5 built-in skills, and a ClawHub importer -- connect any OpenAI-compatible LLM and go.
+Sawyer is a standalone AI agent that runs on your machine with no telemetry, no phone-home, and no data leaving your network. It ships with 20 tools, real token counting, sub-agent templates, and ClawHub import -- connect any OpenAI-compatible LLM and go.
 
 **Principles:** Secure by default. Model-agnostic. Self-hosted. Observable. Self-improving.
+
+## What's New in v0.7.3
+
+**Real token counting** -- every context meter, compression decision, and pressure threshold now uses actual tiktoken BPE tokenization instead of the old `len(text)//4` heuristic. Chinese text was off by 400%. Repetitive text by 87%. Now you get real numbers you can count on.
+
+**Main Model & Agent Mode settings** -- the Settings panel now lets you pick your LLM provider and model, and choose between three agent modes:
+
+- **Direct** -- the agent answers you directly using its own tools. Fast, cheap, good for 90% of conversations.
+- **Orchestrator** -- decomposes goals into subtasks, delegates to specialized sub-agents, evaluates results. Slower but more capable for complex multi-step work.
+- **Auto** -- starts direct, escalates to orchestration when it hits something too big.
+
+**Sub-Agents panel** -- create specialized agent templates with their own system prompt, personality, rules, and model settings. Spawn a session from any template to get a focused agent ready for a specific task.
+
+**Better skill tools** -- `skill_load` and `skill_list` now reload from disk at runtime and give clear guidance when no skills are installed. `clawhub_import` catches network errors and says "ClawHub is not reachable" instead of dumping a Python traceback.
 
 ## Install
 
@@ -32,7 +46,7 @@ Sawyer is a standalone AI agent that runs on your machine with no telemetry, no 
 irm https://raw.githubusercontent.com/drc10101/sawyer-agent/master/install-sawyer.bat -OutFile install-sawyer.bat; .\install-sawyer.bat
 ```
 
-Or download `install-sawyer.bat` and double-click it.
+Or download `install-sawyer.bat` and double-click it. Creates a desktop shortcut with the Sawyer icon.
 
 **Manual (any platform):**
 
@@ -120,6 +134,11 @@ llm:
   base_url: https://ollama.com/v1
   max_tokens: 4096
   temperature: 0.7
+agent:
+  max_tool_rounds: 20        # Safety ceiling for tool-call loops
+  verbosity: normal           # concise | normal | thorough
+  stream_tool_output: true    # Show tool results in chat
+  mode: direct                # direct | orchestrator | auto
 security:
   sandbox: true
   max_command_timeout: 300
@@ -127,6 +146,8 @@ memory:
   backend: sqlite
   path: ~/.sawyer-harness/memory.db
 ```
+
+You can also change the model, provider, and agent mode at runtime from the Settings panel in the web UI. Changes take effect on the next message.
 
 ## Tools
 
@@ -152,7 +173,7 @@ All major tools and files are accessible right from the GUI -- no CLI required. 
 | `http_request` | REST API calls: GET, POST, PUT, DELETE with headers and body |
 | `clipboard` | Copy text to the system clipboard for sharing |
 | `project_create` | Scaffold new projects from built-in templates |
-| `clawhub_import` | Import skills from ClawHub.ai or GitHub (68K+ available) |
+| `clawhub_import` | Import skills from ClawHub.ai or GitHub |
 
 ## Skills
 
@@ -173,21 +194,52 @@ You: Import the handoff skill from ClawHub
 Sawyer: [clawhub_import] Imported 'handoff' -- use skill_load('handoff') to activate it.
 ```
 
+## Sub-Agents
+
+The Sub-Agents panel lets you create specialized agent templates. Each sub-agent has its own:
+
+- **System prompt** -- personality, domain expertise, behavioral rules
+- **Model settings** -- different LLM for different tasks
+- **Soul** -- identity, strengths, personality traits, quirks
+- **Rules** -- custom behavior rules that supersede defaults
+
+Create a template, then spawn a session from it to get a focused agent. In orchestrator mode, the main agent delegates subtasks to these sub-agents automatically.
+
+## Context Window
+
+Sawyer uses real tiktoken BPE tokenization to track context usage -- not the `len(text)//4` heuristic that most agents rely on. This means:
+
+- Context pressure detection is accurate (not off by 400% on Chinese text)
+- Compression triggers at the right time
+- Budget allocation reflects actual token costs
+- API-reported token counts feed back as ground truth
+
+The context meter in the header shows real numbers. When context gets tight, Sawyer compresses older messages while preserving decisions and corrections.
+
 ## Architecture
 
 ```
-Channel Layer (Telegram, Discord, CLI, Web UI)
+Web UI (FastAPI + static HTML/CSS/JS at localhost:8765)
+   15 panels (Chat, Goals, Skill Creator, Tools, Files, Models, Sessions,
+               Projects, Cron, Memory, Keys, Rules, Sub-Agents, Orchestrate, Settings)
         |
-   Router/Dispatcher (auth, sessions, rate limit)
+   Channel Layer (Telegram, Discord, CLI, API)
+        |
+   Router/Dispatcher (ModelRouter: Sawyer priority, health, fallback)
         |
     Agent Core
     |-- Memory (SQLite)
-    |-- Skills (YAML+Markdown)
-    |-- Scheduler (APScheduler)
-    |-- Tool Registry (19 tools, sandboxed)
-    |-- LLM Client (OpenAI-compatible)
-    |-- ClawHub Importer
-    +-- Context Manager (token tracking, compression)
+    |-- Skills (YAML+Markdown, find_relevant, self-patch)
+    |-- Scheduler (APScheduler: interval/cron/one-shot, SQLite persist)
+    |-- Tool Registry (20 tools, sandboxed, audit logged)
+    |-- Orchestrator (goal decomposition, dependency tracking, session notes)
+    |-- Skill Creator (5-phase collaborative skill design)
+    |-- Key Storage (encrypted credentials, permission levels)
+    |-- Rules Engine (custom rules supersede defaults)
+    |-- Agent Creator (8 built-in templates with soul, CRUD, spawn)
+    |-- Context Manager (tiktoken BPE token counting, pressure detection)
+    |-- Context Compressor (priority-aware, decision-preserving)
+    +-- LLM Client (Sawyer/OpenAI/Anthropic/Ollama via httpx)
 ```
 
 ## License
