@@ -1650,6 +1650,12 @@ async function loadGoals() {
       html += '</div></div>';
       html += '<div style="font-size:11px;color:var(--text-2);margin:4px 0">Created: ' + g.created + ' | Progress: ' + pct + '%</div>';
       html += '<div class="progress" style="margin:8px 0"><div class="progress-bar" style="width:' + pct + '%"></div></div>';
+      // Show diagnosis if loop ended without completing
+      if (g.status === 'paused' || g.status === 'max_iterations_reached') {
+        html += '<div id="diagnosis-' + g.id + '" style="font-size:12px;color:var(--warning, #f0a030);margin:8px 0;padding:8px;background:var(--bg-0);border-radius:6px;border-left:3px solid var(--warning, #f0a030)">Loading diagnosis...</div>';
+        // Fetch diagnosis
+        fetchDiagnosis(g.id);
+      }
       for (const st of g.subtasks) {
         const done = st.status === 'complete';
         html += '<div class="subtask' + (done ? ' done' : '') + '" style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px">';
@@ -1724,6 +1730,9 @@ async function checkLoopStatus(goalId) {
     let msg = 'Loop status: ' + data.status + '\n';
     msg += 'Iteration: ' + data.iteration + ' / ' + data.max_iterations + '\n';
     msg += 'Goal progress: ' + Math.round((data.goal_progress || 0) * 100) + '%';
+    if (data.diagnosis) {
+      msg += '\n\nWhy the goal was not met:\n' + data.diagnosis;
+    }
     if (data.log && data.log.length > 0) {
       msg += '\n\nLast activity:\n';
       for (const entry of data.log.slice(-5)) {
@@ -1761,6 +1770,19 @@ async function deleteGoal(goalId) {
   try {
     await fetch(API + '/api/goals/' + goalId, {method: 'DELETE'});
     loadGoals();
+  } catch(e) { console.error(e); }
+}
+
+async function fetchDiagnosis(goalId) {
+  try {
+    const res = await fetch(API + '/api/goals/' + goalId + '/loop-status');
+    const data = await res.json();
+    const el = document.getElementById('diagnosis-' + goalId);
+    if (el && data.diagnosis) {
+      el.textContent = data.diagnosis;
+    } else if (el && !data.diagnosis) {
+      el.style.display = 'none';
+    }
   } catch(e) { console.error(e); }
 }
 

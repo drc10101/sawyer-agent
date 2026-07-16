@@ -931,6 +931,18 @@ def _register_routes(app: FastAPI, state: _AppState):
         if goal_id in state.goals:
             state.goals[goal_id]["status"] = "paused"
 
+            # Diagnose why the loop was stopped
+            goal = state.goals[goal_id]
+            remaining = [st for st in goal["subtasks"] if st["status"] == "pending"]
+            completed = [st for st in goal["subtasks"] if st["status"] == "complete"]
+            diag = (
+                f"Loop stopped manually after {loop['iteration']} iteration(s). "
+                f"{len(completed)} of {len(goal['subtasks'])} subtask(s) completed. "
+                f"{len(remaining)} subtask(s) remain: "
+                + ", ".join(st["task"] for st in remaining[:5])
+            )
+            loop["diagnosis"] = diag
+
         return {"status": "stopped", "goal_id": goal_id, "iterations_completed": loop["iteration"]}
 
     @app.get("/api/goals/{goal_id}/loop-status")
@@ -959,6 +971,7 @@ def _register_routes(app: FastAPI, state: _AppState):
             "log": loop["log"][-10:],  # Last 10 log entries
             "goal_progress": goal.get("progress", 0),
             "goal_status": goal.get("status"),
+            "diagnosis": loop.get("diagnosis"),
             "started_at": loop["started_at"],
             "stopped_at": loop.get("stopped_at"),
         }
@@ -1043,7 +1056,7 @@ def _register_routes(app: FastAPI, state: _AppState):
             # Brief pause between iterations
             await asyncio.sleep(0.5)
 
-        # Hit max iterations
+        # Hit max iterations -- diagnose why the goal wasn't met
         if loop["status"] == "running":
             loop["status"] = "max_iterations_reached"
             loop["log"].append({
@@ -1052,6 +1065,33 @@ def _register_routes(app: FastAPI, state: _AppState):
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
             goal["status"] = "paused"
+
+            # Ask the agent to diagnose what went wrong
+            remaining = [st for st in goal["subtasks"] if st["status"] == "pending"]
+            failed = [st for st in goal["subtasks"] if st.get("status") not in ("complete", "pending")]
+            completed = [st for st in goal["subtasks"] if st["status"] == "complete"]
+            diag_prompt = (
+                f"The goal-seeking loop for \"{goal['goal']}\" hit its maximum iteration limit ({loop['max_iterations']}) "
+                f"before completing all subtasks.\n\n"
+                f"Completed subtasks ({len(completed)}):\n"
+                + "\n".join(f"  - {st['task']}" for st in completed) + "\n"
+                f"\nRemaining subtasks ({len(remaining)}):\n"
+                + "\n".join(f"  - {st['task']}" for st in remaining) + "\n"
+                f"\nFailed subtasks ({len(failed)}):\n"
+                + "\n".join(f"  - {st['task']}" for st in failed) + "\n"
+                f"\nIn 2-3 sentences, explain why the goal was not fully achieved and what the user could do differently. "
+                f"Be specific about what's missing."
+            )
+            try:
+                session_id, agent = state.get_or_create_session(f"goal-loop-{goal_id}")
+                diag_parts = []
+                async for chunk in agent.run(diag_prompt):
+                    diag_parts.append(chunk)
+                loop["diagnosis"] = "".join(diag_parts)
+                loop["log"][-1]["diagnosis"] = loop["diagnosis"]
+            except Exception as e:
+                logger.error(f"Goal loop diagnosis error: {e}")
+                loop["diagnosis"] = f"Loop hit {loop['max_iterations']} iterations. {len(remaining)} subtask(s) remain unfinished."
 
     # ----------------------------------------------------------
     # Tools / Audit
