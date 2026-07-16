@@ -180,6 +180,7 @@ class _AppState:
         self.goals: dict[str, dict] = {}
         self.compressor = ContextCompressor(
             max_tokens=config.llm.context_length or ContextManager(model_name=config.llm.model or "gpt-4o").window_size,
+            model=config.llm.model or "gpt-4o",
         )
         self.context_manager = ContextManager(
             model_name=config.llm.model or "gpt-4o",
@@ -239,12 +240,9 @@ def _register_routes(app: FastAPI, state: _AppState):
             # Auto-compress if context exceeds budget
             system_prompt = agent._build_system_prompt()
             memory_text = "; ".join(e["content"] for e in agent.memory.all_entries()[:5])
-            message_tokens = sum(
-                len(m.content) // 4 if hasattr(m, 'content') else 0
-                for m in agent.conversation
-            )
-            system_tokens = len(system_prompt) // 4
-            mem_tokens = len(memory_text) // 4
+            message_tokens = state.context_manager.count_message_tokens(agent.conversation)
+            system_tokens = state.context_manager.count_tokens(system_prompt)
+            mem_tokens = state.context_manager.count_tokens(memory_text)
             if state.context_manager.needs_compression(
                 system_prompt_tokens=system_tokens,
                 memory_tokens=mem_tokens,
@@ -927,14 +925,21 @@ def _register_routes(app: FastAPI, state: _AppState):
 
     @app.get("/api/context/stats")
     async def get_context_stats(session_id: str = ""):
-        """Get context window statistics for a session."""
+        """Get context window statistics for a session.
+
+        Uses real token counting (tiktoken BPE) for accurate measurements.
+        Also includes API-reported token counts when available (ground truth).
+        """
         messages = []
         if session_id and session_id in state.sessions:
             messages = state.sessions[session_id].conversation
 
+        system_prompt = "You are Sawyer Agent, a secure AI agent."
+        memory_text = "; ".join(e["content"] for e in state.memory.all_entries()[:5])
+
         stats = state.context_manager.get_context_stats(
-            system_prompt="You are Sawyer Agent, a secure AI agent.",
-            memory_text="; ".join(e["content"] for e in state.memory.all_entries()[:5]),
+            system_prompt=system_prompt,
+            memory_text=memory_text,
             messages=messages,
         )
         return stats

@@ -73,16 +73,7 @@ CONTEXT_PRESSURE_INSTRUCTION = (
 )
 
 
-def _estimate_tokens(messages: list[Message]) -> int:
-    """Rough token estimate: ~4 chars per token for English text."""
-    total = 0
-    for m in messages:
-        total += len(m.content) // 4 if m.content else 0
-        # Tool call arguments also count
-        if hasattr(m, 'tool_calls') and m.tool_calls:
-            for tc in m.tool_calls:
-                total += len(json.dumps(tc.arguments, default=str)) // 4
-    return total
+from .token_count import count_tokens, count_message_tokens
 
 
 def _generate_handoff_notes(
@@ -250,11 +241,16 @@ class Agent:
     def _check_context_pressure(self) -> float:
         """Check how full the context window is as a fraction (0.0 to 1.0).
 
-        Returns the ratio of estimated tokens used to the context window size.
+        Uses real token counting (tiktoken BPE) for accuracy.
+        Falls back to char heuristic only if tiktoken is unavailable.
+
+        Returns the ratio of tokens used to the context window size.
         A value above CONTEXT_PRESSURE_THRESHOLD means we should wrap up.
         """
         system_prompt = self._build_system_prompt()
-        total_tokens = _estimate_tokens(self.conversation) + len(system_prompt) // 4
+        system_tokens = count_tokens(system_prompt)
+        message_tokens = count_message_tokens(self.conversation)
+        total_tokens = system_tokens + message_tokens
         return total_tokens / self.context_window if self.context_window > 0 else 0.0
 
     async def run(self, user_message: str) -> AsyncIterator[str]:
@@ -321,6 +317,10 @@ class Agent:
 
             # If no tool calls, we're done -- yield the text response
             if not response.tool_calls:
+                # Feed API usage back to context manager for real token tracking
+                if response.usage:
+                    self._update_context_from_usage(response.usage)
+
                 # If the model returned separate reasoning/thinking content,
                 # wrap it in <thinking> tags so the UI can style it differently
                 combined = response.content or ""
@@ -446,6 +446,15 @@ class Agent:
     def save_memory(self, key: str, content: str, category: str = "general"):
         """Save a fact to persistent memory."""
         self.memory.add(key, content, category)
+
+    def _update_context_from_usage(self, usage: dict):
+        """Feed LLM API response usage data back to the context manager.
+
+        The API returns actual token counts (prompt_tokens, completion_tokens,
+        total_tokens) which are ground truth -- more accurate than any estimate.
+        """
+        if hasattr(self, 'context_manager') and self.context_manager:
+            self.context_manager.update_from_usage(usage)
 
     def reset_conversation(self):
         """Clear conversation history (keep memory)."""

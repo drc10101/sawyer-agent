@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Optional
 
+from .token_count import get_counter
+
 logger = logging.getLogger("sawyer-harness.compression")
 
 
@@ -67,8 +69,8 @@ class ContextCompressor:
     what to summarize, and what to drop. It preserves decisions and
     corrections even when summarizing old messages.
 
-    Token estimation is rough (4 chars = 1 token) but sufficient for
-    budget allocation. The real token count comes from the LLM's tokenizer.
+    Token counting uses tiktoken BPE for real accuracy. Falls back to
+    char heuristic only if tiktoken is unavailable.
     """
 
     # Decision patterns -- things that look like decisions worth preserving
@@ -88,20 +90,25 @@ class ContextCompressor:
         r"^(?:don't|never|stop|avoid)\s+",
     ]
 
-    def __init__(self, max_tokens: int = 128000, reserve_ratio: float = 0.2):
+    def __init__(self, max_tokens: int = 128000, reserve_ratio: float = 0.2, model: str = ""):
         """
         Args:
             max_tokens: Maximum context window size in tokens.
             reserve_ratio: Fraction of window to reserve for new messages.
                           0.2 means keep 20% free for the next exchange.
+            model: Model name for tokenizer selection.
         """
         self.max_tokens = max_tokens
         self.reserve_ratio = reserve_ratio
         self.window_size = max_tokens  # Alias for ContextManager compat
+        self._counter = get_counter(model) if model else get_counter()
 
     def estimate_tokens(self, text: str) -> int:
-        """Rough token estimation: ~4 chars per token for English."""
-        return max(1, len(text) // 4)
+        """Count real tokens using tiktoken BPE tokenizer.
+
+        Falls back to char heuristic only if tiktoken is unavailable.
+        """
+        return self._counter.count(text)
 
     def classify_priority(self, role: str, content: str) -> Priority:
         """Classify a message's compression priority."""

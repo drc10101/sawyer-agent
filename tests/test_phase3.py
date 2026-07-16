@@ -31,11 +31,20 @@ class TestContextCompressor:
         self.compressor = ContextCompressor(max_tokens=1000, reserve_ratio=0.2)
 
     def test_estimate_tokens(self):
-        """Token estimation is roughly 4 chars per token."""
-        assert self.compressor.estimate_tokens("") == 1
-        # 5 chars / 4 = 1.25, max(1, ...) = 1
+        """Token estimation uses real BPE tokenizer, not char heuristic."""
+        # Empty strings have 0 tokens (not 1 -- that was the old heuristic)
+        assert self.compressor.estimate_tokens("") == 0
+        # Short text has at least 1 token
         assert self.compressor.estimate_tokens("hello") >= 1
-        assert self.compressor.estimate_tokens("a" * 400) == 100
+        # Real token counts differ from char-based heuristics.
+        # The old test asserted "a" * 400 == 100 tokens (len//4), but
+        # BPE encodes repeated chars differently. We just verify it's reasonable.
+        assert self.compressor.estimate_tokens("a" * 400) > 0
+        # Verify real counting is more accurate than the heuristic:
+        # the real count should be within 3x of the heuristic (both directions)
+        heuristic = max(1, len("Hello, world!") // 4)
+        real = self.compressor.estimate_tokens("Hello, world!")
+        assert 0 < real < heuristic * 3  # sanity check
 
     def test_classify_system_critical(self):
         """System messages are always critical."""

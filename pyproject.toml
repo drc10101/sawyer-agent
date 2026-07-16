@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sawyer-agent"
-version = "0.7.1"
+version = "0.7.3"
 description = "Secure, model-agnostic, self-hosted AI agent framework"
 readme = "README.md"
 license = {text = "MIT"}
@@ -25,6 +25,7 @@ dependencies = [
     "uvicorn>=0.23.0",
     "jinja2>=3.1.0",
     "python-multipart>=0.0.6",
+    "tiktoken>=0.7.0",
 ]
 
 [project.optional-dependencies]

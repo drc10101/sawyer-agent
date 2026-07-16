@@ -15,6 +15,9 @@ A 128K window with smart compression holds more useful context than a
 - Reserve: 20% kept free for the next exchange
 
 Different models have different window sizes. This module knows them.
+
+Token counting uses tiktoken (OpenAI's actual BPE tokenizer) for real
+counts instead of the old len(text)//4 heuristic. See token_count.py.
 """
 
 from __future__ import annotations
@@ -22,6 +25,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from typing import Optional
+
+from .token_count import count_tokens, count_message_tokens, get_counter
 
 logger = logging.getLogger("sawyer-harness.context_manager")
 
@@ -124,6 +129,8 @@ class ContextManager:
 
     Knows the context window size for each model, allocates budgets,
     and decides when compression is needed.
+
+    Uses real token counting (tiktoken BPE) instead of char-count heuristics.
     """
 
     def __init__(
@@ -135,7 +142,7 @@ class ContextManager:
     ):
         """
         Args:
-            model_name: Name of the model (used to look up window size)
+            model_name: Name of the model (used to look up window size and tokenizer)
             window_size: Override the model's default window size
             reserve_ratio: Fraction of window to keep free (0.20 = 20%)
             context_length_override: Explicit context window size from config
@@ -150,6 +157,15 @@ class ContextManager:
             self.window_size = window_size
         else:
             self.window_size = self._lookup_window(model_name)
+
+        # Real token counter for this model's encoding
+        self._counter = get_counter(model_name)
+
+        # Track actual token counts from LLM API responses
+        # These are the ground truth -- more accurate than any estimate
+        self._last_prompt_tokens: int = 0
+        self._last_completion_tokens: int = 0
+        self._last_total_tokens: int = 0
 
     def _lookup_window(self, model_name: str) -> int:
         """Look up the context window size for a model."""
@@ -178,6 +194,53 @@ class ContextManager:
         logger.info(f"Unknown model '{model_name}', using default {DEFAULT_WINDOW} token window")
         return DEFAULT_WINDOW
 
+    def count_tokens(self, text: str) -> int:
+        """Count real tokens in text using tiktoken BPE tokenizer.
+
+        This replaces the old len(text)//4 heuristic with actual token counts.
+        For OpenAI models, uses the exact encoding. For others, uses
+        cl100k_base (GPT-4's encoding) as the best general approximation.
+        """
+        return self._counter.count(text)
+
+    def count_message_tokens(self, messages: list) -> int:
+        """Count real tokens across messages, including message overhead.
+
+        Uses the same tiktoken encoding, plus overhead for role markers,
+        separators, and tool call formatting.
+        """
+        return self._counter.count_messages(messages)
+
+    def update_from_usage(self, usage: dict) -> None:
+        """Update token counts from an LLM API response's usage field.
+
+        The API returns actual token counts in usage.prompt_tokens,
+        usage.completion_tokens, usage.total_tokens. These are ground
+        truth -- more accurate than any estimate, including tiktoken.
+
+        Call this after each LLM response to keep real counts current.
+        """
+        if not usage:
+            return
+        self._last_prompt_tokens = usage.get("prompt_tokens", self._last_prompt_tokens)
+        self._last_completion_tokens = usage.get("completion_tokens", self._last_completion_tokens)
+        self._last_total_tokens = usage.get("total_tokens", self._last_total_tokens)
+        logger.debug(
+            f"Updated from API usage: prompt={self._last_prompt_tokens}, "
+            f"completion={self._last_completion_tokens}, "
+            f"total={self._last_total_tokens}"
+        )
+
+    @property
+    def last_api_token_count(self) -> int | None:
+        """Return the total token count from the last API response, if available.
+
+        Returns None if no API response has been received yet.
+        """
+        if self._last_total_tokens > 0:
+            return self._last_total_tokens
+        return None
+
     def calculate_budget(
         self,
         system_prompt_tokens: int = 0,
@@ -189,14 +252,9 @@ class ContextManager:
         """
         Calculate the token budget allocation for the current conversation.
 
-        Allocates the context window into regions:
-        - System prompt (actual size, or 5% estimate)
-        - Memory (actual size, or 5% estimate)
-        - Skills (actual size, or 3% estimate)
-        - Session notes (actual size, or 3% estimate)
-        - Recent messages (40% of remaining)
-        - Free space (20% of total for new messages)
-        - Compressed older messages (whatever's left)
+        Token counts should now come from real tokenizer counts, not char
+        heuristics. Call count_tokens() or count_message_tokens() to get
+        them before passing them here.
         """
         w = self.window_size
 
@@ -303,22 +361,16 @@ class ContextManager:
         """
         Get comprehensive context window statistics.
 
+        Now uses real token counting (tiktoken BPE) instead of char heuristics.
         Returns a dict with token counts, budget allocation, and recommendations.
         """
-        # Estimate tokens (rough: 4 chars = 1 token)
-        def est(text: str) -> int:
-            return max(1, len(text) // 4) if text else 0
+        # Real token counts
+        system_tokens = self.count_tokens(system_prompt)
+        memory_tokens = self.count_tokens(memory_text)
+        skills_tokens = self.count_tokens(skills_text)
+        session_tokens = self.count_tokens(session_notes_text)
 
-        system_tokens = est(system_prompt)
-        memory_tokens = est(memory_text)
-        skills_tokens = est(skills_text)
-        session_tokens = est(session_notes_text)
-
-        message_tokens = 0
-        if messages:
-            for msg in messages:
-                content = msg.content if hasattr(msg, "content") else str(msg)
-                message_tokens += est(content)
+        message_tokens = self.count_message_tokens(messages) if messages else 0
 
         total_used = system_tokens + memory_tokens + skills_tokens + session_tokens + message_tokens
 
@@ -346,11 +398,13 @@ class ContextManager:
             current_messages_tokens=message_tokens,
         )
 
-        return {
+        # Include API-reported token counts when available (ground truth)
+        stats = {
             "model": self.model_name,
             "window_size": self.window_size,
             "total_tokens_used": total_used,
             "percentage_used": round((total_used / self.window_size) * 100, 1) if self.window_size else 0,
+            "token_counting": "tiktoken_bpe",  # Indicates real counting
             "budget": {
                 "system_prompt": system_tokens,
                 "memory": memory_tokens,
@@ -365,6 +419,16 @@ class ContextManager:
             "compression_aggressiveness": round(compression_ratio, 2),
             "recommendation": self._get_recommendation(total_used, compression_needed, compression_ratio),
         }
+
+        # Add API ground truth if we have it
+        if self._last_total_tokens > 0:
+            stats["api_usage"] = {
+                "prompt_tokens": self._last_prompt_tokens,
+                "completion_tokens": self._last_completion_tokens,
+                "total_tokens": self._last_total_tokens,
+            }
+
+        return stats
 
     def _get_recommendation(self, total_used: int, needs_compression: bool, ratio: float) -> str:
         """Get a human-readable recommendation."""
