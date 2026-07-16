@@ -47,6 +47,16 @@ VERBOSITY_PROMPTS = {
     ),
 }
 
+# Injected on the final turn when approaching the tool round limit
+WRAP_UP_INSTRUCTION = (
+    "\n## Important: Final Turn\n"
+    "This is your LAST turn before the tool round limit is reached. "
+    "Do NOT make any more tool calls. Instead, summarize what you have "
+    "accomplished so far and what remains to be done. Be specific about "
+    "any incomplete work so the user can pick up where you left off. "
+    "If the task is complete, give the final answer directly.\n"
+)
+
 
 class Agent:
     """The core agent loop: receive, think, act, respond."""
@@ -70,8 +80,12 @@ class Agent:
         self.rules_store = rules_store
         self.conversation: list[Message] = []
 
-    def _build_system_prompt(self, user_message: str = "") -> str:
-        """Assemble system prompt with injected memory, skills, capabilities, and tool descriptions."""
+    def _build_system_prompt(self, user_message: str = "", wrap_up: bool = False) -> str:
+        """Assemble system prompt with injected memory, skills, capabilities, and tool descriptions.
+
+        When wrap_up is True, adds the final-turn instruction telling the LLM
+        to summarize progress instead of making more tool calls.
+        """
         parts = [self.system_prompt]
 
         # Inject verbosity style from config
@@ -81,6 +95,10 @@ class Agent:
         else:
             vlevel = "normal"
         parts.append(VERBOSITY_PROMPTS.get(vlevel, VERBOSITY_PROMPTS["normal"]))
+
+        # Inject wrap-up instruction on final turn
+        if wrap_up:
+            parts.append(WRAP_UP_INSTRUCTION)
 
         # Inject capabilities rules (always present)
         try:
@@ -143,6 +161,11 @@ class Agent:
         Yields text chunks as they arrive. Handles tool calls internally.
         Stops when the LLM produces a final text response with no tool calls,
         or after max_tool_rounds rounds.
+
+        On the final round (one before the limit), the LLM receives a wrap-up
+        instruction telling it to summarize progress instead of making more
+        tool calls. This ensures the user always gets a useful response, even
+        if the task is incomplete.
         """
         self.conversation.append(Message(role="user", content=user_message))
 
@@ -154,12 +177,20 @@ class Agent:
         is_concise = verbosity == "concise"
 
         for round_num in range(max_rounds):
-            # Call LLM
-            system_prompt = self._build_system_prompt(user_message)
+            # On the last allowed round, inject wrap-up instruction so the LLM
+            # summarizes progress instead of starting new tool calls it can't finish
+            is_final_round = (round_num == max_rounds - 1)
+            system_prompt = self._build_system_prompt(
+                user_message,
+                wrap_up=is_final_round,
+            )
+
+            # On final round, call LLM with tools=False so it MUST give a text
+            # response (no new tool calls that would be cut off)
             response: LLMResponse = await self.llm.chat(
                 messages=self.conversation,
                 system_prompt=system_prompt,
-                tools=True,
+                tools=not is_final_round,
             )
 
             # If no tool calls, we're done -- yield the text response
@@ -171,7 +202,26 @@ class Agent:
                     yield response.content
                 return
 
-            # Process tool calls
+            # If we somehow still got tool calls on the final round, ignore them
+            # and just yield whatever text content came with the response
+            if is_final_round:
+                self.conversation.append(
+                    Message(role="assistant", content=response.content or "")
+                )
+                if response.content:
+                    yield response.content
+                else:
+                    # LLM ignored the wrap-up instruction and tried tools anyway.
+                    # Give the user a useful summary of what happened.
+                    tool_names = [tc.name for tc in response.tool_calls]
+                    yield (
+                        f"\nI used {round_num + 1} tool rounds and reached the limit. "
+                        f"Tools called in this session: {', '.join(tool_names)}. "
+                        "Increase the max tool rounds setting to continue."
+                    )
+                return
+
+            # Process tool calls (normal round)
             assistant_msg = Message(
                 role="assistant",
                 content=response.content,
@@ -206,9 +256,6 @@ class Agent:
                 elif not result.success:
                     # Always show errors even in concise mode
                     yield f"[{tc.name}] ERROR: {result.error}\n"
-
-        # Safety: if we hit max rounds, yield a warning
-        yield f"\n[Agent reached maximum tool rounds ({max_rounds}). Stopping.]"
 
     def save_memory(self, key: str, content: str, category: str = "general"):
         """Save a fact to persistent memory."""
