@@ -1972,6 +1972,43 @@ def _register_routes(app: FastAPI, state: _AppState):
         app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
+def _ensure_shortcuts() -> None:
+    """Auto-install desktop/start menu shortcuts on first run.
+
+    Checks if shortcuts already exist. If not, silently creates them
+    using the same logic as 'python -m sawyer_harness install-shortcuts'.
+    This ensures the Sawyer icon appears on first run without requiring
+    the user to run a separate command.
+    """
+    import platform
+    import subprocess
+
+    system = platform.system()
+
+    if system == "Windows":
+        # Check if desktop shortcut already exists
+        desktop_lnk = Path.home() / "Desktop" / "Sawyer Agent.lnk"
+        if desktop_lnk.exists():
+            return  # Already installed
+    elif system == "Darwin":
+        app_bundle = Path.home() / "Applications" / "Sawyer Agent.app"
+        if app_bundle.exists():
+            return
+    else:
+        desktop_file = Path.home() / ".local" / "share" / "applications" / "sawyer-agent.desktop"
+        if desktop_file.exists():
+            return
+
+    # Run install-shortcuts silently
+    try:
+        from sawyer_harness.cli import _cmd_install_shortcuts
+        import argparse
+        args = argparse.Namespace()
+        _cmd_install_shortcuts(args)
+    except Exception as e:
+        logger.info(f"Shortcut auto-install skipped: {e}")
+
+
 def _kill_port_holder(host: str, port: int) -> None:
     """Kill any process already listening on host:port.
 
@@ -2072,10 +2109,17 @@ def run_server(config: HarnessConfig | None = None, host: str = "0.0.0.0", port:
     it is terminated first so Sawyer always starts cleanly.
     Then uvicorn binds and, once the server is accepting connections,
     opens the default web browser to the UI.
+
+    On first run, automatically creates desktop/start menu shortcuts
+    with the Sawyer icon.
     """
     import uvicorn
     import webbrowser
     import threading
+    import platform
+
+    # ── Auto-install shortcuts on first run ───────────────────────
+    _ensure_shortcuts()
 
     # ── Kill any existing process on this port ──────────────────────
     _kill_port_holder(host, port)

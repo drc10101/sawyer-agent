@@ -2,14 +2,23 @@
 Sawyer Agent CLI.
 
 Usage:
-    python -m sawyer_harness              Start the web server
-    python -m sawyer_harness web           Start the web server
-    python -m sawyer_harness setup         Configure or reconfigure API key
-    python -m sawyer_harness uninstall     Remove Sawyer completely
-    python -m sawyer_harness version       Show version
+    python -m sawyer_harness                      Start the web server
+    python -m sawyer_harness web                  Start the web server
+    python -m sawyer_harness launch <model>       Self-activating: parse model, configure, start
+    python -m sawyer_harness setup                Configure or reconfigure API key
+    python -m sawyer_harness install-shortcuts    Create desktop/start menu shortcuts with icon
+    python -m sawyer_harness uninstall             Remove Sawyer completely
+    python -m sawyer_harness version               Show version
+
+Self-activating launch examples:
+    sawyer launch glm-5.1:cloud                Ollama cloud (prompts for key)
+    sawyer launch gpt-4o                       OpenAI (prompts for key)
+    sawyer launch claude-sonnet-4              Anthropic (prompts for key)
+    sawyer launch llama3                        Local Ollama (no key needed)
+    sawyer launch --model gpt-4o --key sk-xxx   Explicit, zero prompts
 
 Short form (if on PATH):
-    sawyer-web                            Start the web server
+    sawyer-web                                  Start the web server
 """
 
 from __future__ import annotations
@@ -42,6 +51,20 @@ def _cmd_web(args):
         config = setup_wizard(config_path)
 
     run_server(config, host=args.host, port=args.port)
+
+
+def _cmd_launch(args):
+    """Self-activating launch: parse model string, resolve config, start server."""
+    from sawyer_harness.launch import auto_launch
+
+    auto_launch(
+        model=args.model,
+        api_key=args.key or "",
+        host=args.host,
+        port=args.port,
+        verbose=args.verbose,
+        config_path=args.config,
+    )
 
 
 def _cmd_setup(args):
@@ -104,6 +127,14 @@ def _cmd_uninstall(args):
             shutil.rmtree(launcher_dir, ignore_errors=True)
             found = True
 
+        # Remove Start Menu shortcut
+        start_menu = Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs"
+        start_menu_lnk = start_menu / "Sawyer Agent.lnk"
+        if start_menu_lnk.exists():
+            print(f"Removing {start_menu_lnk}...")
+            start_menu_lnk.unlink()
+            found = True
+
     # 4. Uninstall pip package
     #    On Windows: spawn detached script that waits for this process to exit
     #    On Linux/macOS: pip uninstall directly (no exe lock)
@@ -154,6 +185,169 @@ def _cmd_version(args):
     print(f"Sawyer Agent {__version__}")
 
 
+def _cmd_install_shortcuts(args):
+    """Create desktop and Start Menu shortcuts with the Sawyer icon.
+
+    On Windows: creates .lnk shortcuts using PowerShell.
+    On Linux: creates .desktop files.
+    On macOS: creates an .app wrapper via AppleScript.
+    """
+    import site
+    from sawyer_harness import __version__
+
+    # Find the Sawyer icon in the package
+    icon_path = Path(__file__).parent / "web" / "static" / "icons" / "favicon.ico"
+    if not icon_path.exists():
+        print(f"Warning: Icon not found at {icon_path}")
+        icon_path = None
+
+    # Find the sawyer-web entry point
+    python_exe = sys.executable
+    script_cmd = f'"{python_exe}" -m sawyer_harness'
+
+    system = platform.system()
+
+    if system == "Windows":
+        desktop = Path.home() / "Desktop"
+        start_menu = Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs"
+
+        # Create a local app dir for the launcher script and icon copy
+        app_dir = Path(os.environ.get("LOCALAPPDATA", "")) / "Sawyer Agent"
+        app_dir.mkdir(parents=True, exist_ok=True)
+
+        # Copy icon to app dir (so it persists even if package is updated)
+        local_icon = app_dir / "sawyer.ico"
+        if icon_path and icon_path.exists():
+            shutil.copy2(icon_path, local_icon)
+        else:
+            local_icon = None
+
+        # Create a launcher batch file
+        launcher_bat = app_dir / "Sawyer Agent.bat"
+        launcher_bat.write_text(
+            f'@echo off\n'
+            f'"{python_exe}" -m sawyer_harness %*\n',
+            encoding="utf-8",
+        )
+
+        # PowerShell script to create .lnk shortcuts
+        icon_arg = f'"$s.IconLocation = \'{local_icon}\'"' if local_icon else ""
+        ps_script = f'''
+$ws = New-Object -ComObject WScript.Shell
+
+# Desktop shortcut
+$s = $ws.CreateShortcut('{desktop}\\Sawyer Agent.lnk')
+$s.TargetPath = '{launcher_bat}'
+$s.Arguments = ''
+$s.WorkingDirectory = '{app_dir}'
+$s.Description = 'Sawyer Agent v{__version__} - Secure, model-agnostic AI agent'
+{icon_arg}
+$s.Save()
+
+# Start Menu shortcut
+$s2 = $ws.CreateShortcut('{start_menu}\\Sawyer Agent.lnk')
+$s2.TargetPath = '{launcher_bat}'
+$s2.Arguments = ''
+$s2.WorkingDirectory = '{app_dir}'
+$s2.Description = 'Sawyer Agent v{__version__} - Secure, model-agnostic AI agent'
+{icon_arg}
+$s2.Save()
+
+Write-Host "Shortcuts created."
+'''
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_script],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode == 0:
+            print(f"Desktop shortcut: {desktop / 'Sawyer Agent.lnk'}")
+            print(f"Start Menu shortcut: {start_menu / 'Sawyer Agent.lnk'}")
+            if local_icon:
+                print(f"Icon: {local_icon}")
+        else:
+            print(f"Error creating shortcuts: {result.stderr}")
+            # Fallback: create a simple .bat on desktop
+            fallback = desktop / "Sawyer Agent.bat"
+            fallback.write_text(
+                f'@echo off\n'
+                f'title Sawyer Agent\n'
+                f'"{python_exe}" -m sawyer_harness %*\n'
+                f'pause\n',
+                encoding="utf-8",
+            )
+            print(f"Fallback: created {fallback}")
+
+    elif system == "Darwin":
+        # macOS: create an .app in /Applications
+        app_dir_mac = Path.home() / "Applications"
+        app_bundle = app_dir_mac / "Sawyer Agent.app"
+        contents = app_bundle / "Contents" / "MacOS"
+        contents.mkdir(parents=True, exist_ok=True)
+
+        # Create launcher script
+        launcher = contents / "Sawyer Agent"
+        launcher.write_text(
+            f'#!/bin/bash\n'
+            f'exec "{python_exe}" -m sawyer_harness "$@"\n',
+            encoding="utf-8",
+        )
+        launcher.chmod(0o755)
+
+        # Create Info.plist
+        plist = app_bundle / "Contents" / "Info.plist"
+        plist.write_text(
+            f'<?xml version="1.0" encoding="UTF-8"?>\n'
+            f'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+            f'<plist version="1.0">\n'
+            f'<dict>\n'
+            f'  <key>CFBundleName</key><string>Sawyer Agent</string>\n'
+            f'  <key>CFBundleDisplayName</key><string>Sawyer Agent</string>\n'
+            f'  <key>CFBundleVersion</key><string>{__version__}</string>\n'
+            f'  <key>CFBundleExecutable</key><string>Sawyer Agent</string>\n'
+            f'</dict>\n'
+            f'</plist>\n',
+            encoding="utf-8",
+        )
+
+        print(f"Application: {app_bundle}")
+
+    else:
+        # Linux: create .desktop file
+        desktop_file = Path.home() / ".local" / "share" / "applications" / "sawyer-agent.desktop"
+        desktop_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Copy icon to a standard location
+        local_icon_dir = Path.home() / ".local" / "share" / "icons"
+        local_icon_dir.mkdir(parents=True, exist_ok=True)
+        local_icon = local_icon_dir / "sawyer-agent.png"
+        png_icon = Path(__file__).parent / "web" / "static" / "icons" / "web-app-manifest-192x192.png"
+        if png_icon.exists():
+            shutil.copy2(png_icon, local_icon)
+            icon_line = f"Icon={local_icon}"
+        elif icon_path and icon_path.exists():
+            shutil.copy2(icon_path, local_icon_dir / "sawyer-agent.ico")
+            icon_line = f"Icon={local_icon_dir / 'sawyer-agent.ico'}"
+        else:
+            icon_line = "Icon=applications-internet"
+
+        desktop_file.write_text(
+            f'[Desktop Entry]\n'
+            f'Version={__version__}\n'
+            f'Type=Application\n'
+            f'Name=Sawyer Agent\n'
+            f'Comment=Secure, model-agnostic AI agent\n'
+            f'Exec={python_exe} -m sawyer_harness\n'
+            f'{icon_line}\n'
+            f'Terminal=true\n'
+            f'Categories=Development;Network;\n',
+            encoding="utf-8",
+        )
+        desktop_file.chmod(0o755)
+        print(f"Desktop file: {desktop_file}")
+
+    print("\nShortcuts installed. Double-click to start Sawyer Agent.")
+
+
 def main():
     """Entry point for python -m sawyer_harness and sawyer-web."""
     parser = argparse.ArgumentParser(
@@ -176,6 +370,39 @@ def main():
     web_p.add_argument("--verbose", "-v", action="store_true", help="Verbose logging")
     web_p.set_defaults(func=_cmd_web)
 
+    # launch -- self-activating start
+    launch_p = subparsers.add_parser(
+        "launch",
+        help="Self-activating: parse model string, configure, and start",
+        description=(
+            "Start Sawyer with a model string. Auto-detects provider, base URL, "
+            "and key requirements. No setup wizard needed.\n\n"
+            "Examples:\n"
+            "  sawyer launch glm-5.1:cloud       # Ollama cloud\n"
+            "  sawyer launch gpt-4o              # OpenAI\n"
+            "  sawyer launch claude-sonnet-4     # Anthropic\n"
+            "  sawyer launch llama3              # Local Ollama\n"
+            "  sawyer launch --model gpt-4o --key sk-xxx  # Explicit, zero prompts\n\n"
+            "Model routing:\n"
+            "  :cloud suffix  -> Ollama cloud API\n"
+            "  :local suffix  -> local Ollama\n"
+            "  gpt-/o1-/o3-   -> OpenAI\n"
+            "  claude-        -> Anthropic\n"
+            "  deepseek-      -> DeepSeek\n"
+            "  gemini-        -> Google Gemini\n"
+            "  Anything else  -> local Ollama"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    launch_p.add_argument("model", nargs="?", default="", help="Model string (e.g. glm-5.1:cloud, gpt-4o, llama3)")
+    launch_p.add_argument("--model", "-m", dest="model_flag", default="", help="Model string (alternative to positional)")
+    launch_p.add_argument("--key", "-k", default="", help="API key (skips prompt if provided)")
+    launch_p.add_argument("--host", default="127.0.0.1", help="Host to bind")
+    launch_p.add_argument("--port", "-p", type=int, default=8765, help="Port to bind")
+    launch_p.add_argument("--config", "-c", default=None, help="Config file path")
+    launch_p.add_argument("--verbose", "-v", action="store_true", help="Verbose logging")
+    launch_p.set_defaults(func=_cmd_launch)
+
     # setup
     setup_p = subparsers.add_parser("setup", help="Configure or reconfigure API key and provider")
     setup_p.add_argument("--config", "-c", default=None, help="Config file path")
@@ -184,6 +411,10 @@ def main():
     # uninstall
     uninstall_p = subparsers.add_parser("uninstall", help="Remove Sawyer completely")
     uninstall_p.set_defaults(func=_cmd_uninstall)
+
+    # install-shortcuts
+    shortcuts_p = subparsers.add_parser("install-shortcuts", help="Create desktop/start menu shortcuts with Sawyer icon")
+    shortcuts_p.set_defaults(func=_cmd_install_shortcuts)
 
     # version
     version_p = subparsers.add_parser("version", help="Show version")
@@ -195,6 +426,13 @@ def main():
     if args.command is None:
         _cmd_web(args)
         return
+
+    # Merge positional model with --model flag for launch command
+    if args.command == "launch":
+        model = args.model or args.model_flag
+        if not model:
+            launch_p.error("model string is required (e.g. 'glm-5.1:cloud', 'gpt-4o', 'llama3')")
+        args.model = model
 
     args.func(args)
 
