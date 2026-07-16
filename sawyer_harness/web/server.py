@@ -31,6 +31,7 @@ from pydantic import BaseModel
 
 from ..agent import Agent
 from ..config import HarnessConfig, VERBOSITY_LEVELS
+from .. import __version__
 from ..llm import LLMClient
 from ..memory import MemoryStore
 from ..routing import ModelRouter, ProviderEndpoint, ProviderHealth, TaskType
@@ -92,6 +93,11 @@ class AgentConfigUpdate(BaseModel):
     stream_tool_output: bool | None = None
 
 class ToolToggle(BaseModel):
+    max_tool_rounds: int | None = None
+    verbosity: str | None = None      # concise | normal | thorough
+    stream_tool_output: bool | None = None
+
+class ToolToggle(BaseModel):
     tool_name: str
     enabled: bool
 
@@ -108,7 +114,7 @@ def create_app(config: HarnessConfig | None = None) -> FastAPI:
     app = FastAPI(
         title="Sawyer Agent",
         description="Secure, model-agnostic, self-hosted AI agent framework",
-        version="0.2.0",
+        version=__version__,
     )
 
     # CORS for development
@@ -411,6 +417,34 @@ def _register_routes(app: FastAPI, state: _AppState):
             "provider": state.config.llm.provider,
             "model": state.config.llm.model,
             "base_url": state.config.llm.base_url,
+        }}
+
+    @app.get("/api/agent-config")
+    async def get_agent_config():
+        """Get current agent configuration."""
+        return {
+            "max_tool_rounds": state.config.agent.max_tool_rounds,
+            "verbosity": state.config.agent.verbosity,
+            "stream_tool_output": state.config.agent.stream_tool_output,
+        }
+
+    @app.post("/api/agent-config")
+    async def update_agent_config(update: AgentConfigUpdate):
+        """Update agent behavior configuration at runtime."""
+        if update.max_tool_rounds is not None:
+            if update.max_tool_rounds < 1 or update.max_tool_rounds > 50:
+                raise HTTPException(status_code=400, detail="max_tool_rounds must be between 1 and 50")
+            state.config.agent.max_tool_rounds = update.max_tool_rounds
+        if update.verbosity is not None:
+            if update.verbosity not in VERBOSITY_LEVELS:
+                raise HTTPException(status_code=400, detail=f"verbosity must be one of: {', '.join(VERBOSITY_LEVELS)}")
+            state.config.agent.verbosity = update.verbosity
+        if update.stream_tool_output is not None:
+            state.config.agent.stream_tool_output = update.stream_tool_output
+        return {"status": "updated", "agent_config": {
+            "max_tool_rounds": state.config.agent.max_tool_rounds,
+            "verbosity": state.config.agent.verbosity,
+            "stream_tool_output": state.config.agent.stream_tool_output,
         }}
 
     @app.get("/api/agent-config")
@@ -1190,7 +1224,6 @@ def _register_routes(app: FastAPI, state: _AppState):
     @app.get("/api/status")
     async def get_status():
         """Get overall system status."""
-        from .. import __version__
         return {
             "status": "running",
             "version": __version__,
@@ -1214,7 +1247,6 @@ def _register_routes(app: FastAPI, state: _AppState):
     @app.get("/api/update-check")
     async def check_for_updates():
         """Check GitHub for the latest release version."""
-        from .. import __version__
         import httpx as _httpx
         try:
             resp = await _httpx.AsyncClient(timeout=5.0).get(
@@ -1237,6 +1269,125 @@ def _register_routes(app: FastAPI, state: _AppState):
             return {"current_version": __version__, "latest_version": "unknown", "update_available": False, "error": f"GitHub returned {resp.status_code}"}
         except Exception as e:
             return {"current_version": __version__, "latest_version": "unknown", "update_available": False, "error": str(e)}
+
+
+    # ----------------------------------------------------------
+    # Self-upgrade
+    # ----------------------------------------------------------
+
+    @app.post("/api/upgrade")
+    async def upgrade_sawyer():
+        """Upgrade Sawyer Agent to the latest version from GitHub.
+
+        Downloads the new package via pip, then spawns a restart script
+        that waits for this process to exit and starts the server again.
+        All user data in ~/.sawyer-harness/ (config, memory, skills, keys, cron)
+        is preserved -- only the Python package code changes.
+
+        Returns the new version number on success, or an error message.
+        The server process exits after responding, so the client should
+        show a reconnect overlay while waiting.
+        """
+        import subprocess
+        import sys
+        import time
+        import platform
+
+        old_version = __version__
+        logger.info(f"Starting upgrade from v{old_version}")
+
+        # Step 1: pip install --upgrade
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--upgrade",
+                 "git+https://github.com/drc10101/sawyer-agent.git", "--quiet"],
+                capture_output=True, text=True, timeout=120,
+            )
+            if result.returncode != 0:
+                logger.error(f"Upgrade pip install failed: {result.stderr}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"pip install failed: {result.stderr[:500]}",
+                )
+        except subprocess.TimeoutExpired:
+            raise HTTPException(status_code=500, detail="pip install timed out after 120s")
+
+        # Step 2: Verify the new version
+        try:
+            import importlib
+            import sawyer_harness as _sh
+            importlib.reload(_sh)
+            new_version = _sh.__version__
+        except Exception:
+            new_version = "unknown"
+
+        logger.info(f"Upgrade complete: v{old_version} -> v{new_version}")
+
+        # Step 3: Write restart script and schedule exit
+        is_windows = platform.system() == "Windows"
+        my_pid = os.getpid()
+
+        if is_windows:
+            script_path = Path.home() / ".sawyer-harness" / "_restart.bat"
+            # Windows batch: kill old PID, wait for it to die, restart server
+            script_lines = [
+                "@echo off",
+                "echo Sawyer Agent - Restarting after upgrade...",
+                f"echo Waiting for PID {my_pid} to exit...",
+                f"taskkill /PID {my_pid} /F >nul 2>&1",
+                ":wait",
+                f'tasklist /FI "PID eq {my_pid}" 2>nul | find "{my_pid}" >nul',
+                "if %errorlevel%==0 (timeout /t 1 /nobreak >nul & goto wait)",
+                "echo Starting Sawyer Agent...",
+                f'"{sys.executable}" -m sawyer_harness --host 127.0.0.1 --port 8765',
+                "pause",
+            ]
+            script_content = "\n".join(script_lines)
+        else:
+            script_path = Path.home() / ".sawyer-harness" / "_restart.sh"
+            script_lines = [
+                "#!/bin/bash",
+                "echo 'Sawyer Agent - Restarting after upgrade...'",
+                f"echo 'Waiting for PID {my_pid} to exit...'",
+                f"kill {my_pid} 2>/dev/null",
+                f"while kill -0 {my_pid} 2>/dev/null; do sleep 1; done",
+                "echo 'Starting Sawyer Agent...'",
+                f"{sys.executable} -m sawyer_harness --host 127.0.0.1 --port 8765",
+            ]
+            script_content = "\n".join(script_lines)
+
+        script_path.parent.mkdir(parents=True, exist_ok=True)
+        script_path.write_text(script_content, encoding="utf-8")
+
+        if not is_windows:
+            script_path.chmod(0o755)
+
+        # Step 4: Launch restart script in background and schedule our exit
+        restart_delay = 2  # seconds to let the HTTP response go out first
+
+        def _exit_after_delay():
+            time.sleep(restart_delay)
+            if is_windows:
+                subprocess.Popen(
+                    ["cmd", "/c", str(script_path)],
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                )
+            else:
+                subprocess.Popen(["bash", str(script_path)],
+                    start_new_session=True,
+                )
+            os._exit(0)  # Hard exit -- uvicorn won't stop gracefully
+
+        import threading
+        exit_thread = threading.Thread(target=_exit_after_delay, daemon=True)
+        exit_thread.start()
+
+        return {
+            "status": "upgrading",
+            "old_version": old_version,
+            "new_version": new_version,
+            "message": f"Upgraded from v{old_version} to v{new_version}. Restarting server.",
+        }
 
     @app.get("/api/capabilities")
     async def get_capabilities():

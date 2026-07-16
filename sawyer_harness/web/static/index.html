@@ -119,7 +119,7 @@
           <span>Tasks</span>
           <span class="metric-value" id="metric-tasks">0</span>
         </div>
-        <a id="update-badge" href="https://github.com/drc10101/sawyer-agent/releases" target="_blank" rel="noopener" style="display:none;text-decoration:none;background:var(--brand);color:#fff;font-size:11px;font-weight:600;padding:3px 10px;border-radius:12px;margin-left:4px" title="Update available"></a>
+        <span id="update-badge" style="display:none;align-items:center;gap:6px;margin-left:4px"><a href="https://github.com/drc10101/sawyer-agent/releases" target="_blank" rel="noopener" style="text-decoration:none;background:var(--brand);color:#fff;font-size:11px;font-weight:600;padding:3px 10px;border-radius:12px" id="update-badge-link" title="Update available"></a><button class="btn btn--primary btn-sm" id="upgrade-btn" style="font-size:10px;padding:2px 8px;display:none" onclick="upgradeSawyer()">Upgrade Now</button></span>
         <button class="btn btn--subtle btn-sm" onclick="newSession()" title="New session">+ NEW SESSION</button>
       </div>
     </header>
@@ -2535,11 +2535,16 @@ async function checkForUpdates() {
     const res = await fetch(API + '/api/update-check');
     const data = await res.json();
     const badge = document.getElementById('update-badge');
+    const upgradeBtn = document.getElementById('upgrade-btn');
     if (badge && data.update_available) {
-      badge.textContent = 'Update: v' + data.latest_version;
-      badge.style.display = 'inline-block';
-      badge.href = data.release_url || 'https://github.com/drc10101/sawyer-agent/releases';
-      badge.title = 'Update available: v' + data.latest_version + ' (current: v' + data.current_version + ')';
+      const link = document.getElementById('update-badge-link');
+      if (link) {
+        link.textContent = 'v' + data.latest_version;
+        link.href = data.release_url || 'https://github.com/drc10101/sawyer-agent/releases';
+        link.title = 'Update available: v' + data.latest_version + ' (current: v' + data.current_version + ')';
+      }
+      badge.style.display = 'inline-flex';
+      if (upgradeBtn) upgradeBtn.style.display = 'inline-block';
     } else if (badge) {
       badge.style.display = 'none';
     }
@@ -2547,6 +2552,72 @@ async function checkForUpdates() {
     // Silently fail — update check is non-critical
     console.log('Update check failed:', e);
   }
+}
+
+// One-click upgrade: download new version, restart server, reconnect
+async function upgradeSawyer() {
+  const overlay = document.getElementById('upgrade-overlay');
+  const status = document.getElementById('upgrade-status');
+  const bar = document.getElementById('upgrade-bar');
+  if (!overlay || !status || !bar) return;
+
+  // Show overlay
+  overlay.style.display = 'flex';
+  status.textContent = 'Downloading latest version...';
+  bar.style.width = '10%';
+
+  try {
+    const res = await fetch(API + '/api/upgrade', { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      status.textContent = 'Upgraded to v' + data.new_version + '. Restarting server...';
+      bar.style.width = '70%';
+      // Start polling for server to come back
+      pollForReconnect(status, bar);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      status.textContent = 'Upgrade failed: ' + (err.detail || 'Unknown error');
+      bar.style.width = '100%';
+      bar.style.background = '#f44';
+      setTimeout(() => { overlay.style.display = 'none'; }, 5000);
+    }
+  } catch(e) {
+    // Network error = server already shut down for restart (good sign!)
+    status.textContent = 'Server restarting...';
+    bar.style.width = '70%';
+    pollForReconnect(status, bar);
+  }
+}
+
+function pollForReconnect(statusEl, barEl) {
+  let attempts = 0;
+  const maxAttempts = 60; // 60 seconds
+  const interval = setInterval(async () => {
+    attempts++;
+    barEl.style.width = (70 + (attempts / maxAttempts) * 30) + '%';
+    try {
+      const res = await fetch(API + '/api/status', { signal: AbortSignal.timeout(2000) });
+      if (res.ok) {
+        const data = await res.json();
+        clearInterval(interval);
+        barEl.style.width = '100%';
+        barEl.style.background = '#22c55e';
+        statusEl.textContent = 'Back online! v' + data.version;
+        setTimeout(() => {
+          overlay.style.display = 'none';
+          location.reload();
+        }, 1500);
+      }
+    } catch(e) {
+      // Server not up yet — keep polling
+      if (attempts >= maxAttempts) {
+        clearInterval(interval);
+        statusEl.textContent = 'Server is taking longer than expected. Please refresh manually.';
+        barEl.style.width = '100%';
+        barEl.style.background = '#eab308';
+      }
+    }
+  }, 1000);
 }
 
 // Show notification in chat that keys changed, offer session restart
@@ -2608,7 +2679,19 @@ setInterval(checkForUpdates, 6 * 60 * 60 * 1000);  // Recheck every 6 hours
 lucide.createIcons();
 </script>
 
-<!-- Preact App Module — reactive state management + component rendering -->
+<!-- Upgrade overlay -->
+<div id="upgrade-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.85);display:none;align-items:center;justify-content:center">
+  <div style="text-align:center;color:#fff;max-width:400px;padding:40px">
+    <div style="font-size:48px;margin-bottom:16px">&#9889;</div>
+    <h2 style="margin:0 0 12px;font-size:20px">Upgrading Sawyer Agent</h2>
+    <p id="upgrade-status" style="font-size:14px;color:var(--text-2,#aaa);margin:0 0 20px">Downloading latest version...</p>
+    <div id="upgrade-progress" style="width:100%;height:4px;background:rgba(255,255,255,0.2);border-radius:2px;overflow:hidden">
+      <div id="upgrade-bar" style="width:10%;height:100%;background:var(--brand,#12c7ef);border-radius:2px;transition:width 0.5s"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Preact App Module -- reactive state management + component rendering -->
 <script type="module" src="/static/lib/app.js"></script>
 </body>
 </html>
