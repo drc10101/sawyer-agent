@@ -983,12 +983,37 @@ function appendMsg(role, text) {
 
 function formatResponse(text) {
   if (!text) return '';
-  let html = text
+  // Extract and style thinking/reasoning blocks before HTML escaping
+  // Supports: <think>...</think>, <thinking>...</thinking>, <reasoning>...</reasoning>
+  // These are rendered as teal-tinted collapsible blocks so the user can
+  // skip straight to the distilled answer.
+  const thinkRegex = /<(?:think|thinking|reasoning)>([\s\S]*?)<\/(?:think|thinking|reasoning)>/gi;
+  let thinkingParts = [];
+  let cleaned = text.replace(thinkRegex, (_, content) => {
+    const idx = thinkingParts.length;
+    thinkingParts.push(content.trim());
+    return `__THINKING_${idx}__`;
+  });
+
+  let html = cleaned
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\n/g, '<br>');
+
+  // Re-insert thinking blocks as teal-tinted details
+  for (let i = 0; i < thinkingParts.length; i++) {
+    const thinkHtml = thinkingParts[i]
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\n/g, '<br>');
+    const details = `<details style="margin:6px 0;border-left:3px solid var(--brand);border-radius:0 6px 6px 0;background:var(--brand-subtle);padding:8px 12px;font-size:0.9em;color:var(--brand)"><summary style="cursor:pointer;color:var(--brand);font-weight:600;font-size:0.85em;list-style:none">Reasoning</summary>${thinkHtml}</details>`;
+    html = html.replace(`__THINKING_${i}__`, details);
+  }
+
   return html;
 }
 

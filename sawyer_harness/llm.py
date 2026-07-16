@@ -49,6 +49,7 @@ class LLMResponse:
     tool_calls: list[ToolCall] = field(default_factory=list)
     finish_reason: str = ""
     usage: dict = field(default_factory=dict)
+    reasoning_content: str = ""  # Separate thinking/reasoning from models that support it
 
 
 class LLMClient:
@@ -168,6 +169,8 @@ class LLMClient:
         choice = data["choices"][0]
         message = choice["message"]
         content = message.get("content", "") or ""
+        # Extract separate reasoning/thinking content (DeepSeek, GLM, etc.)
+        reasoning_content = message.get("reasoning_content", "") or ""
         tool_calls = []
 
         if message.get("tool_calls"):
@@ -188,6 +191,7 @@ class LLMClient:
             tool_calls=tool_calls,
             finish_reason=choice.get("finish_reason", ""),
             usage=data.get("usage", {}),
+            reasoning_content=reasoning_content,
         )
 
     async def _chat_anthropic(

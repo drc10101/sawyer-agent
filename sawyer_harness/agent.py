@@ -321,11 +321,16 @@ class Agent:
 
             # If no tool calls, we're done -- yield the text response
             if not response.tool_calls:
+                # If the model returned separate reasoning/thinking content,
+                # wrap it in <thinking> tags so the UI can style it differently
+                combined = response.content or ""
+                if response.reasoning_content:
+                    combined = f"<thinking>{response.reasoning_content}</thinking>\n{combined}"
                 self.conversation.append(
                     Message(role="assistant", content=response.content)
                 )
-                if response.content:
-                    yield response.content
+                if combined:
+                    yield combined
 
                 # If we stopped due to context pressure, save handoff notes
                 # and signal the UI that a new session is needed
@@ -349,11 +354,14 @@ class Agent:
             # If we somehow still got tool calls on the final round, ignore them
             # and just yield whatever text content came with the response
             if is_final_round:
+                combined = response.content or ""
+                if response.reasoning_content:
+                    combined = f"<thinking>{response.reasoning_content}</thinking>\n{combined}"
                 self.conversation.append(
                     Message(role="assistant", content=response.content or "")
                 )
-                if response.content:
-                    yield response.content
+                if combined:
+                    yield combined
                 else:
                     # LLM ignored the wrap-up instruction and tried tools anyway.
                     # Give the user a useful summary of what happened.
@@ -401,8 +409,14 @@ class Agent:
             self.conversation.append(assistant_msg)
 
             # Yield any text content before tool calls (suppressed in concise mode)
-            if response.content and not is_concise:
-                yield response.content + "\n"
+            # Include reasoning content if the model returned it separately
+            if (response.content or response.reasoning_content) and not is_concise:
+                text_bits = []
+                if response.reasoning_content:
+                    text_bits.append(f"<thinking>{response.reasoning_content}</thinking>")
+                if response.content:
+                    text_bits.append(response.content)
+                yield "\n".join(text_bits) + "\n"
 
             # Execute each tool call
             for tc in response.tool_calls:
