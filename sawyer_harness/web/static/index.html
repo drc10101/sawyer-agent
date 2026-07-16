@@ -78,7 +78,7 @@
       </div>
       <div class="sidebar-nav-item" data-panel="agents" onclick="switchPanel('agents')">
         <span class="nav-icon"><i data-lucide="users"></i></span>
-        <span class="nav-label">Agents</span>
+        <span class="nav-label">Sub-Agents</span>
       </div>
       <div class="sidebar-nav-item" data-panel="orchestration" onclick="switchPanel('orchestration')">
         <span class="nav-icon"><i data-lucide="network"></i></span>
@@ -534,15 +534,16 @@
       <div class="panel" id="panel-agents">
         <div style="max-width:1100px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-            <h3 style="color:var(--brand);font-size:1rem">Agent Creator</h3>
+            <h3 style="color:var(--brand);font-size:1rem">Sub-Agents</h3>
             <div style="display:flex;gap:8px">
               <button class="btn btn--primary btn-sm" onclick="showAddAgentForm()">+ New Agent</button>
               <button class="btn btn--subtle btn-sm" onclick="loadAgents()">Refresh</button>
             </div>
           </div>
           <div style="font-size:13px;color:var(--text-2);margin-bottom:16px">
-            Create specialized agent templates with pre-defined purpose, system prompt, rules, and model settings.
-            Spawn a session from any template to get a pre-configured agent ready for work.
+            Sub-agents are specialized templates that run under your main agent. Each sub-agent has its own
+            system prompt, personality, rules, and model settings. Create a template, then spawn a session
+            from it to get a focused agent ready for a specific task.
           </div>
 
           <!-- Category filter -->
@@ -814,7 +815,7 @@ function switchPanel(panel) {
   document.getElementById('panel-' + panel).classList.add('active');
   const titles = {chat:'Chat',goals:'Goals','skill-creator':'Skill Creator',
     tools:'Tools',files:'Files',models:'Models',settings:'Settings',sessions:'Sessions',projects:'Projects',
-    cron:'Cron',context:'Memory',keys:'Keys',rules:'Rules',agents:'Agents',orchestration:'Orchestrate'};
+    cron:'Cron',context:'Memory',keys:'Keys',rules:'Rules',agents:'Sub-Agents',orchestration:'Orchestrate'};
   document.getElementById('panel-title').textContent = titles[panel] || panel;
   if (panel === 'models') loadModels();
   if (panel === 'settings') loadAgentConfig();
