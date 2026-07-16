@@ -949,12 +949,28 @@ async function sendMessage() {
     const sessionEl = document.getElementById('status-session');
     if (sessionEl) sessionEl.textContent = sessionId;
     const msgs = document.getElementById('chat-messages');
-    msgs.lastChild.innerHTML = formatResponse(data.response);
+    let responseHtml = formatResponse(data.response);
+
+    // Detect session handoff signal and show continue button
+    if (data.response && data.response.includes('*Session context is full') || data.response && data.response.includes('*Tool round limit reached')) {
+      responseHtml += '<div style="margin-top:12px;padding:10px 14px;background:rgba(18,199,239,0.1);border:1px solid var(--brand);border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+        + '<span style="color:var(--brand);font-weight:600;font-size:13px">Context full — handoff notes saved</span>'
+        + '<button class="btn btn--primary btn-sm" onclick="continueInNewSession()">Continue in New Session</button>'
+        + '</div>';
+    }
+
+    msgs.lastChild.innerHTML = responseHtml;
     updateContextBar();
   } catch (e) {
     const msgs = document.getElementById('chat-messages');
     msgs.lastChild.innerHTML = '<span style="color:var(--danger)">Error: ' + e.message + '</span>';
   }
+}
+
+// Start a new session — handoff notes are already saved in memory
+// so the new session will automatically pick up where we left off
+function continueInNewSession() {
+  newSession();
 }
 
 function appendMsg(role, text) {

@@ -210,6 +210,7 @@ class _AppState:
             system_prompt="You are Sawyer Agent, a secure AI agent. Be helpful, direct, and thorough.",
             skills=self.skills,
             rules_store=self.rules_store,
+            context_window=self.context_manager.window_size,
         )
         self.sessions[new_id] = agent
         return new_id, agent
@@ -261,6 +262,17 @@ def _register_routes(app: FastAPI, state: _AppState):
                     f"({result.messages_kept} kept, {result.messages_summarized} summarized, "
                     f"{result.messages_dropped} dropped)"
                 )
+
+            # Clean up session handoff notes after they've been injected
+            # into the response (they're one-shot — only needed for the first
+            # message of a new session that's continuing from a full one)
+            handoff_keys = [
+                e["key"] for e in agent.memory.all_entries()
+                if e.get("category") == "session-handoff"
+            ]
+            for key in handoff_keys:
+                agent.memory.delete(key)
+                logger.info(f"Cleaned up handoff note: {key}")
 
             return {
                 "session_id": session_id,
@@ -1741,6 +1753,7 @@ def _register_routes(app: FastAPI, state: _AppState):
             tools=tools,
             system_prompt=system_prompt,
             skills=state.skills,
+            context_window=state.context_manager.window_size,
         )
 
         session_id = str(uuid.uuid4())[:8]

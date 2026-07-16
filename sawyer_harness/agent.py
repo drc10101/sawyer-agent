@@ -25,6 +25,9 @@ logger = logging.getLogger("sawyer-harness.agent")
 # Default safety limit — overridden by config.agent.max_tool_rounds
 DEFAULT_MAX_TOOL_ROUNDS = 20
 
+# Context pressure threshold — fraction of context window that triggers wrap-up
+CONTEXT_PRESSURE_THRESHOLD = 0.80
+
 # Verbosity-specific system prompt additions
 VERBOSITY_PROMPTS = {
     "concise": (
@@ -47,15 +50,86 @@ VERBOSITY_PROMPTS = {
     ),
 }
 
-# Injected on the final turn when approaching the tool round limit
+# Injected on the final turn when approaching the tool round limit or context pressure
 WRAP_UP_INSTRUCTION = (
     "\n## Important: Final Turn\n"
-    "This is your LAST turn before the tool round limit is reached. "
-    "Do NOT make any more tool calls. Instead, summarize what you have "
-    "accomplished so far and what remains to be done. Be specific about "
-    "any incomplete work so the user can pick up where you left off. "
-    "If the task is complete, give the final answer directly.\n"
+    "This is your LAST turn. Do NOT make any more tool calls.\n"
+    "Instead, summarize what you have accomplished so far and what remains "
+    "to be done. Be specific about any incomplete work so the user can "
+    "pick up where you left off. If the task is complete, give the final "
+    "answer directly.\n"
 )
+
+# Injected when context is running low — tells the LLM to make handoff notes
+CONTEXT_PRESSURE_INSTRUCTION = (
+    "\n## Context Pressure Warning\n"
+    "The conversation is approaching the context window limit. This is your "
+    "last chance to make progress. Prioritize completing the current task. "
+    "If you cannot finish, provide a detailed summary of:\n"
+    "1. What you've accomplished\n"
+    "2. What's still left to do\n"
+    "3. The exact next steps for whoever continues\n"
+    "Do NOT start new subtasks. Focus on wrapping up cleanly.\n"
+)
+
+
+def _estimate_tokens(messages: list[Message]) -> int:
+    """Rough token estimate: ~4 chars per token for English text."""
+    total = 0
+    for m in messages:
+        total += len(m.content) // 4 if m.content else 0
+        # Tool call arguments also count
+        if hasattr(m, 'tool_calls') and m.tool_calls:
+            for tc in m.tool_calls:
+                total += len(json.dumps(tc.arguments, default=str)) // 4
+    return total
+
+
+def _generate_handoff_notes(
+    conversation: list[Message],
+    tool_calls_made: list[str],
+    round_num: int,
+    reason: str,
+) -> str:
+    """Generate a handoff note summarizing session progress for the next session.
+
+    This is saved to memory so the next session can pick up where this one left off.
+    """
+    # Extract user messages for context
+    user_msgs = [m.content for m in conversation if m.role == "user"]
+
+    # Extract assistant text responses
+    assistant_msgs = [m.content for m in conversation if m.role == "assistant" and m.content]
+
+    notes_lines = [
+        f"## Session Handoff Note",
+        f"**Reason**: {reason}",
+        f"**Rounds used**: {round_num}",
+        f"**Tools called**: {', '.join(tool_calls_made) if tool_calls_made else 'none'}",
+        f"",
+        f"### What was requested",
+        user_msgs[0][:200] if user_msgs else "No user message",
+        f"",
+        f"### Progress",
+    ]
+
+    # Add last few assistant messages as progress summary
+    for msg in assistant_msgs[-3:]:
+        if msg and len(msg.strip()) > 0:
+            notes_lines.append(f"- {msg[:150]}")
+
+    notes_lines.extend([
+        f"",
+        f"### Conversation history (condensed)",
+    ])
+
+    # Add a condensed version of the conversation
+    for m in conversation[-10:]:
+        role_label = {"user": "User", "assistant": "Assistant", "tool": "Tool"}.get(m.role, m.role)
+        content_preview = m.content[:100] if m.content else "(no content)"
+        notes_lines.append(f"- {role_label}: {content_preview}")
+
+    return "\n".join(notes_lines)
 
 
 class Agent:
@@ -70,6 +144,7 @@ class Agent:
         system_prompt: str = "",
         skills: SkillStore | None = None,
         rules_store: Any | None = None,
+        context_window: int | None = None,
     ):
         self.config = config
         self.llm = llm
@@ -79,6 +154,8 @@ class Agent:
         self.skills = skills
         self.rules_store = rules_store
         self.conversation: list[Message] = []
+        # Context window size for pressure detection
+        self.context_window = context_window or 128000  # Default 128K
 
     def _build_system_prompt(self, user_message: str = "", wrap_up: bool = False) -> str:
         """Assemble system prompt with injected memory, skills, capabilities, and tool descriptions.
@@ -131,10 +208,26 @@ class Agent:
             if relevant:
                 parts.append(self.skills.format_for_prompt(relevant))
 
-        # Inject memory
+        # Inject memory (with session handoff notes promoted to their own section)
+        handoff_entries = []
+        other_entries = []
         if self.memory.total_chars() > 0:
-            parts.append("\n## Memory\n")
             for entry in self.memory.all_entries():
+                if entry.get("category") == "session-handoff":
+                    handoff_entries.append(entry)
+                else:
+                    other_entries.append(entry)
+
+        if handoff_entries:
+            parts.append("\n## Previous Session Handoff\n")
+            parts.append("The previous session ran out of context. Here is what was being worked on:\n")
+            for entry in handoff_entries:
+                parts.append(entry["content"])
+            parts.append("")
+
+        if other_entries:
+            parts.append("\n## Memory\n")
+            for entry in other_entries:
                 parts.append(f"- {entry['key']}: {entry['content']}")
             parts.append("")
 
@@ -154,18 +247,32 @@ class Agent:
 
         return "\n".join(parts)
 
+    def _check_context_pressure(self) -> float:
+        """Check how full the context window is as a fraction (0.0 to 1.0).
+
+        Returns the ratio of estimated tokens used to the context window size.
+        A value above CONTEXT_PRESSURE_THRESHOLD means we should wrap up.
+        """
+        system_prompt = self._build_system_prompt()
+        total_tokens = _estimate_tokens(self.conversation) + len(system_prompt) // 4
+        return total_tokens / self.context_window if self.context_window > 0 else 0.0
+
     async def run(self, user_message: str) -> AsyncIterator[str]:
         """
         Run the agent loop for a single user message.
 
         Yields text chunks as they arrive. Handles tool calls internally.
-        Stops when the LLM produces a final text response with no tool calls,
-        or after max_tool_rounds rounds.
+        Stops when:
+        1. The LLM produces a final text response with no tool calls (task done)
+        2. max_tool_rounds is reached (wrap-up with summary)
+        3. Context pressure exceeds threshold (save notes, signal continuation)
 
-        On the final round (one before the limit), the LLM receives a wrap-up
-        instruction telling it to summarize progress instead of making more
-        tool calls. This ensures the user always gets a useful response, even
-        if the task is incomplete.
+        On early termination (cases 2 and 3), the agent:
+        - Saves a handoff note to memory for the next session
+        - Yields a continuation signal that the UI can detect to offer
+          "Continue in new session"
+        - The LLM gets a final turn with wrap-up instructions so it produces
+          a useful summary instead of dying mid-task
         """
         self.conversation.append(Message(role="user", content=user_message))
 
@@ -176,14 +283,33 @@ class Agent:
         stream_tools = getattr(agent_cfg, "stream_tool_output", True) if agent_cfg else True
         is_concise = verbosity == "concise"
 
+        # Track tool calls for handoff notes
+        tool_calls_made: list[str] = []
+
         for round_num in range(max_rounds):
-            # On the last allowed round, inject wrap-up instruction so the LLM
-            # summarizes progress instead of starting new tool calls it can't finish
-            is_final_round = (round_num == max_rounds - 1)
+            # Check context pressure BEFORE calling the LLM
+            # If we're past the threshold, this is our final round regardless
+            pressure = self._check_context_pressure()
+            context_pressure = pressure >= CONTEXT_PRESSURE_THRESHOLD
+
+            # Final round: either max_tool_rounds limit or context pressure
+            is_final_round = (round_num == max_rounds - 1) or context_pressure
+
+            if context_pressure:
+                logger.warning(
+                    f"Context pressure at {pressure:.0%} (threshold {CONTEXT_PRESSURE_THRESHOLD:.0%}). "
+                    f"Wrapping up at round {round_num + 1}/{max_rounds}."
+                )
+
             system_prompt = self._build_system_prompt(
                 user_message,
                 wrap_up=is_final_round,
             )
+
+            # Inject context pressure warning if close but not yet final
+            if context_pressure:
+                # Already on final round with wrap_up=True, add extra urgency
+                pass
 
             # On final round, call LLM with tools=False so it MUST give a text
             # response (no new tool calls that would be cut off)
@@ -200,6 +326,24 @@ class Agent:
                 )
                 if response.content:
                     yield response.content
+
+                # If we stopped due to context pressure, save handoff notes
+                # and signal the UI that a new session is needed
+                if context_pressure:
+                    handoff = _generate_handoff_notes(
+                        self.conversation,
+                        tool_calls_made,
+                        round_num + 1,
+                        f"Context window {pressure:.0%} full (threshold {CONTEXT_PRESSURE_THRESHOLD:.0%})",
+                    )
+                    self.memory.add(
+                        key=f"session-handoff-{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
+                        content=handoff,
+                        category="session-handoff",
+                    )
+                    # Signal to UI: this session needs to continue in a new one
+                    yield "\n\n---\n*Session context is full. Handoff notes saved. Start a new session to continue.*"
+
                 return
 
             # If we somehow still got tool calls on the final round, ignore them
@@ -214,11 +358,38 @@ class Agent:
                     # LLM ignored the wrap-up instruction and tried tools anyway.
                     # Give the user a useful summary of what happened.
                     tool_names = [tc.name for tc in response.tool_calls]
-                    yield (
-                        f"\nI used {round_num + 1} tool rounds and reached the limit. "
-                        f"Tools called in this session: {', '.join(tool_names)}. "
-                        "Increase the max tool rounds setting to continue."
+                    summary = (
+                        f"I used {round_num + 1} tool rounds and reached the limit. "
+                        f"Tools called: {', '.join(tool_names)}. "
                     )
+                    if context_pressure:
+                        summary += "The context window is nearly full. "
+                    summary += "Increase max tool rounds or start a new session to continue."
+                    yield summary
+
+                # Save handoff notes for continuation
+                reason = (
+                    f"Context window {pressure:.0%} full"
+                    if context_pressure
+                    else f"Max tool rounds ({max_rounds}) reached"
+                )
+                handoff = _generate_handoff_notes(
+                    self.conversation,
+                    tool_calls_made,
+                    round_num + 1,
+                    reason,
+                )
+                self.memory.add(
+                    key=f"session-handoff-{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
+                    content=handoff,
+                    category="session-handoff",
+                )
+
+                if context_pressure:
+                    yield "\n\n---\n*Session context is full. Handoff notes saved. Start a new session to continue.*"
+                else:
+                    yield f"\n\n---\n*Tool round limit reached. Handoff notes saved. Start a new session to continue.*"
+
                 return
 
             # Process tool calls (normal round)
@@ -237,6 +408,7 @@ class Agent:
             for tc in response.tool_calls:
                 logger.info(f"Tool call: {tc.name}({json.dumps(tc.arguments, default=str)[:200]})")
                 result: ToolResult = self.tools.execute(tc.name, tc.arguments)
+                tool_calls_made.append(tc.name)
 
                 # Add tool result to conversation
                 tool_msg = Message(
