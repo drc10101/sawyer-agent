@@ -242,52 +242,6 @@ Web UI (FastAPI + static HTML/CSS/JS at localhost:8765)
     +-- LLM Client (Sawyer/OpenAI/Anthropic/Ollama via httpx)
 ```
 
-## Web UI Panels
-
-The sidebar gives you full control over every tool, skill, and project file without leaving the browser.
-
-| Panel | What It Does |
-|-------|--------------|
-| **Chat** | Main conversation with the agent |
-| **Goal Loops** | Named, reusable goals with success criteria and iteration budget. Runs the Ralph Loop: decompose → execute → evaluate → improve → repeat |
-| **Skill Creator** | Browse, create, and refine skills collaboratively |
-| **Tools** | View, enable, and disable tools; audit trail |
-| **Files** | Upload files and browse project output files |
-| **Models** | List providers, check health, switch models |
-| **Sessions** | Session notes, suggestions, and active sessions |
-| **Projects** | Create and manage project workspaces |
-| **Cron** | Schedule recurring or one-shot agent jobs |
-| **Memory** | View and manage persistent memory entries |
-| **Keys** | Manage SSH keys, API keys, and tokens with permission levels |
-| **Rules** | Priority-ranked behavioral constraints (P0-P3) |
-| **Sub-Agents** | Create specialized agent templates with soul, rules, and model settings. Spawn standalone sessions |
-| **Orchestrate** | Multi-agent coordination: decompose goals, delegate to workers, evaluate results, drive improvement loops |
-
-## Goal Loops
-
-Goal Loops are the core execution unit for multi-step work:
-
-1. **Define** a named goal with success criteria ("when is it done?")
-2. **Set the iteration budget** (max Ralph Loop cycles, default 3)
-3. **Run** -- the agent decomposes the goal into subtasks
-4. **Execute** subtasks, check them off
-5. **Evaluate** -- did the subtasks meet the success criteria?
-6. **Improve** -- if not, feed improvements into the next iteration
-7. **Repeat** up to max iterations, or until the success criteria are met
-
-Goal loops are persisted to `~/.sawyer-harness/goal_loops.yaml` and can be reset and re-run.
-
-## Sub-Agents
-
-Sub-agents are pre-configured agent templates you create and spawn as standalone sessions. Each template defines:
-
-- **System prompt** -- what the sub-agent knows
-- **Soul** -- identity, strengths, personality, values, quirks
-- **Rules** -- priority-ranked behavioral constraints
-- **Model settings** -- model, provider, temperature, max tokens
-
-Spawn a session from any template to get a purpose-built agent ready for work.
-
 ## License
 
 MIT
