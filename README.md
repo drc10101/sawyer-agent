@@ -11,7 +11,7 @@
   &nbsp;&middot;&nbsp;
   <a href="#quick-start"><strong>Quick Start &rarr;</strong></a>
   &nbsp;&middot;&nbsp;
-  <a href="#tools"><strong>20 Built-in Tools &rarr;</strong></a>
+  <a href="#tools"><strong>19 Built-in Tools &rarr;</strong></a>
 </p>
 
 ---
@@ -20,7 +20,7 @@
   <img src="docs/sawyer-screenshot.png" alt="Sawyer Agent web UI" width="768">
 </p>
 
-Sawyer is a standalone AI agent that runs on your machine with no telemetry, no phone-home, and no data leaving your network. It ships with 20 tools, real token counting, sub-agent templates, and ClawHub import -- connect any OpenAI-compatible LLM and go.
+Sawyer is a standalone AI agent that runs on your machine with no telemetry, no phone-home, and no data leaving your network. It ships with 19 tools, real token counting, sub-agent templates, goal-seeking loops, and ClawHub import -- connect any OpenAI-compatible LLM and go.
 
 **Principles:** Secure by default. Model-agnostic. Self-hosted. Observable. Self-improving.
 
@@ -28,13 +28,23 @@ Sawyer is a standalone AI agent that runs on your machine with no telemetry, no 
 
 **Real token counting** -- every context meter, compression decision, and pressure threshold now uses actual tiktoken BPE tokenization instead of the old `len(text)//4` heuristic. Chinese text was off by 400%. Repetitive text by 87%. Now you get real numbers you can count on.
 
-**Main Model & Agent Mode settings** -- the Settings panel now lets you pick your LLM provider and model, and choose between three agent modes:
+**Goal-seeking loops** -- the Goals panel now runs goal-seeking loops with hard stops. Create a goal, decompose it into subtasks, then start a loop that works through each subtask automatically. Each loop has a configurable max-iteration ceiling so it can never run forever. If a loop stalls, the Diagnose button tells you why.
+
+**Main Model & Agent Mode settings** -- the Settings panel lets you pick your LLM provider and model, and choose between three agent modes:
 
 - **Direct** -- the agent answers you directly using its own tools. Fast, cheap, good for 90% of conversations.
 - **Orchestrator** -- decomposes goals into subtasks, delegates to specialized sub-agents, evaluates results. Slower but more capable for complex multi-step work.
 - **Auto** -- starts direct, escalates to orchestration when it hits something too big.
 
 **Sub-Agents panel** -- create specialized agent templates with their own system prompt, personality, rules, and model settings. Spawn a session from any template to get a focused agent ready for a specific task.
+
+**Orchestrate panel** -- coordinate multiple sub-agents in structured workflows. Decompose goals, assign tasks to workers, evaluate results, and drive improvement loops.
+
+**Rules Engine** -- priority-ranked behavioral constraints (P0-P3) that supersede defaults. Define what the agent must always do, should do, may do, or must never do.
+
+**Keys & Secrets** -- encrypted credential storage with permission levels. Store SSH keys, API tokens, and service credentials without leaking them into chat context.
+
+**Cron Scheduler** -- schedule recurring or one-shot agent jobs. Runs persist in SQLite so they survive restarts.
 
 **Better skill tools** -- `skill_load` and `skill_list` now reload from disk at runtime and give clear guidance when no skills are installed. `clawhub_import` catches network errors and says "ClawHub is not reachable" instead of dumping a Python traceback.
 
@@ -205,6 +215,23 @@ The Sub-Agents panel lets you create specialized agent templates. Each sub-agent
 
 Create a template, then spawn a session from it to get a focused agent. In orchestrator mode, the main agent delegates subtasks to these sub-agents automatically.
 
+## Goals & Goal-Seeking Loops
+
+The Goals panel decomposes goals into subtasks and runs them in an automated loop with hard stops.
+
+1. **Create a goal** -- describe what you want to accomplish
+2. **Decompose** -- the agent breaks it into concrete subtasks
+3. **Start a loop** -- the agent works through each subtask automatically
+4. **Hard stop** -- every loop has a max-iteration ceiling so it can never run forever
+5. **Diagnose** -- if a loop stalls, the Diagnose button tells you why
+6. **Stop or reset** -- stop a running loop or delete a completed goal
+
+Goal-seeking loops persist across server restarts. Status badges show whether a goal is pending, decomposed, looping, or complete.
+
+## Orchestrate
+
+The Orchestrate panel coordinates multiple sub-agents in structured workflows. Decompose a goal, assign tasks to workers with specific agent types, evaluate results, and drive improvement loops. Each orchestration run is persisted and can be inspected in detail.
+
 ## Context Window
 
 Sawyer uses real tiktoken BPE tokenization to track context usage -- not the `len(text)//4` heuristic that most agents rely on. This means:
@@ -231,7 +258,8 @@ Web UI (FastAPI + static HTML/CSS/JS at localhost:8765)
     |-- Memory (SQLite)
     |-- Skills (YAML+Markdown, find_relevant, self-patch)
     |-- Scheduler (APScheduler: interval/cron/one-shot, SQLite persist)
-    |-- Tool Registry (20 tools, sandboxed, audit logged)
+    |-- Tool Registry (19 tools, sandboxed, audit logged)
+    |-- Goal Engine (decompose, loop with hard stops, diagnose stalls)
     |-- Orchestrator (goal decomposition, dependency tracking, session notes)
     |-- Skill Creator (5-phase collaborative skill design)
     |-- Key Storage (encrypted credentials, permission levels)
