@@ -439,6 +439,12 @@ a:hover { color: var(--text-0); }
   box-shadow: var(--shadow-glow);
   transform: translateY(-1px);
 }
+.btn:disabled, .btn--primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
 
 .btn--ghost {
   background: transparent;
