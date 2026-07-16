@@ -159,40 +159,35 @@ exit /b 1
 :create_shortcut
 setlocal
 set "APP_DIR=%USERPROFILE%\.sawyer-harness"
-set "LAUNCHER=%APP_DIR%\launch.bat"
 
 if not exist "%APP_DIR%" mkdir "%APP_DIR%"
 
-:: Write launch.bat -- server auto-opens browser when ready
-(
-echo @echo off
-echo title Sawyer Agent
-echo echo.
-echo   Starting Sawyer Agent...
-echo   echo   Browser will open automatically when ready.
-echo   echo   Press Ctrl+C to stop.
-echo echo.
-echo python -m sawyer_harness --host 127.0.0.1 --port 8765
-echo pause
-) > "%LAUNCHER%"
+:: Find Python executable path
+set "PYTHON_EXE="
+for /f "delims=" %%i in ('python -c "import sys; print(sys.executable)" 2^>nul') do set "PYTHON_EXE=%%i"
 
 :: Find the Sawyer icon from the installed package
 set "ICON_PATH="
 for /f "delims=" %%i in ('python -c "from pathlib import Path; import sawyer_harness; print(Path(sawyer_harness.__file__).parent / 'web' / 'static' / 'sawyer.ico')" 2^>nul') do set "ICON_PATH=%%i"
 
-:: Create .lnk shortcut with icon via PowerShell
+:: Create .lnk shortcut targeting python.exe directly (avoids batch-file icon override)
 set "SHORTCUT=%USERPROFILE%\Desktop\Sawyer Agent.lnk"
+if "%PYTHON_EXE%"=="" (
+    :: Fallback: cannot create shortcut without python path
+    echo   [WARN] Could not locate Python. Skipping shortcut.
+    goto :shortcut_done
+)
+
 if "%ICON_PATH%"=="" (
-    powershell -Command "$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut('%SHORTCUT%'); $s.TargetPath='%LAUNCHER%'; $s.WorkingDirectory='%APP_DIR%'; $s.Description='Sawyer Agent'; $s.Save()" >nul 2>&1
+    powershell -Command "$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut('%SHORTCUT%'); $s.TargetPath='%PYTHON_EXE%'; $s.Arguments='-m sawyer_harness --host 127.0.0.1 --port 8765'; $s.WorkingDirectory='%APP_DIR%'; $s.Description='Sawyer Agent'; $s.Save()" >nul 2>&1
 ) else (
-    powershell -Command "$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut('%SHORTCUT%'); $s.TargetPath='%LAUNCHER%'; $s.WorkingDirectory='%APP_DIR%'; $s.Description='Sawyer Agent'; $s.IconLocation='%ICON_PATH%'; $s.Save()" >nul 2>&1
+    powershell -Command "$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut('%SHORTCUT%'); $s.TargetPath='%PYTHON_EXE%'; $s.Arguments='-m sawyer_harness --host 127.0.0.1 --port 8765'; $s.WorkingDirectory='%APP_DIR%'; $s.Description='Sawyer Agent'; $s.IconLocation='%ICON_PATH%'; $s.Save()" >nul 2>&1
 )
 if %errorlevel% equ 0 (
     echo   Desktop shortcut created.
 ) else (
-    :: Fallback: copy launch.bat to desktop
-    copy /y "%LAUNCHER%" "%USERPROFILE%\Desktop\Sawyer Agent.bat" >nul
-    echo   Desktop shortcut created ^(batch file^).
+    echo   [WARN] Shortcut creation failed.
 )
+:shortcut_done
 endlocal
 goto :eof
