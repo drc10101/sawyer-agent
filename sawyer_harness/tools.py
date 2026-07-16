@@ -490,6 +490,11 @@ def _make_skill_load_handler(registry: ToolRegistry) -> Callable[..., ToolResult
         skills = registry._context.get("skill_store")
         if not skills:
             return ToolResult(success=False, output="", error="Skill store not initialized")
+        # Reload from disk in case skills were added at runtime
+        try:
+            skills._load_all()
+        except Exception:
+            pass
         try:
             skill = skills.get(name)
             if not skill:
@@ -498,7 +503,11 @@ def _make_skill_load_handler(registry: ToolRegistry) -> Callable[..., ToolResult
                 if results:
                     skill = results[0]
                 else:
-                    return ToolResult(success=False, output="", error=f"Skill not found: {name}")
+                    available = [s["name"] for s in skills.list_skills()]
+                    if available:
+                        return ToolResult(success=False, output="", error=f"Skill not found: {name}. Available: {', '.join(available)}")
+                    else:
+                        return ToolResult(success=False, output="", error=f"No skills installed yet. Add .md skill files to {skills.skills_dir}")
             output = f"Skill: {skill.name} (v{skill.version})\n"
             output += f"Category: {skill.category}\n"
             output += f"Description: {skill.description}\n"
@@ -517,11 +526,16 @@ def _make_skill_list_handler(registry: ToolRegistry) -> Callable[..., ToolResult
         if not skills:
             return ToolResult(success=False, output="", error="Skill store not initialized")
         try:
+            # Reload from disk in case skills were added at runtime
+            try:
+                skills._load_all()
+            except Exception:
+                pass
             all_skills = skills.list_skills()
             if category:
                 all_skills = [s for s in all_skills if s["category"] == category]
             if not all_skills:
-                return ToolResult(success=True, output="No skills available")
+                return ToolResult(success=True, output=f"No skills installed yet. Add .md skill files to {skills.skills_dir}")
             output = "Available skills:\n\n"
             for s in all_skills:
                 output += f"- {s['name']} (v{s['version']}) [{s['category']}]: {s['description']}\n"
@@ -835,6 +849,8 @@ def _make_clawhub_import_handler(registry: ToolRegistry) -> Callable[..., ToolRe
                     output += f"     {desc}\n\n"
                 output += f"\nTo import: use clawhub_import with slug='<name>'"
                 return ToolResult(success=True, output=output)
+            except urllib.error.URLError:
+                return ToolResult(success=False, output="", error="ClawHub is not reachable. The service may be down or not yet launched. Skill import is not available at this time.")
             except Exception as e:
                 return ToolResult(success=False, output="", error=f"ClawHub search failed: {e}")
 
@@ -857,17 +873,21 @@ def _make_clawhub_import_handler(registry: ToolRegistry) -> Callable[..., ToolRe
         skill_description = ""
 
         # Approach 1: ClawHub API (metadata only -- content lives on GitHub)
+        clawhub_reachable = False
         try:
             url = f"https://clawhub.ai/api/v1/skills/{urllib.parse.quote(slug)}"
             req = urllib.request.Request(url, headers={"User-Agent": "Sawyer-Agent/1.0"})
             with urllib.request.urlopen(req, timeout=15) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
+            clawhub_reachable = True
             # API wraps skill data under "skill" key
             skill_data = data.get("skill", data)
             skill_name = skill_data.get("slug", slug)
             skill_description = skill_data.get("summary", skill_data.get("description", ""))
             if isinstance(skill_description, list):
                 skill_description = " ".join(str(s) for s in skill_description)
+        except urllib.error.URLError:
+            clawhub_reachable = False
         except Exception:
             skill_content = None
 
@@ -889,8 +909,11 @@ def _make_clawhub_import_handler(registry: ToolRegistry) -> Callable[..., ToolRe
                     continue
 
         if not skill_content:
+            if not clawhub_reachable:
+                return ToolResult(success=False, output="",
+                                  error="ClawHub is not reachable and the skill was not found on GitHub. Skill import is not available at this time.")
             return ToolResult(success=False, output="",
-                              error=f"Could not find skill '{slug}' on ClawHub or GitHub. Try the list parameter to search.")
+                              error=f"Could not find skill '{slug}' on ClawHub or GitHub. Try the search parameter to find available skills.")
 
         # Convert to Sawyer format
         # Parse existing frontmatter
