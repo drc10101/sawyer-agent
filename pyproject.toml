@@ -47,6 +47,7 @@ include = ["sawyer_harness*"]
 sawyer_harness = [
     "capabilities.yaml",
     "web/static/**/*",
+    "scripts/*",
 ]
 
 [tool.ruff]

@@ -162,27 +162,23 @@ set "APP_DIR=%USERPROFILE%\.sawyer-harness"
 
 if not exist "%APP_DIR%" mkdir "%APP_DIR%"
 
-:: Find Python executable path
-set "PYTHON_EXE="
-for /f "delims=" %%i in ('python -c "import sys; print(sys.executable)" 2^>nul') do set "PYTHON_EXE=%%i"
+:: Find the create-shortcut script from the installed package
+set "SCRIPT_PATH="
+for /f "delims=" %%i in ('python -c "from pathlib import Path; import sawyer_harness; print(Path(sawyer_harness.__file__).parent / 'scripts' / 'create-shortcut.ps1')" 2^>nul') do set "SCRIPT_PATH=%%i"
 
-:: Find the Sawyer icon from the installed package
-set "ICON_PATH="
-for /f "delims=" %%i in ('python -c "from pathlib import Path; import sawyer_harness; print(Path(sawyer_harness.__file__).parent / 'web' / 'static' / 'sawyer.ico')" 2^>nul') do set "ICON_PATH=%%i"
-
-:: Create .lnk shortcut targeting python.exe directly (avoids batch-file icon override)
-set "SHORTCUT=%USERPROFILE%\Desktop\Sawyer Agent.lnk"
-if "%PYTHON_EXE%"=="" (
-    :: Fallback: cannot create shortcut without python path
-    echo   [WARN] Could not locate Python. Skipping shortcut.
+if "%SCRIPT_PATH%"=="" (
+    echo   [WARN] Could not locate shortcut script. Skipping shortcut.
     goto :shortcut_done
 )
 
-if "%ICON_PATH%"=="" (
-    powershell -Command "$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut('%SHORTCUT%'); $s.TargetPath='%PYTHON_EXE%'; $s.Arguments='-m sawyer_harness --host 127.0.0.1 --port 8765'; $s.WorkingDirectory='%APP_DIR%'; $s.Description='Sawyer Agent'; $s.Save()" >nul 2>&1
-) else (
-    powershell -Command "$w=New-Object -ComObject WScript.Shell; $s=$w.CreateShortcut('%SHORTCUT%'); $s.TargetPath='%PYTHON_EXE%'; $s.Arguments='-m sawyer_harness --host 127.0.0.1 --port 8765'; $s.WorkingDirectory='%APP_DIR%'; $s.Description='Sawyer Agent'; $s.IconLocation='%ICON_PATH%'; $s.Save()" >nul 2>&1
+if not exist "%SCRIPT_PATH%" (
+    echo   [WARN] Shortcut script not found at: %SCRIPT_PATH%
+    goto :shortcut_done
 )
+
+:: Run the PowerShell shortcut creator
+powershell -ExecutionPolicy Bypass -File "%SCRIPT_PATH%"
+
 if %errorlevel% equ 0 (
     echo   Desktop shortcut created.
 ) else (
