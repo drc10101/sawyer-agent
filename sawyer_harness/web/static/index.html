@@ -367,13 +367,27 @@
 
       <!-- Goals Panel -->
       <div class="panel" id="panel-goals">
-        <div class="goal-form">
-          <h3 style="margin-bottom:8px">New Goal</h3>
-          <textarea id="goal-input" placeholder="What do you want to accomplish?"></textarea>
-          <textarea id="goal-context" placeholder="Additional context (optional)" rows="2" style="margin-top:6px"></textarea>
-          <button class="btn btn--primary" style="margin-top:8px" onclick="createGoal()">Decompose Goal</button>
+        <div style="max-width:900px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <h3 style="color:var(--brand);font-size:1rem">Goals</h3>
+            <button class="btn btn--subtle btn-sm" onclick="loadGoals()">Refresh</button>
+          </div>
+          <div style="font-size:13px;color:var(--text-2);margin-bottom:16px">
+            Create a goal and the agent decomposes it into subtasks. Start a <strong>goal-seeking loop</strong> to have
+            the agent work through each subtask automatically -- with a hard stop so it can never loop forever.
+          </div>
+
+          <!-- New Goal Form -->
+          <div class="ctrl-card" style="margin-bottom:16px">
+            <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">New Goal</h4>
+            <textarea id="goal-input" placeholder="What do you want to accomplish?" style="width:100%;min-height:60px;resize:vertical"></textarea>
+            <textarea id="goal-context" placeholder="Additional context (optional)" rows="2" style="width:100%;margin-top:6px;resize:vertical"></textarea>
+            <button class="btn btn--primary btn-sm" style="margin-top:8px" onclick="createGoal()">Decompose Goal</button>
+          </div>
+
+          <!-- Goals List -->
+          <div id="goals-list"></div>
         </div>
-        <div class="goals-list" id="goals-list"></div>
       </div>
 
       <!-- Tools Panel -->
@@ -1616,15 +1630,36 @@ async function loadGoals() {
     let html = '';
     for (const g of data.goals) {
       const pct = Math.round(g.progress * 100);
-      const statusBadge = g.status === 'complete' ? 'badge--success' : g.status === 'decomposed' ? 'badge--warning' : 'badge--neutral';
-      html += '<div class="goal-card">\n        <h4>' + g.goal + ' <span class="badge ' + statusBadge + '">' + g.status + '</span></h4>\n        <div style="font-size:11px;color:var(--text-2)">Created: ' + g.created + ' | Progress: ' + pct + '%</div>\n        <div class="progress"><div class="progress-bar" style="width:' + pct + '%"></div></div>\n        <div style="margin-top:6px">';
-      for (const st of g.subtasks) {
-        const done = st.status === 'complete';
-        html += '<div class="subtask' + (done ? ' done' : '') + '">\n          <div class="check' + (done ? ' done' : '') + '" onclick="toggleSubtask(\'' + g.id + '\',\'' + st.id + '\')">' + (done ? '&#10003;' : '') + '</div>\n          <span>' + st.task + '</span></div>';
+      const statusBadge = g.status === 'complete' ? 'badge--success' : g.status === 'looping' ? 'badge--warning' : g.status === 'paused' ? 'badge--warning' : g.status === 'decomposed' ? 'badge--warning' : 'badge--neutral';
+      const statusText = g.status === 'looping' ? 'running' : g.status;
+      html += '<div class="ctrl-card" style="margin-bottom:12px">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center">';
+      html += '<h4 style="color:var(--text-0)">' + g.goal + ' <span class="badge ' + statusBadge + '">' + statusText + '</span></h4>';
+      html += '<div style="display:flex;gap:6px">';
+      // Loop controls -- only show for decomposed/paused goals
+      if (g.status === 'decomposed' || g.status === 'paused') {
+        html += '<button class="btn btn--primary btn-sm" onclick="startGoalLoop(\'' + g.id + '\')">Start Loop</button>';
+      }
+      if (g.status === 'looping') {
+        html += '<button class="btn btn--danger btn-sm" onclick="stopGoalLoop(\'' + g.id + '\')">Stop Loop</button>';
+        html += '<button class="btn btn--subtle btn-sm" onclick="checkLoopStatus(\'' + g.id + '\')">Status</button>';
+      }
+      if (g.status !== 'looping') {
+        html += '<button class="btn btn--subtle btn-sm" onclick="deleteGoal(\'' + g.id + '\')" style="color:var(--danger)">Delete</button>';
       }
       html += '</div></div>';
+      html += '<div style="font-size:11px;color:var(--text-2);margin:4px 0">Created: ' + g.created + ' | Progress: ' + pct + '%</div>';
+      html += '<div class="progress" style="margin:8px 0"><div class="progress-bar" style="width:' + pct + '%"></div></div>';
+      for (const st of g.subtasks) {
+        const done = st.status === 'complete';
+        html += '<div class="subtask' + (done ? ' done' : '') + '" style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px">';
+        html += '<div class="check' + (done ? ' done' : '') + '" style="width:18px;height:18px;border-radius:4px;border:1.5px solid var(--border-1);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;' + (done ? 'background:var(--brand);border-color:var(--brand);color:white' : '') + '" onclick="toggleSubtask(\'' + g.id + '\',\'' + st.id + '\')">' + (done ? '&#10003;' : '') + '</div>';
+        html += '<span style="' + (done ? 'text-decoration:line-through;color:var(--text-2)' : 'color:var(--text-0)') + '">' + st.task + '</span>';
+        html += '</div>';
+      }
+      html += '</div>';
     }
-    if (!data.goals.length) html = '<div style="color:var(--text-2)">No goals yet. Create one above.</div>';
+    if (!data.goals.length) html = '<div style="color:var(--text-2);text-align:center;padding:32px">No goals yet. Create one above.</div>';
     list.innerHTML = html;
   } catch(e) { console.error(e); }
 }
@@ -1648,6 +1683,85 @@ async function createGoal() {
 async function toggleSubtask(goalId, subtaskId) {
   await fetch(API + '/api/goals/' + goalId + '/subtask/' + subtaskId + '/complete', {method: 'POST'});
   loadGoals();
+}
+
+async function startGoalLoop(goalId) {
+  const maxIter = prompt('Maximum loop iterations (hard stop):', '10');
+  if (!maxIter) return;
+  try {
+    const res = await fetch(API + '/api/goals/' + goalId + '/start-loop', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        goal_id: goalId,
+        max_iterations: parseInt(maxIter) || 10,
+        stop_on_complete: true,
+        auto_advance: true,
+      })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      loadGoals();
+      // Poll loop status
+      pollLoopStatus(goalId);
+    } else {
+      alert('Error: ' + (data.detail || 'Could not start loop'));
+    }
+  } catch(e) { console.error(e); }
+}
+
+async function stopGoalLoop(goalId) {
+  try {
+    await fetch(API + '/api/goals/' + goalId + '/stop-loop', {method: 'POST'});
+    loadGoals();
+  } catch(e) { console.error(e); }
+}
+
+async function checkLoopStatus(goalId) {
+  try {
+    const res = await fetch(API + '/api/goals/' + goalId + '/loop-status');
+    const data = await res.json();
+    let msg = 'Loop status: ' + data.status + '\n';
+    msg += 'Iteration: ' + data.iteration + ' / ' + data.max_iterations + '\n';
+    msg += 'Goal progress: ' + Math.round((data.goal_progress || 0) * 100) + '%';
+    if (data.log && data.log.length > 0) {
+      msg += '\n\nLast activity:\n';
+      for (const entry of data.log.slice(-5)) {
+        msg += '  #' + entry.iteration + ': ' + (entry.task || entry.status || '') + ' - ' + entry.status + '\n';
+      }
+    }
+    alert(msg);
+  } catch(e) { console.error(e); }
+}
+
+let loopPollTimers = {};
+function pollLoopStatus(goalId) {
+  // Clear existing timer for this goal
+  if (loopPollTimers[goalId]) clearInterval(loopPollTimers[goalId]);
+  loopPollTimers[goalId] = setInterval(async () => {
+    try {
+      const res = await fetch(API + '/api/goals/' + goalId + '/loop-status');
+      const data = await res.json();
+      if (data.status !== 'running') {
+        clearInterval(loopPollTimers[goalId]);
+        delete loopPollTimers[goalId];
+        loadGoals();
+      } else {
+        loadGoals(); // Refresh goal list to show progress
+      }
+    } catch(e) {
+      clearInterval(loopPollTimers[goalId]);
+      delete loopPollTimers[goalId];
+    }
+  }, 3000);
+}
+
+async function deleteGoal(goalId) {
+  if (!confirm('Delete this goal?')) return;
+  try {
+    await fetch(API + '/api/goals/' + goalId, {method: 'DELETE'});
+    loadGoals();
+  } catch(e) { console.error(e); }
 }
 
 // Tools

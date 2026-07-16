@@ -81,6 +81,13 @@ class GoalCreate(BaseModel):
     goal: str
     context: str = ""
 
+class GoalLoopStart(BaseModel):
+    """Start a goal-seeking loop with a predetermined stopping point."""
+    goal_id: str
+    max_iterations: int = 10       # Hard ceiling: stop after this many agent turns
+    stop_on_complete: bool = True  # Stop when all subtasks are done
+    auto_advance: bool = True     # Automatically move to next subtask after completion
+
 class ConfigUpdate(BaseModel):
     provider: str = ""
     model: str = ""
@@ -182,6 +189,7 @@ class _AppState:
         self.session_notes: dict[str, dict] = {}
         self.session_engines: dict[str, SessionEngine] = {}
         self.goals: dict[str, dict] = {}
+        self.goal_loops: dict[str, dict] = {}  # goal_id -> loop state
         self.compressor = ContextCompressor(
             max_tokens=config.llm.context_length or ContextManager(model_name=config.llm.model or "gpt-4o").window_size,
             model=config.llm.model or "gpt-4o",
@@ -835,6 +843,215 @@ def _register_routes(app: FastAPI, state: _AppState):
             goal["status"] = "complete"
 
         return goal
+
+    @app.delete("/api/goals/{goal_id}")
+    async def delete_goal(goal_id: str):
+        """Delete a goal and its loop state."""
+        if goal_id not in state.goals:
+            raise HTTPException(status_code=404, detail="Goal not found")
+        # Stop any running loop
+        if goal_id in state.goal_loops:
+            state.goal_loops[goal_id]["status"] = "stopped"
+            del state.goal_loops[goal_id]
+        del state.goals[goal_id]
+        return {"status": "deleted"}
+
+    # ----------------------------------------------------------
+    # Goal-Seeking Loops
+    # ----------------------------------------------------------
+
+    @app.post("/api/goals/{goal_id}/start-loop")
+    async def start_goal_loop(goal_id: str, loop_config: GoalLoopStart):
+        """Start a goal-seeking loop: the orchestrator works through subtasks with a hard stop."""
+        if goal_id not in state.goals:
+            raise HTTPException(status_code=404, detail="Goal not found")
+
+        goal = state.goals[goal_id]
+        if goal["status"] not in ("decomposed", "pending"):
+            raise HTTPException(status_code=400, detail=f"Goal status is '{goal['status']}', cannot start loop. Only decomposed or pending goals can loop.")
+
+        # Find next pending subtask
+        pending = [st for st in goal["subtasks"] if st["status"] == "pending"]
+        if not pending:
+            goal["status"] = "complete"
+            goal["progress"] = 1.0
+            return {"status": "complete", "message": "All subtasks already complete.", "goal": goal}
+
+        # Create loop state
+        loop_state = {
+            "goal_id": goal_id,
+            "status": "running",
+            "iteration": 0,
+            "max_iterations": loop_config.max_iterations,
+            "stop_on_complete": loop_config.stop_on_complete,
+            "auto_advance": loop_config.auto_advance,
+            "current_subtask": pending[0]["id"],
+            "log": [],
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "stopped_at": None,
+        }
+        state.goal_loops[goal_id] = loop_state
+
+        # Mark goal as running
+        goal["status"] = "looping"
+
+        # Run the first subtask iteration
+        subtask = pending[0]
+        loop_state["iteration"] = 1
+        loop_state["log"].append({
+            "iteration": 1,
+            "subtask_id": subtask["id"],
+            "task": subtask["task"],
+            "status": "started",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+
+        # Kick off the loop task in the background
+        asyncio.create_task(_run_goal_loop(goal_id, loop_config))
+
+        return {
+            "status": "running",
+            "goal_id": goal_id,
+            "iteration": 1,
+            "max_iterations": loop_config.max_iterations,
+            "current_subtask": subtask["id"],
+            "current_task": subtask["task"],
+        }
+
+    @app.post("/api/goals/{goal_id}/stop-loop")
+    async def stop_goal_loop(goal_id: str):
+        """Stop a running goal-seeking loop."""
+        if goal_id not in state.goal_loops:
+            raise HTTPException(status_code=404, detail="No loop running for this goal")
+
+        loop = state.goal_loops[goal_id]
+        loop["status"] = "stopped"
+        loop["stopped_at"] = datetime.now(timezone.utc).isoformat()
+
+        if goal_id in state.goals:
+            state.goals[goal_id]["status"] = "paused"
+
+        return {"status": "stopped", "goal_id": goal_id, "iterations_completed": loop["iteration"]}
+
+    @app.get("/api/goals/{goal_id}/loop-status")
+    async def get_loop_status(goal_id: str):
+        """Get the status of a goal-seeking loop."""
+        if goal_id not in state.goal_loops:
+            # No loop exists -- return idle status
+            goal = state.goals.get(goal_id)
+            if not goal:
+                raise HTTPException(status_code=404, detail="Goal not found")
+            return {
+                "status": "idle",
+                "goal_id": goal_id,
+                "goal_status": goal["status"],
+                "progress": goal["progress"],
+            }
+
+        loop = state.goal_loops[goal_id]
+        goal = state.goals.get(goal_id, {})
+        return {
+            "status": loop["status"],
+            "goal_id": goal_id,
+            "iteration": loop["iteration"],
+            "max_iterations": loop["max_iterations"],
+            "current_subtask": loop.get("current_subtask"),
+            "log": loop["log"][-10:],  # Last 10 log entries
+            "goal_progress": goal.get("progress", 0),
+            "goal_status": goal.get("status"),
+            "started_at": loop["started_at"],
+            "stopped_at": loop.get("stopped_at"),
+        }
+
+    async def _run_goal_loop(goal_id: str, config: GoalLoopStart):
+        """Background task: iterate through subtasks with a hard stop."""
+        loop = state.goal_loops.get(goal_id)
+        if not loop:
+            return
+
+        goal = state.goals.get(goal_id)
+        if not goal:
+            loop["status"] = "error"
+            loop["log"].append({"error": "Goal removed during loop"})
+            return
+
+        while loop["status"] == "running" and loop["iteration"] < loop["max_iterations"]:
+            # Find next pending subtask
+            pending = [st for st in goal["subtasks"] if st["status"] == "pending"]
+            if not pending:
+                # All subtasks complete
+                goal["status"] = "complete"
+                goal["progress"] = 1.0
+                loop["status"] = "complete"
+                loop["log"].append({
+                    "iteration": loop["iteration"],
+                    "status": "all_subtasks_complete",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+                return
+
+            subtask = pending[0]
+            loop["current_subtask"] = subtask["id"]
+            loop["iteration"] += 1
+
+            loop["log"].append({
+                "iteration": loop["iteration"],
+                "subtask_id": subtask["id"],
+                "task": subtask["task"],
+                "status": "working",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+
+            # Send the subtask to the orchestrator
+            try:
+                session_id, agent = state.get_or_create_session(f"goal-loop-{goal_id}")
+                prompt = (
+                    f"You are working on subtask {subtask['id']} of goal: {goal['goal']}\n"
+                    f"Context: {goal.get('context', 'None')}\n"
+                    f"Subtask: {subtask['task']}\n\n"
+                    f"Complete this subtask. Use any tools available. "
+                    f"When done, briefly state what you accomplished."
+                )
+                response_parts = []
+                async for chunk in agent.run(prompt):
+                    response_parts.append(chunk)
+                response = "".join(response_parts)
+
+                # Mark subtask complete
+                subtask["status"] = "complete"
+                total = len(goal["subtasks"])
+                complete = sum(1 for st in goal["subtasks"] if st["status"] == "complete")
+                goal["progress"] = complete / total if total > 0 else 0.0
+
+                loop["log"][-1]["status"] = "complete"
+                loop["log"][-1]["response_preview"] = response[:200]
+
+            except Exception as e:
+                logger.error(f"Goal loop iteration {loop['iteration']} error: {e}")
+                loop["log"][-1]["status"] = "error"
+                loop["log"][-1]["error"] = str(e)
+
+            # Check if we should stop
+            if config.stop_on_complete:
+                remaining = [st for st in goal["subtasks"] if st["status"] == "pending"]
+                if not remaining:
+                    goal["status"] = "complete"
+                    goal["progress"] = 1.0
+                    loop["status"] = "complete"
+                    return
+
+            # Brief pause between iterations
+            await asyncio.sleep(0.5)
+
+        # Hit max iterations
+        if loop["status"] == "running":
+            loop["status"] = "max_iterations_reached"
+            loop["log"].append({
+                "iteration": loop["iteration"],
+                "status": "max_iterations_reached",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+            goal["status"] = "paused"
 
     # ----------------------------------------------------------
     # Tools / Audit
