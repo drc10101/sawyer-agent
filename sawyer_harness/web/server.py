@@ -295,7 +295,18 @@ def _register_routes(app: FastAPI, state: _AppState):
 
     @app.websocket("/ws/chat")
     async def websocket_chat(websocket: WebSocket):
-        """WebSocket endpoint for streaming agent responses."""
+        """WebSocket endpoint for streaming agent responses.
+
+        Emits typed events so the frontend can render them appropriately:
+        - "thinking": reasoning/thinking content (summarized, not raw)
+        - "status": agent status like "Reading file...", "Patching code..."
+        - "tool_call": tool being called (name + args summary)
+        - "tool_result": tool execution result
+        - "text": normal assistant text response
+        - "seizure": loop detected warning
+        - "done": response complete
+        - "error": something went wrong
+        """
         await websocket.accept()
         session_id = ""
 
@@ -306,14 +317,85 @@ def _register_routes(app: FastAPI, state: _AppState):
                 user_message = payload.get("message", "")
                 session_id = payload.get("session_id", session_id)
 
+                # Allow client to cancel mid-stream
+                if payload.get("action") == "stop":
+                    logger.info(f"Client requested stop for session {session_id}")
+                    break
+
                 _, agent = state.get_or_create_session(session_id)
 
+                # Track tool calls for status summaries
+                current_tool = ""
+
                 async for chunk in agent.run(user_message):
-                    await websocket.send_json({
-                        "type": "chunk",
-                        "content": chunk,
-                        "session_id": session_id,
-                    })
+                    # Classify the chunk by its content markers
+                    if chunk.startswith("<thinking>"):
+                        # Thinking content -- summarize, don't stream raw reasoning
+                        content = chunk.replace("<thinking>", "").replace("</thinking>", "").strip()
+                        if content:
+                            # Extract first sentence as a status summary
+                            summary = content.split(".")[0]
+                            if len(summary) > 120:
+                                summary = summary[:117] + "..."
+                            await websocket.send_json({
+                                "type": "thinking",
+                                "summary": summary,
+                                "session_id": session_id,
+                            })
+                    elif chunk.startswith("[") and "]" in chunk[:30]:
+                        # Tool output: [tool_name] result...
+                        # Split into tool_call and tool_result
+                        bracket_end = chunk.index("]")
+                        tool_name = chunk[1:bracket_end]
+                        result = chunk[bracket_end + 1:].strip()
+
+                        # Send tool_call event
+                        await websocket.send_json({
+                            "type": "tool_call",
+                            "name": tool_name,
+                            "session_id": session_id,
+                        })
+
+                        # Send tool_result event (truncated for display)
+                        display_result = result[:2000] if len(result) > 2000 else result
+                        await websocket.send_json({
+                            "type": "tool_result",
+                            "name": tool_name,
+                            "content": display_result,
+                            "session_id": session_id,
+                        })
+                    elif chunk.startswith("---\n**Loop detected:**") or chunk.startswith("\n\n---\n**Loop detected:**"):
+                        # Seizure warning
+                        await websocket.send_json({
+                            "type": "seizure",
+                            "content": chunk.replace("---\n", "").replace("\n\n---\n", "").strip(),
+                            "session_id": session_id,
+                        })
+                    elif chunk.startswith("*Session context is full") or chunk.startswith("\n\n---\n*Session"):
+                        # Handoff signal
+                        await websocket.send_json({
+                            "type": "handoff",
+                            "content": chunk.strip(),
+                            "session_id": session_id,
+                        })
+                    elif chunk.startswith("[") and "ERROR" in chunk[:50]:
+                        # Tool error
+                        bracket_end = chunk.index("]")
+                        tool_name = chunk[1:bracket_end]
+                        error_msg = chunk[bracket_end + 1:].strip()
+                        await websocket.send_json({
+                            "type": "tool_error",
+                            "name": tool_name,
+                            "content": error_msg,
+                            "session_id": session_id,
+                        })
+                    else:
+                        # Normal text content
+                        await websocket.send_json({
+                            "type": "text",
+                            "content": chunk,
+                            "session_id": session_id,
+                        })
 
                 await websocket.send_json({
                     "type": "done",
@@ -323,6 +405,14 @@ def _register_routes(app: FastAPI, state: _AppState):
             logger.info(f"WebSocket disconnected: {session_id}")
         except Exception as e:
             logger.error(f"WebSocket error: {e}")
+            try:
+                await websocket.send_json({
+                    "type": "error",
+                    "content": str(e),
+                    "session_id": session_id,
+                })
+            except Exception:
+                pass  # Connection already closed
 
     @app.post("/api/session/{session_id}/clear")
     async def clear_session(session_id: str):

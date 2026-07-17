@@ -279,8 +279,12 @@ class Agent:
         stream_tools = getattr(agent_cfg, "stream_tool_output", True) if agent_cfg else True
         is_concise = verbosity == "concise"
 
-        # Track tool calls for handoff notes
+        # Track tool calls for handoff notes and seizure detection
         tool_calls_made: list[str] = []
+        # Seizure detection: track recent (tool_name, args_signature) pairs
+        # If the same tool+args pattern repeats 3+ times, the agent is stuck in a loop
+        recent_tool_signatures: list[tuple[str, str]] = []
+        SEIZURE_THRESHOLD = 3  # Same tool+args this many times = stuck
 
         for round_num in range(max_rounds):
             # Check context pressure BEFORE calling the LLM
@@ -421,6 +425,43 @@ class Agent:
             # Execute each tool call
             for tc in response.tool_calls:
                 logger.info(f"Tool call: {tc.name}({json.dumps(tc.arguments, default=str)[:200]})")
+
+                # Seizure detection: check if this same tool+args was called repeatedly
+                args_sig = json.dumps(tc.arguments, sort_keys=True, default=str)[:200]  # Stable signature
+                sig = (tc.name, args_sig)
+                recent_tool_signatures.append(sig)
+                # Keep only the last 20 signatures for sliding window
+                if len(recent_tool_signatures) > 20:
+                    recent_tool_signatures = recent_tool_signatures[-20:]
+
+                # Count how many times this exact signature appears recently
+                sig_count = recent_tool_signatures.count(sig)
+                if sig_count >= SEIZURE_THRESHOLD:
+                    logger.warning(
+                        f"Seizure detected: {tc.name} called with same args {sig_count} times. "
+                        f"Stopping agent loop to prevent infinite repetition."
+                    )
+                    yield (
+                        f"\n\n---\n"
+                        f"**Loop detected:** `{tc.name}` was called {sig_count} times with the same arguments. "
+                        f"The agent is stuck. Stopping execution to prevent infinite repetition.\n"
+                        f"Last tool call: `{tc.name}({args_sig[:100]}...)`\n"
+                        f"Review the conversation history and adjust your request."
+                    )
+                    # Save handoff notes and stop
+                    handoff = _generate_handoff_notes(
+                        self.conversation,
+                        tool_calls_made,
+                        round_num + 1,
+                        f"Seizure detected: {tc.name} called {sig_count} times with identical args",
+                    )
+                    self.memory.add(
+                        key=f"session-handoff-{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
+                        content=handoff,
+                        category="session-handoff",
+                    )
+                    return
+
                 result: ToolResult = self.tools.execute(tc.name, tc.arguments)
                 tool_calls_made.append(tc.name)
 

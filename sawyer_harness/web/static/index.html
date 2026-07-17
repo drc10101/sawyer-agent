@@ -135,6 +135,7 @@
           <div class="chat-input">
             <textarea id="chat-input" placeholder="Send a message..." rows="2" autofocus></textarea>
             <button class="btn btn--primary" id="send-btn" onclick="sendMessage()">Send</button>
+            <button class="btn btn--danger" id="stop-btn" onclick="stopStreaming()" style="display:none">Stop</button>
           </div>
         </div>
       </div>
@@ -994,6 +995,33 @@ document.getElementById('chat-input').addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
 
+// ── WebSocket Streaming Chat ──────────────────────────────────────────────
+// Connects to /ws/chat and streams typed events (text, thinking, tool_call,
+// tool_result, seizure, handoff, done, error) for real-time agent feedback.
+
+function connectWebSocket() {
+  if (ws && ws.readyState === WebSocket.OPEN) return;
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(protocol + '//' + location.host + '/ws/chat');
+
+  ws.onopen = () => {
+    const statusEl = document.getElementById('ws-status');
+    if (statusEl) statusEl.textContent = '';
+  };
+
+  ws.onclose = () => {
+    const statusEl = document.getElementById('ws-status');
+    if (statusEl) statusEl.textContent = 'Reconnecting...';
+    // Reconnect after 2 seconds
+    setTimeout(connectWebSocket, 2000);
+  };
+
+  ws.onerror = () => {
+    const statusEl = document.getElementById('ws-status');
+    if (statusEl) statusEl.textContent = 'Connection error';
+  };
+}
+
 async function sendMessage() {
   const input = document.getElementById('chat-input');
   const msg = input.value.trim();
@@ -1001,12 +1029,182 @@ async function sendMessage() {
   input.value = '';
   appendMsg('user', msg);
 
-  // Show typing indicator while agent is thinking
-  const typingEl = appendTypingIndicator();
+  // Show status indicator
+  const statusEl = appendStatusIndicator('Thinking...');
   const sendBtn = document.getElementById('send-btn');
-  if (sendBtn) sendBtn.disabled = true;
+  const stopBtn = document.getElementById('stop-btn');
+  if (sendBtn) sendBtn.style.display = 'none';
+  if (stopBtn) stopBtn.style.display = 'inline-flex';
   input.disabled = true;
 
+  // Connect WebSocket if needed
+  connectWebSocket();
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    // Fallback to REST if WebSocket not available
+    await sendMessageREST(msg, statusEl, sendBtn, stopBtn, input);
+    return;
+  }
+
+  // Accumulate response text
+  let responseText = '';
+  let responseEl = null;
+
+  // Send message via WebSocket
+  ws.send(JSON.stringify({message: msg, session_id: sessionId}));
+
+  // Handler for streaming events
+  const messageHandler = (event) => {
+    const data = JSON.parse(event.data);
+
+    switch (data.type) {
+      case 'thinking':
+        // Show thinking summary (first sentence only, not raw reasoning)
+        updateStatusIndicator(statusEl, data.summary);
+        break;
+
+      case 'tool_call':
+        // Show tool call status
+        updateStatusIndicator(statusEl, 'Running ' + data.name + '...');
+        break;
+
+      case 'tool_result':
+        // Show tool result inline (abbreviated)
+        if (!responseEl) {
+          responseEl = createAssistantBubble();
+        }
+        const toolResult = document.createElement('div');
+        toolResult.className = 'tool-result-line';
+        toolResult.innerHTML = '<span style="color:var(--brand);font-weight:600">[' + data.name + ']</span> ' +
+          '<span style="font-size:12px;color:var(--text-2)">' + escapeHtml(data.content.substring(0, 300)) +
+          (data.content.length > 300 ? '...' : '') + '</span>';
+        responseEl.appendChild(toolResult);
+        break;
+
+      case 'tool_error':
+        if (!responseEl) {
+          responseEl = createAssistantBubble();
+        }
+        const errLine = document.createElement('div');
+        errLine.className = 'tool-result-line';
+        errLine.innerHTML = '<span style="color:var(--brand);font-weight:600">[' + data.name + ']</span> ' +
+          '<span style="color:var(--danger)">ERROR: ' + escapeHtml(data.content) + '</span>';
+        responseEl.appendChild(errLine);
+        break;
+
+      case 'text':
+        responseText += data.content;
+        if (!responseEl) {
+          responseEl = createAssistantBubble();
+        }
+        // Update the response bubble with formatted text
+        responseEl.innerHTML = formatResponse(responseText);
+        break;
+
+      case 'seizure':
+        if (!responseEl) {
+          responseEl = createAssistantBubble();
+        }
+        responseEl.innerHTML += '<div style="margin-top:12px;padding:10px 14px;background:rgba(239,68,68,0.1);border:1px solid var(--danger);border-radius:8px">' +
+          '<span style="color:var(--danger);font-weight:600;font-size:13px">Loop detected</span><br>' +
+          '<span style="font-size:12px;color:var(--text-1)">' + escapeHtml(data.content) + '</span></div>';
+        break;
+
+      case 'handoff':
+        if (!responseEl) {
+          responseEl = createAssistantBubble();
+        }
+        responseEl.innerHTML += '<div style="margin-top:12px;padding:10px 14px;background:rgba(18,199,239,0.1);border:1px solid var(--brand);border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+          '<span style="color:var(--brand);font-weight:600;font-size:13px">Context full — handoff notes saved</span>' +
+          '<button class="btn btn--primary btn-sm" onclick="continueInNewSession()">Continue in New Session</button></div>';
+        break;
+
+      case 'done':
+        if (data.session_id) {
+          sessionId = data.session_id;
+          const sessionEl = document.getElementById('status-session');
+          if (sessionEl) sessionEl.textContent = sessionId;
+        }
+        // Remove status indicator
+        removeStatusIndicator(statusEl);
+        // If no text was received, show a fallback message
+        if (!responseText && !responseEl) {
+          appendMsg('assistant', 'No response received.');
+        }
+        if (sendBtn) sendBtn.style.display = 'inline-flex';
+        if (stopBtn) stopBtn.style.display = 'none';
+        input.disabled = false;
+        input.focus();
+        updateContextBar();
+        ws.removeEventListener('message', messageHandler);
+        break;
+
+      case 'error':
+        removeStatusIndicator(statusEl);
+        appendMsg('assistant', 'Error: ' + escapeHtml(data.content));
+        if (sendBtn) sendBtn.style.display = 'inline-flex';
+        if (stopBtn) stopBtn.style.display = 'none';
+        input.disabled = false;
+        input.focus();
+        ws.removeEventListener('message', messageHandler);
+        break;
+    }
+  };
+
+  ws.addEventListener('message', messageHandler);
+}
+
+// Stop the current streaming response
+function stopStreaming() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({action: 'stop'}));
+  }
+  const sendBtn = document.getElementById('send-btn');
+  const stopBtn = document.getElementById('stop-btn');
+  if (sendBtn) sendBtn.style.display = 'inline-flex';
+  if (stopBtn) stopBtn.style.display = 'none';
+  const input = document.getElementById('chat-input');
+  input.disabled = false;
+  input.focus();
+}
+
+// Create an assistant bubble in the chat (returns the content div)
+function createAssistantBubble() {
+  const div = document.createElement('div');
+  div.className = 'msg assistant';
+  document.getElementById('chat-messages').appendChild(div);
+  return div;
+}
+
+// Status indicator (replaces typing dots during streaming)
+function appendStatusIndicator(text) {
+  const div = document.createElement('div');
+  div.className = 'msg assistant status-indicator-msg';
+  div.id = 'streaming-status';
+  div.innerHTML = '<div style="display:flex;align-items:center;gap:8px;padding:4px 0">' +
+    '<div class="typing-dots"><span></span><span></span><span></span></div>' +
+    '<span style="color:var(--text-2);font-size:13px">' + escapeHtml(text) + '</span></div>';
+  document.getElementById('chat-messages').appendChild(div);
+  return div;
+}
+
+function updateStatusIndicator(el, text) {
+  if (el) {
+    const span = el.querySelector('span');
+    if (span) span.textContent = text;
+  }
+}
+
+function removeStatusIndicator(el) {
+  if (el && el.parentNode) el.parentNode.removeChild(el);
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// REST fallback if WebSocket is unavailable
+async function sendMessageREST(msg, statusEl, sendBtn, stopBtn, input) {
   try {
     const res = await fetch(API + '/api/chat', {
       method: 'POST',
@@ -1017,22 +1215,24 @@ async function sendMessage() {
     sessionId = data.session_id;
     const sessionEl = document.getElementById('status-session');
     if (sessionEl) sessionEl.textContent = sessionId;
+
+    removeStatusIndicator(statusEl);
     let responseHtml = formatResponse(data.response);
 
-    // Detect session handoff signal and show continue button
-    if (data.response && data.response.includes('*Session context is full') || data.response && data.response.includes('*Tool round limit reached')) {
-      responseHtml += '<div style="margin-top:12px;padding:10px 14px;background:rgba(18,199,239,0.1);border:1px solid var(--brand);border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
-        + '<span style="color:var(--brand);font-weight:600;font-size:13px">Context full — handoff notes saved</span>'
-        + '<button class="btn btn--primary btn-sm" onclick="continueInNewSession()">Continue in New Session</button>'
-        + '</div>';
+    if (data.response && (data.response.includes('*Session context is full') || data.response.includes('*Tool round limit reached'))) {
+      responseHtml += '<div style="margin-top:12px;padding:10px 14px;background:rgba(18,199,239,0.1);border:1px solid var(--brand);border-radius:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+        '<span style="color:var(--brand);font-weight:600;font-size:13px">Context full — handoff notes saved</span>' +
+        '<button class="btn btn--primary btn-sm" onclick="continueInNewSession()">Continue in New Session</button></div>';
     }
 
-    typingEl.innerHTML = responseHtml;
+    appendMsg('assistant', responseHtml);
     updateContextBar();
   } catch (e) {
-    typingEl.innerHTML = '<span style="color:var(--danger)">Error: ' + e.message + '</span>';
+    removeStatusIndicator(statusEl);
+    appendMsg('assistant', 'Error: ' + e.message);
   } finally {
-    if (sendBtn) sendBtn.disabled = false;
+    if (sendBtn) sendBtn.style.display = 'inline-flex';
+    if (stopBtn) stopBtn.style.display = 'none';
     input.disabled = false;
     input.focus();
   }

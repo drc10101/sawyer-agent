@@ -428,3 +428,28 @@
   0%, 60%, 100% { opacity: 0.4; transform: translateY(0); }
   30% { opacity: 1; transform: translateY(-6px); }
 }
+
+/* ── Streaming Chat Styles ── */
+.tool-result-line {
+  padding: 3px 0;
+  font-size: 13px;
+  line-height: 1.4;
+  border-left: 2px solid var(--brand);
+  padding-left: 8px;
+  margin: 2px 0;
+}
+.status-indicator-msg {
+  min-height: 0;
+}
+#stop-btn {
+  margin-left: 4px;
+  min-width: 60px;
+}
+#stop-btn:hover {
+  opacity: 0.9;
+}
+#ws-status {
+  font-size: 11px;
+  color: var(--text-2);
+  margin-left: 8px;
+}
