@@ -49,6 +49,8 @@ from ..key_storage import KeyStorage
 from ..rules import RulesStore, RulePriority, RuleScope
 from ..agent_creator import AgentCreator
 from ..orchestrator import OrchestratorEngine, TaskStatus, TaskPriority, AgentBriefing
+from ..suggestions import SuggestionStore
+from ..paths import UserData
 
 logger = logging.getLogger("sawyer-harness.web")
 
@@ -1860,29 +1862,114 @@ def _register_routes(app: FastAPI, state: _AppState):
             "orchestration_runs": state.orchestrator.count(),
         }
 
+    # ----------------------------------------------------------
+    # Suggestions
+    # ----------------------------------------------------------
+
+    @app.get("/api/suggestions")
+    async def list_suggestions(status: str | None = None):
+        """List all user suggestions. Optionally filter by status."""
+        store = SuggestionStore()
+        suggestions = store.list_all(status=status)
+        return {
+            "suggestions": [vars(s) for s in suggestions],
+            "counts": store.count(),
+        }
+
+    @app.post("/api/suggestions")
+    async def create_suggestion(body: dict):
+        """Submit a new suggestion. Requires name and suggestion text.
+        Optionally includes 'biggest_problem' — the user's biggest pain
+        point with their current AI agent.
+        """
+        name = body.get("name", "").strip()
+        suggestion = body.get("suggestion", "").strip()
+        biggest_problem = body.get("biggest_problem", "").strip()
+
+        if not name:
+            raise HTTPException(status_code=400, detail="Name is required (minimum for credit attribution)")
+        if not suggestion:
+            raise HTTPException(status_code=400, detail="Suggestion text is required")
+
+        store = SuggestionStore()
+        entry = store.add(name=name, suggestion=suggestion, biggest_problem=biggest_problem)
+        return vars(entry)
+
+    @app.patch("/api/suggestions/{suggestion_id}")
+    async def update_suggestion(suggestion_id: str, body: dict):
+        """Update suggestion status (acknowledge, mark implemented)."""
+        new_status = body.get("status", "").strip()
+        if new_status not in ("new", "acknowledged", "implemented"):
+            raise HTTPException(status_code=400, detail="Status must be new, acknowledged, or implemented")
+        store = SuggestionStore()
+        entry = store.update_status(suggestion_id, new_status)
+        if entry is None:
+            raise HTTPException(status_code=404, detail="Suggestion not found")
+        return vars(entry)
+
     @app.get("/api/update-check")
     async def check_for_updates():
-        """Check GitHub for the latest release version."""
+        """Check GitHub for new releases. Returns changelog highlights for
+        every version newer than the installed one, so the UI can show
+        what the user would gain by upgrading."""
         import httpx as _httpx
         try:
-            resp = await _httpx.AsyncClient(timeout=5.0).get(
+            client = _httpx.AsyncClient(timeout=5.0)
+            # Fetch the latest release for the primary check
+            resp = await client.get(
                 "https://api.github.com/repos/drc10101/sawyer-agent/releases/latest"
             )
-            if resp.status_code == 200:
-                data = resp.json()
-                latest = data.get("tag_name", "").lstrip("v")
-                # Compare versions
-                current_parts = [int(x) for x in __version__.split(".")]
-                latest_parts = [int(x) for x in latest.split(".")] if latest else [0, 0, 0]
-                update_available = latest_parts > current_parts
-                return {
-                    "current_version": __version__,
-                    "latest_version": latest,
-                    "update_available": update_available,
-                    "release_url": data.get("html_url", ""),
-                    "release_notes": data.get("body", "")[:500] if data.get("body") else "",
-                }
-            return {"current_version": __version__, "latest_version": "unknown", "update_available": False, "error": f"GitHub returned {resp.status_code}"}
+            if resp.status_code != 200:
+                return {"current_version": __version__, "latest_version": "unknown", "update_available": False, "error": f"GitHub returned {resp.status_code}"}
+
+            data = resp.json()
+            latest = data.get("tag_name", "").lstrip("v")
+            current_parts = [int(x) for x in __version__.split(".")]
+            latest_parts = [int(x) for x in latest.split(".")] if latest else [0, 0, 0]
+            update_available = latest_parts > current_parts
+
+            result = {
+                "current_version": __version__,
+                "latest_version": latest,
+                "update_available": update_available,
+                "release_url": data.get("html_url", ""),
+                "release_notes": data.get("body", "")[:500] if data.get("body") else "",
+            }
+
+            # If an update is available, also fetch all releases to build
+            # changelog highlights for every version the user is missing
+            if update_available:
+                try:
+                    all_resp = await client.get(
+                        "https://api.github.com/repos/drc10101/sawyer-agent/releases?per_page=10"
+                    )
+                    if all_resp.status_code == 200:
+                        changelog = []
+                        for release in all_resp.json():
+                            ver = release.get("tag_name", "").lstrip("v")
+                            if not ver:
+                                continue
+                            ver_parts = [int(x) for x in ver.split(".")]
+                            if ver_parts > current_parts:
+                                body = release.get("body", "") or ""
+                                # Extract first line of each bullet as a highlight
+                                highlights = []
+                                for line in body.split("\n"):
+                                    line = line.strip()
+                                    if line.startswith("- ") or line.startswith("* "):
+                                        highlights.append(line.lstrip("-* ").strip())
+                                changelog.append({
+                                    "version": ver,
+                                    "url": release.get("html_url", ""),
+                                    "highlights": highlights[:8],
+                                    "date": release.get("published_at", "")[:10] if release.get("published_at") else "",
+                                })
+                        result["changelog"] = changelog
+                except Exception:
+                    pass  # Non-critical — changelog is optional
+
+            await client.aclose()
+            return result
         except Exception as e:
             return {"current_version": __version__, "latest_version": "unknown", "update_available": False, "error": str(e)}
 
