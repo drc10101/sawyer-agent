@@ -252,6 +252,8 @@ class ModelRouter:
         stats = {}
         for name, provider in self.providers.items():
             stats[name] = {
+                "type": provider.provider_type,
+                "model": provider.model,
                 "health": provider.health.value,
                 "priority": provider.priority,
                 "total_requests": provider.total_requests,
