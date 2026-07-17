@@ -170,7 +170,8 @@ class _AppState:
 
     def __init__(self, config: HarnessConfig):
         self.config = config
-        self.memory = MemoryStore(config.memory.path)
+        memory_path = config.memory.path or str(UserData.memory_db)
+        self.memory = MemoryStore(memory_path)
         self.skills = SkillStore(UserData.skills_dir)
         self.tools = create_default_registry(
             allowed_tools=config.security.allowed_tools or None,

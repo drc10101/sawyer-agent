@@ -29,6 +29,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from .agent import Agent
 from .config import HarnessConfig
+from .paths import UserData
 
 logger = logging.getLogger("sawyer-harness.scheduler")
 
@@ -92,7 +93,8 @@ class CronScheduler:
 
     def __init__(self, config: HarnessConfig, db_path: str | Path | None = None):
         self.config = config
-        self.db_path = Path(db_path or config.memory.path.replace("memory.db", "cron.db"))
+        memory_path = config.memory.path or str(UserData.memory_db)
+        self.db_path = Path(db_path or memory_path.replace("memory.db", "cron.db"))
         self.db_path = self.db_path.expanduser()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._jobs: dict[str, CronJob] = {}
