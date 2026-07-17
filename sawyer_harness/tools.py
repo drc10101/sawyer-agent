@@ -31,6 +31,43 @@ from .paths import UserData
 
 logger = logging.getLogger("sawyer-harness.tools")
 
+# ── TaskKind: classifies tools by what they do ──
+# Used by PermissionMode to decide which tools are available
+
+class TaskKind:
+    """Classification of tool operations for permission scoping."""
+    READ = "read"           # File read, web fetch, memory search — safe, read-only
+    WRITE = "write"         # File write, patch, project_create — modifies disk
+    SHELL = "shell"         # Shell commands — full system access
+    NETWORK = "network"     # Web search, web fetch, HTTP requests — outbound
+    MEMORY = "memory"       # Memory store/search/delete — persistent state
+    SKILL = "skill"         # Skill search/load/list — read-only knowledge
+    SYSTEM = "system"       # Clipboard, git — local system interaction
+
+# ── PermissionMode: capability hierarchy ──
+# ReadOnly:  can read files, search memory, browse web — cannot modify anything
+# ReadWrite: can edit files, run shell — cannot create projects or manage tools
+# All:      full access, no restrictions (current default behavior)
+
+PERMISSION_TOOL_ACCESS = {
+    "readonly": {
+        # Only read-only tools
+        "file_read", "file_search", "web_search", "web_fetch", "http_request",
+        "memory_search", "memory_store", "memory_delete",
+        "skill_search", "skill_load", "skill_list",
+    },
+    "readwrite": {
+        # Read + write tools, no project creation
+        "file_read", "file_write", "file_search", "patch",
+        "web_search", "web_fetch", "http_request",
+        "shell", "git", "code_execute",
+        "memory_search", "memory_store", "memory_delete",
+        "skill_search", "skill_load", "skill_list",
+        "clipboard",
+    },
+    "all": None,  # None = all tools allowed (no filtering)
+}
+
 
 @dataclass
 class ToolResult:
@@ -48,15 +85,16 @@ class ToolDefinition:
     handler: Callable[..., ToolResult]
     requires_sandbox: bool = True
     dangerous: bool = False  # shell, file_write, etc.
-
+    task_kind: str = TaskKind.SYSTEM  # classification for permission scoping
 
 class ToolRegistry:
     """Registry of available tools with audit logging and permission checks."""
 
-    def __init__(self, allowed_tools: list[str] | None = None, denied_paths: list[str] | None = None):
+    def __init__(self, allowed_tools: list[str] | None = None, denied_paths: list[str] | None = None, permission_mode: str = "all"):
         self._tools: dict[str, ToolDefinition] = {}
         self._allowed_tools = set(allowed_tools) if allowed_tools else None  # None = all allowed
         self._denied_paths = [str(p) for p in (denied_paths or [])]
+        self._permission_mode = permission_mode  # readonly, readwrite, all
         self._audit_log: list[dict] = []
         # Shared context: memory_store, skill_store, etc. set by the server.
         self._context: dict[str, Any] = {}
@@ -70,10 +108,18 @@ class ToolRegistry:
         self._tools[tool.name] = tool
 
     def list_tools(self) -> list[dict]:
-        """Return tool schemas for LLM function calling."""
+        """Return tool schemas for LLM function calling.
+
+        Filters by both allowed_tools list and permission_mode.
+        """
         schemas = []
+        # Determine which tools are accessible by permission mode
+        permission_allowed = PERMISSION_TOOL_ACCESS.get(self._permission_mode, None)
         for name, tool in self._tools.items():
             if self._allowed_tools and name not in self._allowed_tools:
+                continue
+            # Permission mode filtering
+            if permission_allowed is not None and name not in permission_allowed:
                 continue
             schemas.append({
                 "type": "function",
@@ -94,6 +140,15 @@ class ToolRegistry:
             return ToolResult(
                 success=False, output="",
                 error=f"Tool '{tool_name}' is not in the allowed tools list",
+            )
+
+        # Permission mode check
+        permission_allowed = PERMISSION_TOOL_ACCESS.get(self._permission_mode, None)
+        if permission_allowed is not None and tool_name not in permission_allowed:
+            return ToolResult(
+                success=False, output="",
+                error=f"Tool '{tool_name}' is not available in {self._permission_mode} mode. "
+                      f"Upgrade to 'readwrite' or 'all' to use this tool.",
             )
 
         tool = self._tools[tool_name]
@@ -1002,9 +1057,10 @@ def _make_clawhub_import_handler(registry: ToolRegistry) -> Callable[..., ToolRe
 def create_default_registry(
     allowed_tools: list[str] | None = None,
     denied_paths: list[str] | None = None,
+    permission_mode: str = "all",
 ) -> ToolRegistry:
     """Create a registry with built-in tools."""
-    registry = ToolRegistry(allowed_tools=allowed_tools, denied_paths=denied_paths)
+    registry = ToolRegistry(allowed_tools=allowed_tools, denied_paths=denied_paths, permission_mode=permission_mode)
 
     # --- Core tools ---
     registry.register(ToolDefinition(
@@ -1022,6 +1078,7 @@ def create_default_registry(
         handler=_shell_handler,
         requires_sandbox=True,
         dangerous=True,
+        task_kind=TaskKind.SHELL,
     ))
 
     registry.register(ToolDefinition(
@@ -1039,6 +1096,7 @@ def create_default_registry(
         handler=_file_read_handler,
         requires_sandbox=False,
         dangerous=True,
+        task_kind=TaskKind.READ,
     ))
 
     registry.register(ToolDefinition(
@@ -1055,6 +1113,7 @@ def create_default_registry(
         handler=_file_write_handler,
         requires_sandbox=False,
         dangerous=True,
+        task_kind=TaskKind.WRITE,
     ))
 
     registry.register(ToolDefinition(
@@ -1073,6 +1132,7 @@ def create_default_registry(
         handler=_file_search_handler,
         requires_sandbox=True,
         dangerous=False,
+        task_kind=TaskKind.READ,
     ))
 
     # --- Web tools ---
@@ -1090,6 +1150,7 @@ def create_default_registry(
         handler=_web_search_handler,
         requires_sandbox=False,
         dangerous=False,
+        task_kind=TaskKind.NETWORK,
     ))
 
     registry.register(ToolDefinition(
@@ -1106,6 +1167,7 @@ def create_default_registry(
         handler=_web_fetch_handler,
         requires_sandbox=False,
         dangerous=False,
+        task_kind=TaskKind.NETWORK,
     ))
 
     # --- Code execution ---
@@ -1124,6 +1186,7 @@ def create_default_registry(
         handler=_code_execute_handler,
         requires_sandbox=True,
         dangerous=False,
+        task_kind=TaskKind.SHELL,
     ))
 
     # --- Memory tools (backed by closure -- context set at runtime) ---
@@ -1141,6 +1204,7 @@ def create_default_registry(
         handler=_make_memory_search_handler(registry),
         requires_sandbox=False,
         dangerous=False,
+        task_kind=TaskKind.MEMORY,
     ))
 
     registry.register(ToolDefinition(
@@ -1158,6 +1222,7 @@ def create_default_registry(
         handler=_make_memory_store_handler(registry),
         requires_sandbox=False,
         dangerous=False,
+        task_kind=TaskKind.MEMORY,
     ))
 
     registry.register(ToolDefinition(
@@ -1173,6 +1238,7 @@ def create_default_registry(
         handler=_make_memory_delete_handler(registry),
         requires_sandbox=False,
         dangerous=False,
+        task_kind=TaskKind.MEMORY,
     ))
 
     # --- Skill tools (backed by closure -- context set at runtime) ---
@@ -1190,6 +1256,7 @@ def create_default_registry(
         handler=_make_skill_search_handler(registry),
         requires_sandbox=False,
         dangerous=False,
+        task_kind=TaskKind.SKILL,
     ))
 
     registry.register(ToolDefinition(
@@ -1205,6 +1272,7 @@ def create_default_registry(
         handler=_make_skill_load_handler(registry),
         requires_sandbox=False,
         dangerous=False,
+        task_kind=TaskKind.SKILL,
     ))
 
     registry.register(ToolDefinition(
@@ -1220,6 +1288,7 @@ def create_default_registry(
         handler=_make_skill_list_handler(registry),
         requires_sandbox=False,
         dangerous=False,
+        task_kind=TaskKind.SKILL,
     ))
 
     # --- Git tool ---
@@ -1238,6 +1307,7 @@ def create_default_registry(
         handler=_git_handler,
         requires_sandbox=True,
         dangerous=True,
+        task_kind=TaskKind.SHELL,
     ))
 
     # --- Patch tool ---
@@ -1257,6 +1327,7 @@ def create_default_registry(
         handler=_patch_handler,
         requires_sandbox=False,
         dangerous=True,
+        task_kind=TaskKind.WRITE,
     ))
 
     # --- HTTP request tool ---
@@ -1277,6 +1348,7 @@ def create_default_registry(
         handler=_http_request_handler,
         requires_sandbox=False,
         dangerous=False,
+        task_kind=TaskKind.NETWORK,
     ))
 
     # --- Clipboard tool ---
@@ -1293,6 +1365,7 @@ def create_default_registry(
         handler=_clipboard_handler,
         requires_sandbox=False,
         dangerous=False,
+        task_kind=TaskKind.SYSTEM,
     ))
 
     # --- Project scaffold tool ---
@@ -1311,6 +1384,7 @@ def create_default_registry(
         handler=_project_create_handler,
         requires_sandbox=False,
         dangerous=False,
+        task_kind=TaskKind.WRITE,
     ))
 
     # --- ClawHub import tool ---
@@ -1334,6 +1408,7 @@ def create_default_registry(
         handler=_make_clawhub_import_handler(registry),
         requires_sandbox=False,
         dangerous=False,
+        task_kind=TaskKind.NETWORK,
     ))
 
     return registry

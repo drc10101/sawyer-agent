@@ -30,7 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from ..agent import Agent
-from ..config import HarnessConfig, VERBOSITY_LEVELS, AGREEABILITY_LEVELS, REASONING_LEVELS, COMPACTION_LEVELS
+from ..config import HarnessConfig, VERBOSITY_LEVELS, AGREEABILITY_LEVELS, REASONING_LEVELS, COMPACTION_LEVELS, PERMISSION_MODES
 from .. import __version__
 from ..llm import LLMClient
 from ..memory import MemoryStore
@@ -109,6 +109,7 @@ class AgentConfigUpdate(BaseModel):
     agreeability: str | None = None   # agreeable | balanced | honest
     reasoning: str | None = None      # low | medium | medium_high | high
     compaction_policy: str | None = None  # conservative | balanced | aggressive
+    permission_mode: str | None = None    # readonly | readwrite | all
 
 class ToolToggle(BaseModel):
     tool_name: str
@@ -173,6 +174,7 @@ class _AppState:
         self.tools = create_default_registry(
             allowed_tools=config.security.allowed_tools or None,
             denied_paths=config.security.denied_paths,
+            permission_mode=config.security.permission_mode,
         )
         # Load user tools from ~/.sawyer-harness/tools/ (survives upgrades)
         from ..user_tools import load_user_tools
@@ -582,6 +584,7 @@ def _register_routes(app: FastAPI, state: _AppState):
                 "recency_pct": state.config.compaction.recency_pct,
                 "presets": list(CompactionPolicy.PRESETS.keys()),
             },
+            "permission_mode": state.config.security.permission_mode,
         }
 
     @app.post("/api/agent-config")
@@ -638,6 +641,21 @@ def _register_routes(app: FastAPI, state: _AppState):
                     "recency_pct": state.config.compaction.recency_pct,
                 }),
             )
+        if update.permission_mode is not None:
+            if update.permission_mode not in PERMISSION_MODES:
+                raise HTTPException(status_code=400, detail=f"permission_mode must be one of: {', '.join(PERMISSION_MODES)}")
+            state.config.security.permission_mode = update.permission_mode
+            # Rebuild tool registry with new permission mode
+            state.tools = create_default_registry(
+                allowed_tools=state.config.security.allowed_tools or None,
+                denied_paths=state.config.security.denied_paths,
+                permission_mode=state.config.security.permission_mode,
+            )
+            # Reload user tools into new registry
+            from ..user_tools import load_user_tools
+            load_user_tools(state.tools)
+            # Re-set context on new registry
+            state.tools.set_context(memory_store=state.memory, skill_store=state.skills)
         return {"status": "updated", "agent_config": {
             "max_tool_rounds": state.config.agent.max_tool_rounds,
             "verbosity": state.config.agent.verbosity,
@@ -654,6 +672,7 @@ def _register_routes(app: FastAPI, state: _AppState):
                 "recency_pct": state.config.compaction.recency_pct,
                 "presets": list(CompactionPolicy.PRESETS.keys()),
             },
+            "permission_mode": state.config.security.permission_mode,
         }}
 
     # ----------------------------------------------------------
@@ -2599,6 +2618,7 @@ def _register_routes(app: FastAPI, state: _AppState):
         tools = create_default_registry(
             allowed_tools=allowed or None,
             denied_paths=config.security.denied_paths,
+            permission_mode=config.security.permission_mode,
         )
 
         llm = LLMClient(config.llm, tool_registry=tools)

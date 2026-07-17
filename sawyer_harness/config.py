@@ -53,9 +53,13 @@ class AgentConfig:
     reasoning: str = "medium"      # low | medium | medium_high | high
 
 
+# Permission modes — replaces the old sandbox boolean with a capability hierarchy
+PERMISSION_MODES = ("readonly", "readwrite", "all")
+
 @dataclass
 class SecurityConfig:
-    sandbox: bool = True
+    sandbox: bool = True  # Kept for backward compat; permission_mode takes precedence
+    permission_mode: str = "all"  # readonly | readwrite | all
     allowed_tools: list[str] = field(default_factory=list)
     denied_paths: list[str] = field(default_factory=lambda: [
         "/etc/passwd", "/etc/shadow", "/root/.ssh",
@@ -180,6 +184,7 @@ class HarnessConfig:
             ),
             security=SecurityConfig(
                 sandbox=sec_data.get("sandbox", True),
+                permission_mode=sec_data.get("permission_mode", "all"),
                 allowed_tools=sec_data.get("allowed_tools", []),
                 denied_paths=sec_data.get("denied_paths", []),
                 max_command_timeout=sec_data.get("max_command_timeout", 300),
@@ -240,6 +245,7 @@ class HarnessConfig:
             },
             "security": {
                 "sandbox": self.security.sandbox,
+                "permission_mode": self.security.permission_mode,
                 "max_command_timeout": self.security.max_command_timeout,
             },
             "memory": {
