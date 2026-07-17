@@ -50,6 +50,58 @@ VERBOSITY_PROMPTS = {
     ),
 }
 
+# Agreeability: controls whether the agent tells the user what they want
+# to hear or gives honest/truthful suggestions
+AGREEABILITY_PROMPTS = {
+    "agreeable": (
+        "\n## Response Style: Agreeable\n"
+        "Prioritize what the user wants to hear. Be supportive and encouraging. "
+        "If the user has an idea, explore how to make it work rather than pointing out flaws. "
+        "Offer alternatives only if the user's approach truly cannot work. "
+        "Be constructive, not critical.\n"
+    ),
+    "balanced": (
+        "\n## Response Style: Balanced\n"
+        "Be honest and direct, but tactful. If something won't work, say so clearly "
+        "and offer alternatives. Validate good ideas, challenge bad ones constructively. "
+        "Present options and trade-offs so the user can decide.\n"
+    ),
+    "honest": (
+        "\n## Response Style: Honest\n"
+        "Always tell the truth, even when it's not what the user wants to hear. "
+        "Point out flaws directly. Challenge assumptions. If something is a bad idea, "
+        "say so and explain why. Prioritize correctness over comfort. "
+        "Never sugar-coat or agree just to please.\n"
+    ),
+}
+
+# Reasoning depth: controls how deeply the model thinks before responding
+REASONING_PROMPTS = {
+    "low": (
+        "\n## Reasoning: Quick\n"
+        "Answer directly with minimal explanation. Skip step-by-step reasoning. "
+        "Give the answer and move on. Think fast, respond fast.\n"
+    ),
+    "medium": (
+        "\n## Reasoning: Standard\n"
+        "Think through the problem normally. Show key reasoning steps. "
+        "Explain your logic when it matters, skip it when it's obvious.\n"
+    ),
+    "medium_high": (
+        "\n## Reasoning: Thorough\n"
+        "Think through the problem carefully. Show your reasoning process. "
+        "Consider edge cases and alternatives. Explain why you chose this approach "
+        "over others. Verify your answer before responding.\n"
+    ),
+    "high": (
+        "\n## Reasoning: Deep\n"
+        "Think deeply about every aspect of the problem. Walk through your full reasoning "
+        "chain. Consider all edge cases, failure modes, and alternatives. Verify each step. "
+        "Challenge your own assumptions. Provide thorough analysis before your conclusion. "
+        "Show all work.\n"
+    ),
+}
+
 # Injected on the final turn when approaching the tool round limit or context pressure
 WRAP_UP_INSTRUCTION = (
     "\n## Important: Final Turn\n"
@@ -163,6 +215,14 @@ class Agent:
         else:
             vlevel = "normal"
         parts.append(VERBOSITY_PROMPTS.get(vlevel, VERBOSITY_PROMPTS["normal"]))
+
+        # Inject agreeability style from config
+        agreeability = getattr(self.config.agent, "agreeability", "balanced") if hasattr(self.config, "agent") and self.config.agent else "balanced"
+        parts.append(AGREEABILITY_PROMPTS.get(agreeability, AGREEABILITY_PROMPTS["balanced"]))
+
+        # Inject reasoning depth from config
+        reasoning = getattr(self.config.agent, "reasoning", "medium") if hasattr(self.config, "agent") and self.config.agent else "medium"
+        parts.append(REASONING_PROMPTS.get(reasoning, REASONING_PROMPTS["medium"]))
 
         # Inject wrap-up instruction on final turn
         if wrap_up:

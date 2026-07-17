@@ -30,13 +30,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from ..agent import Agent
-from ..config import HarnessConfig, VERBOSITY_LEVELS
+from ..config import HarnessConfig, VERBOSITY_LEVELS, AGREEABILITY_LEVELS, REASONING_LEVELS
 from .. import __version__
 from ..llm import LLMClient
 from ..memory import MemoryStore
 from ..routing import ModelRouter, ProviderEndpoint, ProviderHealth, TaskType
 from ..scheduler import CronJob, CronScheduler, ScheduleType
 from ..skills import Skill, SkillStore
+from ..scoring import SessionScore, SCORING_QUESTIONS, compute_trends
+from ..lkg import LKGStore
 from ..tools import create_default_registry
 from ..compression import ContextCompressor
 from ..session_engine import SessionEngine
@@ -102,15 +104,26 @@ class AgentConfigUpdate(BaseModel):
     model: str | None = None          # LLM model name (e.g. "glm-5.1:cloud")
     provider: str | None = None       # LLM provider (e.g. "ollama")
     base_url: str | None = None       # LLM base URL
-
-class ToolToggle(BaseModel):
-    max_tool_rounds: int | None = None
-    verbosity: str | None = None      # concise | normal | thorough
-    stream_tool_output: bool | None = None
+    agreeability: str | None = None   # agreeable | balanced | honest
+    reasoning: str | None = None      # low | medium | medium_high | high
 
 class ToolToggle(BaseModel):
     tool_name: str
     enabled: bool
+
+class SessionScoreSubmit(BaseModel):
+    session_id: str
+    scores: dict[str, int]      # question_key -> rating (1-5)
+    free_text: str = ""
+
+class LKGMarkRequest(BaseModel):
+    commit: str = ""     # empty = current HEAD
+    tag: str = ""
+    note: str = ""
+    session_score_id: str = ""
+
+class LKGRevertRequest(BaseModel):
+    tag: str = ""        # empty = revert to latest LKG
 
 
 # ============================================================
@@ -209,6 +222,7 @@ class _AppState:
         self.rules_store = RulesStore()
         self.agent_creator = AgentCreator()
         self.orchestrator = OrchestratorEngine()
+        self.lkg_store = LKGStore()
         self.current_project: Project | None = None
         self.upload_dir = Path("~/.sawyer-harness/uploads").expanduser()
         self.upload_dir.mkdir(parents=True, exist_ok=True)
@@ -547,6 +561,8 @@ def _register_routes(app: FastAPI, state: _AppState):
             "model": state.config.llm.model,
             "provider": state.config.llm.provider,
             "base_url": state.config.llm.base_url,
+            "agreeability": state.config.agent.agreeability,
+            "reasoning": state.config.agent.reasoning,
         }
 
     @app.post("/api/agent-config")
@@ -581,6 +597,14 @@ def _register_routes(app: FastAPI, state: _AppState):
             state.config.llm.provider = update.provider
         if update.base_url is not None:
             state.config.llm.base_url = update.base_url
+        if update.agreeability is not None:
+            if update.agreeability not in ("agreeable", "balanced", "honest"):
+                raise HTTPException(status_code=400, detail="agreeability must be one of: agreeable, balanced, honest")
+            state.config.agent.agreeability = update.agreeability
+        if update.reasoning is not None:
+            if update.reasoning not in ("low", "medium", "medium_high", "high"):
+                raise HTTPException(status_code=400, detail="reasoning must be one of: low, medium, medium_high, high")
+            state.config.agent.reasoning = update.reasoning
         return {"status": "updated", "agent_config": {
             "max_tool_rounds": state.config.agent.max_tool_rounds,
             "verbosity": state.config.agent.verbosity,
@@ -589,7 +613,130 @@ def _register_routes(app: FastAPI, state: _AppState):
             "model": state.config.llm.model,
             "provider": state.config.llm.provider,
             "base_url": state.config.llm.base_url,
+            "agreeability": state.config.agent.agreeability,
+            "reasoning": state.config.agent.reasoning,
         }}
+
+    # ----------------------------------------------------------
+    # Session Scoring
+    # ----------------------------------------------------------
+
+    @app.get("/api/scoring/questions")
+    async def get_scoring_questions():
+        """Get the session scoring question set."""
+        return {"questions": {k: v for k, v in SCORING_QUESTIONS.items()}}
+
+    @app.post("/api/scoring/submit")
+    async def submit_session_score(submission: SessionScoreSubmit):
+        """Submit a session score."""
+        # Validate scores
+        for key, value in submission.scores.items():
+            if key not in SCORING_QUESTIONS:
+                raise HTTPException(status_code=400, detail=f"Unknown question: {key}")
+            if not (1 <= value <= 5):
+                raise HTTPException(status_code=400, detail=f"Score for {key} must be 1-5, got {value}")
+
+        # Snapshot current agent config
+        agent_config = {
+            "model": state.config.llm.model,
+            "provider": state.config.llm.provider,
+            "verbosity": state.config.agent.verbosity,
+            "agreeability": state.config.agent.agreeability,
+            "reasoning": state.config.agent.reasoning,
+        }
+
+        score = SessionScore(
+            session_id=submission.session_id,
+            scores=submission.scores,
+            free_text=submission.free_text,
+            agent_config=agent_config,
+        )
+        path = score.save()
+        return {"status": "saved", "average": score.average(), "path": str(path)}
+
+    @app.get("/api/scoring/history")
+    async def get_scoring_history(limit: int = 50):
+        """Get scoring history and trends."""
+        scores = SessionScore.list_all(limit=limit)
+        trends = compute_trends(scores)
+        return {
+            "scores": [
+                {
+                    "session_id": s.session_id,
+                    "timestamp": s.timestamp,
+                    "scores": s.scores,
+                    "average": s.average(),
+                    "free_text": s.free_text,
+                    "agent_config": s.agent_config,
+                }
+                for s in scores
+            ],
+            "trends": trends,
+            "total_sessions": len(scores),
+        }
+
+    # ----------------------------------------------------------
+    # Last Known Good (LKG)
+    # ----------------------------------------------------------
+
+    @app.get("/api/lkg")
+    async def list_lkg(limit: int = 20):
+        """List all last-known-good versions."""
+        entries = state.lkg_store.list_all(limit=limit)
+        latest = state.lkg_store.get_latest()
+        return {
+            "entries": [
+                {
+                    "commit": e.commit,
+                    "tag": e.tag,
+                    "timestamp": e.timestamp,
+                    "note": e.note,
+                    "average_score": e.average_score,
+                    "session_score_id": e.session_score_id,
+                }
+                for e in entries
+            ],
+            "latest": {
+                "commit": latest.commit,
+                "tag": latest.tag,
+                "timestamp": latest.timestamp,
+                "note": latest.note,
+            } if latest else None,
+        }
+
+    @app.post("/api/lkg/mark")
+    async def mark_lkg(request: LKGMarkRequest):
+        """Mark current commit (or a specific one) as last known good."""
+        # If linked to a scoring session, pull the average score
+        avg_score = 0.0
+        if request.session_score_id:
+            score = SessionScore.load(request.session_score_id)
+            if score:
+                avg_score = score.average()
+
+        entry = state.lkg_store.mark_good(
+            commit=request.commit,
+            tag=request.tag,
+            note=request.note,
+            session_score_id=request.session_score_id,
+            average_score=avg_score,
+        )
+        return {
+            "status": "marked",
+            "commit": entry.commit,
+            "tag": entry.tag,
+            "timestamp": entry.timestamp,
+            "average_score": entry.average_score,
+        }
+
+    @app.post("/api/lkg/revert")
+    async def revert_lkg(request: LKGRevertRequest):
+        """Revert to a last-known-good version."""
+        if request.tag:
+            result = state.lkg_store.revert_to_tag(request.tag)
+        else:
+            result = state.lkg_store.revert_to_latest()
+        return result
 
     # ----------------------------------------------------------
     # Skills

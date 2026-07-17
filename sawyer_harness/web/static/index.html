@@ -278,6 +278,57 @@
             </label>
           </div>
 
+          <!-- Agreeability -->
+          <div class="ctrl-card" style="margin-bottom:12px">
+            <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Agreeability</h4>
+            <p style="font-size:12px;color:var(--text-2);margin-bottom:10px">
+              <strong>Agreeable</strong> tells you what you want to hear. <strong>Balanced</strong> is honest but tactful. <strong>Honest</strong> always tells the truth, even when it stings.
+            </p>
+            <div style="display:flex;gap:8px" id="agreeability-buttons">
+              <button class="btn btn--subtle btn-sm" data-agreeability="agreeable" onclick="setAgreeability('agreeable')">Agreeable</button>
+              <button class="btn btn--primary btn-sm" data-agreeability="balanced" onclick="setAgreeability('balanced')">Balanced</button>
+              <button class="btn btn--subtle btn-sm" data-agreeability="honest" onclick="setAgreeability('honest')">Honest</button>
+            </div>
+          </div>
+
+          <!-- Reasoning Depth -->
+          <div class="ctrl-card" style="margin-bottom:12px">
+            <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Reasoning Depth</h4>
+            <p style="font-size:12px;color:var(--text-2);margin-bottom:10px">
+              <strong>Low</strong> answers fast with minimal explanation. <strong>Medium</strong> shows key steps. <strong>Medium-High</strong> considers edge cases. <strong>High</strong> shows full reasoning chain and verifies each step.
+            </p>
+            <div style="display:flex;gap:8px" id="reasoning-buttons">
+              <button class="btn btn--subtle btn-sm" data-reasoning="low" onclick="setReasoning('low')">Low</button>
+              <button class="btn btn--primary btn-sm" data-reasoning="medium" onclick="setReasoning('medium')">Medium</button>
+              <button class="btn btn--subtle btn-sm" data-reasoning="medium_high" onclick="setReasoning('medium_high')">Medium-High</button>
+              <button class="btn btn--subtle btn-sm" data-reasoning="high" onclick="setReasoning('high')">High</button>
+            </div>
+          </div>
+
+          <!-- Version Control -->
+          <div class="ctrl-card" style="margin-bottom:12px">
+            <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Version Control</h4>
+            <p style="font-size:12px;color:var(--text-2);margin-bottom:10px">
+              Mark a version as "last known good" when things are working. Revert to it if something breaks.
+            </p>
+            <div style="display:flex;gap:8px;margin-bottom:10px">
+              <button class="btn btn--primary btn-sm" onclick="markLKG()">Mark Current as Good</button>
+              <button class="btn btn--danger btn-sm" onclick="revertToLKG()">Revert to Last Known Good</button>
+            </div>
+            <input type="text" id="lkg-note" placeholder="Note: What's working well?"
+              style="width:100%;background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px;margin-bottom:8px">
+            <div id="lkg-history" style="max-height:150px;overflow-y:auto"></div>
+          </div>
+
+          <!-- Session Scores -->
+          <div class="ctrl-card" style="margin-bottom:12px">
+            <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Session Scores</h4>
+            <p style="font-size:12px;color:var(--text-2);margin-bottom:10px">
+              Rate sessions to track agent quality over time. Higher honesty scores mean the agreeability setting is working.
+            </p>
+            <div id="score-history" style="max-height:150px;overflow-y:auto"></div>
+          </div>
+
           <div id="agent-config-status" style="font-size:12px;color:var(--text-2);margin-top:8px"></div>
         </div>
       </div>
@@ -914,7 +965,7 @@ function switchPanel(panel) {
     cron:'Cron',context:'Memory',keys:'Keys',rules:'Rules',agents:'Sub-Agents',orchestration:'Orchestrate'};
   document.getElementById('panel-title').textContent = titles[panel] || panel;
   if (panel === 'models') loadModels();
-  if (panel === 'settings') loadAgentConfig();
+  if (panel === 'settings') { loadAgentConfig(); loadLKGHistory(); loadScoreHistory(); }
   if (panel === 'goals') loadGoals();
   if (panel === 'tools') { loadTools(); loadUserTools(); }
   if (panel === 'cron') loadCron();
@@ -1652,6 +1703,16 @@ async function loadAgentConfig() {
     valueSpan.textContent = data.max_tool_rounds;
     // Set stream toggle
     document.getElementById('stream-tool-output-toggle').checked = data.stream_tool_output;
+    // Set agreeability button states
+    document.querySelectorAll('#agreeability-buttons button').forEach(btn => {
+      const a = btn.getAttribute('data-agreeability');
+      btn.className = a === (data.agreeability || 'balanced') ? 'btn btn--primary btn-sm' : 'btn btn--subtle btn-sm';
+    });
+    // Set reasoning button states
+    document.querySelectorAll('#reasoning-buttons button').forEach(btn => {
+      const r = btn.getAttribute('data-reasoning');
+      btn.className = r === (data.reasoning || 'medium') ? 'btn btn--primary btn-sm' : 'btn btn--subtle btn-sm';
+    });
     // Set main model
     document.getElementById('main-model').value = data.model || '';
     // Set provider dropdown
@@ -1720,6 +1781,143 @@ async function setMode(mode) {
     }
   } catch(e) {
     console.error('setMode error:', e);
+  }
+}
+
+async function setAgreeability(level) {
+  try {
+    const res = await fetch(API + '/api/agent-config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({agreeability: level})
+    });
+    const data = await res.json();
+    if (res.ok) {
+      document.querySelectorAll('#agreeability-buttons button').forEach(btn => {
+        btn.className = btn.getAttribute('data-agreeability') === level ? 'btn btn--primary btn-sm' : 'btn btn--subtle btn-sm';
+      });
+      document.getElementById('agent-config-status').textContent = 'Agreeability: ' + level;
+      document.getElementById('agent-config-status').style.color = 'var(--brand)';
+    } else {
+      document.getElementById('agent-config-status').textContent = 'Error: ' + (data.detail || 'Unknown error');
+      document.getElementById('agent-config-status').style.color = 'var(--danger, #f44)';
+    }
+  } catch(e) {
+    console.error('setAgreeability error:', e);
+  }
+}
+
+async function setReasoning(level) {
+  try {
+    const res = await fetch(API + '/api/agent-config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({reasoning: level})
+    });
+    const data = await res.json();
+    if (res.ok) {
+      document.querySelectorAll('#reasoning-buttons button').forEach(btn => {
+        btn.className = btn.getAttribute('data-reasoning') === level ? 'btn btn--primary btn-sm' : 'btn btn--subtle btn-sm';
+      });
+      document.getElementById('agent-config-status').textContent = 'Reasoning: ' + level;
+      document.getElementById('agent-config-status').style.color = 'var(--brand)';
+    } else {
+      document.getElementById('agent-config-status').textContent = 'Error: ' + (data.detail || 'Unknown error');
+      document.getElementById('agent-config-status').style.color = 'var(--danger, #f44)';
+    }
+  } catch(e) {
+    console.error('setReasoning error:', e);
+  }
+}
+
+async function markLKG() {
+  const note = document.getElementById('lkg-note')?.value || '';
+  try {
+    const res = await fetch(API + '/api/lkg/mark', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({note: note})
+    });
+    const data = await res.json();
+    if (data.status === 'marked') {
+      document.getElementById('agent-config-status').textContent = 'Marked as good: ' + data.tag;
+      document.getElementById('agent-config-status').style.color = 'var(--brand)';
+      document.getElementById('lkg-note').value = '';
+      loadLKGHistory();
+    } else {
+      document.getElementById('agent-config-status').textContent = 'Error: ' + (data.error || 'Unknown');
+      document.getElementById('agent-config-status').style.color = 'var(--danger, #f44)';
+    }
+  } catch(e) {
+    console.error('markLKG error:', e);
+  }
+}
+
+async function revertToLKG() {
+  if (!confirm('Revert to the last known good version? Uncommitted changes will be stashed.')) return;
+  try {
+    const res = await fetch(API + '/api/lkg/revert', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({})
+    });
+    const data = await res.json();
+    if (data.status === 'reverted') {
+      alert('Reverted to ' + data.tag + ' (' + (data.commit || '').substring(0, 8) + '). Restart Sawyer for changes to take effect.');
+    } else {
+      alert('Revert failed: ' + (data.error || 'Unknown error'));
+    }
+  } catch(e) {
+    alert('Revert failed: ' + e.message);
+  }
+}
+
+async function loadLKGHistory() {
+  try {
+    const res = await fetch(API + '/api/lkg');
+    const data = await res.json();
+    const container = document.getElementById('lkg-history');
+    if (!container) return;
+    if (!data.entries || data.entries.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-2);font-size:12px;padding:4px 0">No versions marked as good yet.</div>';
+      return;
+    }
+    container.innerHTML = data.entries.slice(0, 10).map(e => {
+      const date = e.timestamp ? new Date(e.timestamp).toLocaleDateString() : '';
+      return '<div style="padding:4px 0;border-bottom:1px solid var(--border-1);font-size:12px">' +
+        '<span style="color:var(--brand);font-weight:600">' + e.tag + '</span> ' +
+        '<span style="color:var(--text-2);font-family:monospace;font-size:11px">' + (e.commit || '').substring(0, 8) + '</span> ' +
+        (e.note ? '<span style="color:var(--text-2)">' + e.note + '</span> ' : '') +
+        '<span style="float:right;color:var(--text-2);font-size:11px">' + date + '</span>' +
+        '</div>';
+    }).join('');
+  } catch(e) {
+    console.error('loadLKGHistory error:', e);
+  }
+}
+
+async function loadScoreHistory() {
+  try {
+    const res = await fetch(API + '/api/scoring/history?limit=10');
+    const data = await res.json();
+    const container = document.getElementById('score-history');
+    if (!container) return;
+    if (!data.scores || data.scores.length === 0) {
+      container.innerHTML = '<div style="color:var(--text-2);font-size:12px;padding:4px 0">No session scores yet.</div>';
+      return;
+    }
+    container.innerHTML = data.scores.map(s => {
+      const dims = Object.entries(s.scores).map(([k, v]) =>
+        '<span style="color:var(--text-2)">' + k + '</span>: <span style="color:var(--brand);font-weight:600">' + v + '/5</span>'
+      ).join(' &middot; ');
+      const date = s.timestamp ? new Date(s.timestamp).toLocaleDateString() : '';
+      return '<div style="padding:4px 0;border-bottom:1px solid var(--border-1);font-size:12px">' +
+        '<strong style="color:var(--brand)">' + s.average.toFixed(1) + '/5.0</strong> &middot; ' + dims +
+        '<span style="float:right;color:var(--text-2);font-size:11px">' + date + '</span>' +
+        '</div>';
+    }).join('');
+  } catch(e) {
+    console.error('loadScoreHistory error:', e);
   }
 }
 
@@ -3280,6 +3478,84 @@ loadStatus();
 checkForUpdates();
 setInterval(checkForUpdates, 6 * 60 * 60 * 1000);  // Recheck every 6 hours
 lucide.createIcons();
+
+// Session scoring
+let scoringSessionId = '';
+let scoringData = {};
+
+async function showScoringModal(sessionId) {
+  scoringSessionId = sessionId || '';
+  scoringData = {};
+  try {
+    const resp = await fetch(API + '/api/scoring/questions');
+    const data = await resp.json();
+    const container = document.getElementById('scoring-questions');
+    container.innerHTML = '';
+    for (const [key, question] of Object.entries(data.questions)) {
+      scoringData[key] = 0;
+      const div = document.createElement('div');
+      div.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border-1)';
+      const label = document.createElement('label');
+      label.style.cssText = 'flex:1;font-size:13px;color:var(--text-0)';
+      label.textContent = question;
+      const stars = document.createElement('div');
+      stars.style.cssText = 'display:flex;gap:4px';
+      for (let n = 1; n <= 5; n++) {
+        const btn = document.createElement('button');
+        btn.style.cssText = 'width:28px;height:28px;border:2px solid var(--border-1);border-radius:50%;cursor:pointer;background:transparent;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-2);transition:all 0.15s';
+        btn.textContent = n;
+        btn.onclick = function() {
+          scoringData[key] = n;
+          stars.querySelectorAll('button').forEach(b => {
+            const bv = parseInt(b.textContent);
+            b.style.borderColor = bv <= n ? 'var(--brand)' : 'var(--border-1)';
+            b.style.background = bv <= n ? 'var(--brand)' : 'transparent';
+            b.style.color = bv <= n ? '#000' : 'var(--text-2)';
+          });
+        };
+        stars.appendChild(btn);
+      }
+      div.appendChild(label);
+      div.appendChild(stars);
+      container.appendChild(div);
+    }
+  } catch(e) {
+    console.error('Failed to load scoring questions:', e);
+    return;
+  }
+  const modal = document.getElementById('scoring-modal');
+  modal.style.display = 'flex';
+}
+
+function closeScoringModal() {
+  document.getElementById('scoring-modal').style.display = 'none';
+}
+
+async function submitScore() {
+  const scores = {};
+  for (const [key, value] of Object.entries(scoringData)) {
+    if (value > 0) scores[key] = value;
+  }
+  if (Object.keys(scores).length === 0) {
+    closeScoringModal();
+    return;
+  }
+  const comment = document.getElementById('scoring-comment')?.value || '';
+  try {
+    await fetch(API + '/api/scoring/submit', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        session_id: scoringSessionId,
+        scores: scores,
+        free_text: comment,
+      }),
+    });
+  } catch(e) {
+    console.error('submitScore error:', e);
+  }
+  closeScoringModal();
+}
 </script>
 
 <!-- Upgrade overlay -->
@@ -3290,6 +3566,26 @@ lucide.createIcons();
     <p id="upgrade-status" style="font-size:14px;color:var(--text-2,#aaa);margin:0 0 20px">Downloading latest version...</p>
     <div id="upgrade-progress" style="width:100%;height:4px;background:rgba(255,255,255,0.2);border-radius:2px;overflow:hidden">
       <div id="upgrade-bar" style="width:10%;height:100%;background:var(--brand,#12c7ef);border-radius:2px;transition:width 0.5s"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Session Scoring Modal -->
+<div id="scoring-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:10000;align-items:center;justify-content:center">
+  <div style="background:var(--bg-1);border:1px solid var(--border-1);border-radius:12px;max-width:520px;width:90%;max-height:80vh;overflow-y:auto;padding:24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 style="color:var(--brand);font-size:16px;margin:0">Rate This Session</h3>
+      <button onclick="closeScoringModal()" style="background:none;border:none;color:var(--text-2);font-size:20px;cursor:pointer">&times;</button>
+    </div>
+    <div id="scoring-questions" style="padding:8px 0"></div>
+    <div style="margin-top:12px">
+      <label style="font-size:12px;color:var(--text-2);display:block;margin-bottom:4px">Any additional feedback?</label>
+      <textarea id="scoring-comment" placeholder="What worked? What didn't? What should improve?" rows="3"
+        style="width:100%;background:var(--bg-0);border:1px solid var(--border-1);border-radius:8px;padding:10px;color:var(--text-0);font-size:13px;resize:vertical"></textarea>
+    </div>
+    <div style="display:flex;gap:12px;justify-content:flex-end;margin-top:16px">
+      <button class="btn btn--subtle btn-sm" onclick="closeScoringModal()">Skip</button>
+      <button class="btn btn--primary btn-sm" onclick="submitScore()">Submit Rating</button>
     </div>
   </div>
 </div>

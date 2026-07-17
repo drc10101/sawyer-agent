@@ -33,6 +33,13 @@ class LLMConfig:
 # normal (balanced), thorough (full detail, stream everything)
 VERBOSITY_LEVELS = ("concise", "normal", "thorough")
 
+# Agreeability: controls whether the agent prioritizes pleasing the user
+# or giving honest/truthful feedback
+AGREEABILITY_LEVELS = ("agreeable", "balanced", "honest")
+
+# Reasoning depth: controls how deeply the model reasons before responding
+REASONING_LEVELS = ("low", "medium", "medium_high", "high")
+
 @dataclass
 class AgentConfig:
     """Agent behavior settings — separate from LLM provider config."""
@@ -40,6 +47,8 @@ class AgentConfig:
     verbosity: str = "normal"      # concise | normal | thorough
     stream_tool_output: bool = True  # Show tool results in chat as they arrive
     mode: str = "direct"           # direct | orchestrator | auto
+    agreeability: str = "balanced" # agreeable | balanced | honest
+    reasoning: str = "medium"      # low | medium | medium_high | high
 
 
 @dataclass
@@ -112,6 +121,16 @@ class HarnessConfig:
         if verbosity not in VERBOSITY_LEVELS:
             verbosity = "normal"
 
+        # Validate agreeability
+        agreeability = agent_data.get("agreeability", "balanced")
+        if agreeability not in AGREEABILITY_LEVELS:
+            agreeability = "balanced"
+
+        # Validate reasoning
+        reasoning = agent_data.get("reasoning", "medium")
+        if reasoning not in REASONING_LEVELS:
+            reasoning = "medium"
+
         return cls(
             llm=LLMConfig(
                 provider=llm_data.get("provider", "ollama"),
@@ -137,6 +156,8 @@ class HarnessConfig:
                 max_tool_rounds=agent_data.get("max_tool_rounds", 20),
                 verbosity=verbosity,
                 stream_tool_output=agent_data.get("stream_tool_output", True),
+                agreeability=agreeability,
+                reasoning=reasoning,
             ),
             channels=channels,
         )
@@ -178,6 +199,8 @@ class HarnessConfig:
                 "max_tool_rounds": self.agent.max_tool_rounds,
                 "verbosity": self.agent.verbosity,
                 "stream_tool_output": self.agent.stream_tool_output,
+                "agreeability": self.agent.agreeability,
+                "reasoning": self.agent.reasoning,
             },
         }
         path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False), encoding="utf-8")
