@@ -170,10 +170,10 @@ const API = '';
 export function setActivePanel(panel) {
   state.activePanel.value = panel;
   const titles = {
-    chat: 'Chat', goals: 'Goals', 'skill-creator': 'Skill Creator',
+    chat: 'Chat', goals: 'Goal Loops', 'skill-creator': 'Skills',
     tools: 'Tools', files: 'Files', models: 'Models',
     sessions: 'Sessions', projects: 'Projects', cron: 'Cron',
-    context: 'Memory', keys: 'Keys', rules: 'Rules', agents: 'Agents',
+    context: 'Memory', keys: 'Keys', rules: 'Rules', agents: 'Sub-Agents',
   };
   const titleEl = document.getElementById('panel-title');
   if (titleEl) titleEl.textContent = titles[panel] || panel;

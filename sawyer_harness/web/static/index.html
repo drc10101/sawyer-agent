@@ -37,7 +37,7 @@
       </div>
       <div class="sidebar-nav-item" data-panel="skill-creator" onclick="switchPanel('skill-creator')">
         <span class="nav-icon"><i data-lucide="sparkles"></i></span>
-        <span class="nav-label">Skill Creator</span>
+        <span class="nav-label">Skills</span>
       </div>
       <div class="sidebar-nav-item" data-panel="tools" onclick="switchPanel('tools')">
         <span class="nav-icon"><i data-lucide="wrench"></i></span>
@@ -286,7 +286,7 @@
       <div class="panel" id="panel-skill-creator">
         <div style="max-width:1200px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-            <h3 style="color:var(--brand);font-size:1rem">Skill Creator</h3>
+            <h3 style="color:var(--brand);font-size:1rem">Skills</h3>
             <div style="display:flex;gap:8px">
               <button class="btn btn--subtle btn-sm" id="sc-tab-browse" onclick="switchSkillTab('browse')" style="border-color:var(--brand);color:var(--brand)">Browse</button>
               <button class="btn btn--subtle btn-sm" id="sc-tab-create" onclick="switchSkillTab('create')">Create</button>
@@ -295,6 +295,9 @@
 
           <!-- Browse tab -->
           <div id="sc-browse">
+            <div style="font-size:13px;color:var(--text-2);margin-bottom:12px">
+              Custom instruction sets that get injected into the agent's context. Not built-in tools -- those live in the <strong>Tools</strong> panel. Create a skill to teach the agent a workflow, pattern, or procedure.
+            </div>
             <div id="skills-list" class="skills-grid"></div>
             <div id="skill-detail" class="skill-detail" style="display:none"></div>
           </div>
@@ -876,7 +879,7 @@ function switchPanel(panel) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelector('[data-panel="' + panel + '"]').classList.add('active');
   document.getElementById('panel-' + panel).classList.add('active');
-  const titles = {chat:'Chat',goals:'Goals','skill-creator':'Skill Creator',
+  const titles = {chat:'Chat',goals:'Goal Loops','skill-creator':'Skills',
     tools:'Tools',files:'Files',models:'Models',settings:'Settings',sessions:'Sessions',projects:'Projects',
     cron:'Cron',context:'Memory',keys:'Keys',rules:'Rules',agents:'Sub-Agents',orchestration:'Orchestrate'};
   document.getElementById('panel-title').textContent = titles[panel] || panel;
