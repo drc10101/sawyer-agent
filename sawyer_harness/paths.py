@@ -59,6 +59,9 @@ class UserData:
     # ── Skills ──
     skills_dir: Path = USER_DIR / "skills"
 
+    # ── Agents (global definitions) ──
+    agents_dir: Path = USER_DIR / "agents"
+
     # ── Tools ──
     tools_dir: Path = USER_DIR / "tools"
 

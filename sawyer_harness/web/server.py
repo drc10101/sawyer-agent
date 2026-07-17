@@ -48,6 +48,7 @@ from ..skill_creator import SkillCreator, SkillCreationSession, SessionPhase
 from ..key_storage import KeyStorage
 from ..rules import RulesStore, RulePriority, RuleScope
 from ..agent_creator import AgentCreator
+from ..agent_discovery import AgentDiscovery
 from ..orchestrator import OrchestratorEngine, TaskStatus, TaskPriority, AgentBriefing
 from ..suggestions import SuggestionStore
 from ..paths import UserData
@@ -867,6 +868,41 @@ def _register_routes(app: FastAPI, state: _AppState):
         """Reload all skills from disk."""
         state.skills.reload()
         return {"status": "reloaded", "count": len(state.skills.list_skills())}
+
+    # ----------------------------------------------------------
+    # Agent Discovery (per-project .sawyer/agents/*.md)
+    # ----------------------------------------------------------
+
+    @app.get("/api/discovered-agents")
+    async def list_discovered_agents(project_root: str = ""):
+        """List all discovered agent definitions.
+
+        Project-level agents (in .sawyer/agents/) shadow global ones
+        with the same name. Provide project_root to include project-level agents.
+        """
+        discovery = AgentDiscovery(project_root=project_root or None)
+        agents = discovery.discover()
+        return {
+            "agents": {name: agent.to_dict() for name, agent in agents.items()},
+            "count": len(agents),
+        }
+
+    @app.get("/api/discovered-agents/{name}")
+    async def get_discovered_agent(name: str, project_root: str = ""):
+        """Get a specific discovered agent definition by name."""
+        discovery = AgentDiscovery(project_root=project_root or None)
+        agent = discovery.get(name)
+        if not agent:
+            raise HTTPException(status_code=404, detail=f"Agent '{name}' not found")
+        return agent.to_dict()
+
+    @app.post("/api/discovered-agents/reload")
+    async def reload_discovered_agents(project_root: str = ""):
+        """Force re-read agent definitions from disk."""
+        discovery = AgentDiscovery(project_root=project_root or None)
+        discovery.invalidate_cache()
+        agents = discovery.discover(force_reload=True)
+        return {"status": "reloaded", "count": len(agents)}
 
     # ----------------------------------------------------------
     # Skill Creator (interactive vibe-coding sessions)
