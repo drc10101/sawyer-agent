@@ -158,6 +158,11 @@ class _AppState:
             allowed_tools=config.security.allowed_tools or None,
             denied_paths=config.security.denied_paths,
         )
+        # Load user tools from ~/.sawyer-harness/tools/ (survives upgrades)
+        from ..user_tools import load_user_tools
+        user_tool_names = load_user_tools(self.tools)
+        if user_tool_names:
+            logger.info(f"Loaded {len(user_tool_names)} user tools: {', '.join(user_tool_names)}")
         # Inject shared context so tool handlers can access memory and skills
         self.tools.set_context(memory_store=self.memory, skill_store=self.skills)
         self.router = ModelRouter([
@@ -1197,6 +1202,17 @@ def _register_routes(app: FastAPI, state: _AppState):
             "allowlist": state.tools._allowed_tools,
             "denied_paths": state.tools._denied_paths,
             "audit_log": audit,
+        }
+
+    @app.post("/api/tools/reload")
+    async def reload_user_tools():
+        """Reload user tools from ~/.sawyer-harness/tools/ without restarting."""
+        from ..user_tools import load_user_tools
+        loaded = load_user_tools(state.tools)
+        return {
+            "status": "reloaded",
+            "user_tools": loaded,
+            "total_tools": len(state.tools.list_tools()),
         }
 
     @app.post("/api/tools/toggle")

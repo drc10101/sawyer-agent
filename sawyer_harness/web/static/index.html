@@ -396,7 +396,16 @@
 
       <!-- Tools Panel -->
       <div class="panel" id="panel-tools">
-        <div class="ctrl-grid" id="tools-grid"></div>
+        <div style="max-width:900px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <h3 style="color:var(--brand);font-size:1rem">Tools</h3>
+            <button class="btn btn--subtle btn-sm" onclick="reloadUserTools()">Reload User Tools</button>
+          </div>
+          <div style="font-size:13px;color:var(--text-2);margin-bottom:12px">
+            Built-in tools available to the agent. Add custom tools in <code>~/.sawyer-harness/tools/</code> -- they survive upgrades.
+          </div>
+          <div class="ctrl-grid" id="tools-grid"></div>
+        </div>
       </div>
 
       <!-- Sessions Panel -->
@@ -1990,6 +1999,23 @@ async function fetchDiagnosis(goalId) {
 }
 
 // Tools
+async function reloadUserTools() {
+  try {
+    const res = await fetch(API + '/api/tools/reload', {method: 'POST'});
+    const data = await res.json();
+    if (data.status === 'reloaded') {
+      const count = data.user_tools ? data.user_tools.length : 0;
+      const names = data.user_tools ? data.user_tools.join(', ') : 'none';
+      alert('Reloaded ' + count + ' user tools: ' + (names || 'none') + '\nTotal tools: ' + data.total_tools);
+      loadTools();
+    } else {
+      alert('Reload failed');
+    }
+  } catch(e) {
+    alert('Error: ' + e.message);
+  }
+}
+
 async function loadTools() {
   try {
     const res = await fetch(API + '/api/tools');
