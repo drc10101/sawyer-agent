@@ -24,6 +24,18 @@ Sawyer is a standalone AI agent that runs on your machine with no telemetry, no 
 
 **Principles:** Secure by default. Model-agnostic. Self-hosted. Observable. Self-improving.
 
+## What's New in v0.8
+
+**CompactionPolicy** -- context compression is now configurable. Three presets (conservative, balanced, aggressive) control when to compact, what to keep, and how aggressive the compression is. Override individual thresholds in config.yaml or change at runtime from Settings. Balanced (the default) matches the old 80% behavior for full backward compatibility.
+
+**PermissionMode** -- tools are now classified by capability (Read, Write, Shell, Network, Memory, Skill, System) and grouped into three permission levels. ReadOnly agents can read files and search but cannot write, execute, or make network calls. ReadWrite adds file editing, shell commands, and git. All gives unrestricted access. Change permission mode at runtime from Settings -- the tool registry rebuilds instantly.
+
+**ToolBridge + kill_foreground** -- shell and code_execute handlers now track their subprocess via Popen, and a new `/api/kill-foreground` endpoint lets you cancel a running command mid-execution. The Stop button in the UI calls this directly. SIGTERM first, SIGKILL after 2 seconds if still alive.
+
+**Agent Discovery** -- define agents as `.md` files with YAML frontmatter. Drop them in `.sawyer/agents/` inside any project for project-specific agents, or `~/.sawyer-harness/user/agents/` for global ones. Project-level agents shadow global ones by name. Frontmatter supports name, description, model, permission_mode, tools, skills, and rules. The body becomes the system prompt. API endpoints: `GET /api/discovered-agents`, `GET /api/discovered-agents/{name}`, `POST /api/discovered-agents/reload`.
+
+**Hybrid Memory** -- memory search now uses FTS5 BM25 ranking instead of simple LIKE queries, with automatic index sync via triggers. Falls back gracefully if FTS5 is unavailable. sqlite-vec stub is in place for future KNN vector similarity (384-dim embeddings) when the extension is available.
+
 ## What's New in v0.7.4
 
 **Streaming chat with WebSocket** -- responses stream in real time instead of waiting for the entire reply. See tool calls as they execute, read the agent's thinking summary (not raw reasoning), and watch results arrive live. No more staring at a blank screen while the agent works.
