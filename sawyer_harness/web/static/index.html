@@ -329,6 +329,16 @@
             <div id="score-history" style="max-height:150px;overflow-y:auto"></div>
           </div>
 
+          <!-- Restart Server -->
+          <div class="ctrl-card" style="margin-bottom:12px">
+            <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Server</h4>
+            <p style="font-size:12px;color:var(--text-2);margin-bottom:10px">
+              Restart the server to apply code changes or config updates. Your data is preserved.
+            </p>
+            <button class="btn btn--primary btn-sm" onclick="restartServer()">Restart Server</button>
+            <div id="restart-status" style="font-size:12px;color:var(--text-2);margin-top:8px"></div>
+          </div>
+
           <div id="agent-config-status" style="font-size:12px;color:var(--text-2);margin-top:8px"></div>
         </div>
       </div>
@@ -3478,6 +3488,48 @@ loadStatus();
 checkForUpdates();
 setInterval(checkForUpdates, 6 * 60 * 60 * 1000);  // Recheck every 6 hours
 lucide.createIcons();
+
+// Server restart
+async function restartServer() {
+  if (!confirm('Restart the Sawyer server? This takes a few seconds. Your data is preserved.')) return;
+  const statusEl = document.getElementById('restart-status');
+  if (statusEl) {
+    statusEl.textContent = 'Restarting...';
+    statusEl.style.color = 'var(--brand)';
+  }
+  try {
+    await fetch(API + '/api/restart', { method: 'POST' });
+  } catch(e) {
+    // Expected: server shuts down so fetch fails
+  }
+  // Poll for server to come back
+  let attempts = 0;
+  const maxAttempts = 60;
+  const poll = setInterval(async () => {
+    attempts++;
+    try {
+      const res = await fetch(API + '/api/status', { signal: AbortSignal.timeout(2000) });
+      if (res.ok) {
+        clearInterval(poll);
+        if (statusEl) {
+          statusEl.textContent = 'Server is back online.';
+          statusEl.style.color = '#22c55e';
+        }
+        // Reload the page to pick up any changes
+        setTimeout(() => location.reload(), 500);
+      }
+    } catch(e) {
+      // Server not back yet
+    }
+    if (attempts >= maxAttempts) {
+      clearInterval(poll);
+      if (statusEl) {
+        statusEl.textContent = 'Server did not come back. Start it manually.';
+        statusEl.style.color = 'var(--danger, #f44)';
+      }
+    }
+  }, 1000);
+}
 
 // Session scoring
 let scoringSessionId = '';

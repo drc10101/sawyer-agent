@@ -2005,6 +2005,85 @@ def _register_routes(app: FastAPI, state: _AppState):
             "message": f"Upgraded from v{old_version} to v{new_version}. Restarting server.",
         }
 
+    @app.post("/api/restart")
+    async def restart_server():
+        """Restart the Sawyer server process.
+
+        Writes a restart script that waits for this process to exit,
+        then starts the server again with the same arguments.
+        The client should show a reconnect overlay while waiting.
+        All user data in ~/.sawyer-harness/ is preserved.
+        """
+        import subprocess
+        import sys
+        import time
+        import platform
+
+        is_windows = platform.system() == "Windows"
+        my_pid = os.getpid()
+
+        # Determine the host/port this server is running on
+        host = getattr(state, "_host", "127.0.0.1")
+        port = getattr(state, "_port", 8765)
+
+        if is_windows:
+            script_path = Path.home() / ".sawyer-harness" / "_restart.bat"
+            script_lines = [
+                "@echo off",
+                "echo Sawyer Agent - Restarting...",
+                f"echo Waiting for PID {my_pid} to exit...",
+                f"taskkill /PID {my_pid} /F >nul 2>&1",
+                ":wait",
+                f'tasklist /FI "PID eq {my_pid}" 2>nul | find "{my_pid}" >nul',
+                "if %errorlevel%==0 (timeout /t 1 /nobreak >nul & goto wait)",
+                "echo Starting Sawyer Agent...",
+                f'"{sys.executable}" -m sawyer_harness --host {host} --port {port}',
+                "pause",
+            ]
+            script_content = "\n".join(script_lines)
+        else:
+            script_path = Path.home() / ".sawyer-harness" / "_restart.sh"
+            script_lines = [
+                "#!/bin/bash",
+                "echo 'Sawyer Agent - Restarting...'",
+                f"echo 'Waiting for PID {my_pid} to exit...'",
+                f"kill {my_pid} 2>/dev/null",
+                f"while kill -0 {my_pid} 2>/dev/null; do sleep 1; done",
+                "echo 'Starting Sawyer Agent...'",
+                f"{sys.executable} -m sawyer_harness --host {host} --port {port}",
+            ]
+            script_content = "\n".join(script_lines)
+
+        script_path.parent.mkdir(parents=True, exist_ok=True)
+        script_path.write_text(script_content, encoding="utf-8")
+
+        if not is_windows:
+            script_path.chmod(0o755)
+
+        restart_delay = 2
+
+        def _exit_after_delay():
+            time.sleep(restart_delay)
+            if is_windows:
+                subprocess.Popen(
+                    ["cmd", "/c", str(script_path)],
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                )
+            else:
+                subprocess.Popen(["bash", str(script_path)],
+                    start_new_session=True,
+                )
+            os._exit(0)
+
+        import threading
+        exit_thread = threading.Thread(target=_exit_after_delay, daemon=True)
+        exit_thread.start()
+
+        return {
+            "status": "restarting",
+            "message": "Server is restarting. Wait for the reconnect prompt.",
+        }
+
     @app.get("/api/capabilities")
     async def get_capabilities():
         """Return the agent's capabilities manifest."""
@@ -2734,6 +2813,10 @@ def run_server(config: HarnessConfig | None = None, host: str = "0.0.0.0", port:
     _kill_port_holder(host, port)
 
     app = create_app(config)
+
+    # Store host/port on state so restart endpoint can use them
+    app.state.sawyer._host = host
+    app.state.sawyer._port = port
 
     opened = [False]  # mutable flag in closure
 
