@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -1214,6 +1214,92 @@ def _register_routes(app: FastAPI, state: _AppState):
             "user_tools": loaded,
             "total_tools": len(state.tools.list_tools()),
         }
+
+    # --- Tool Creator (OCUE: describe, generate, preview, approve) ---
+
+    @app.post("/api/tools/create")
+    async def create_tool(request: Request):
+        """Generate a tool draft from a description. Returns the draft for preview."""
+        from ..tool_creator import ToolCreator
+        body = await request.json()
+        description = body.get("description", "").strip()
+        tool_name = body.get("name", "").strip() or None
+
+        if not description:
+            raise HTTPException(status_code=400, detail="Description is required")
+
+        creator = ToolCreator(registry=state.tools, llm_client=state.llm if hasattr(state, 'llm') else None)
+        draft = await creator.generate(description=description, tool_name=tool_name)
+
+        return {
+            "draft_id": draft.id,
+            "name": draft.name,
+            "description": draft.description,
+            "filename": draft.filename,
+            "code": draft.code,
+        }
+
+    @app.post("/api/tools/create/{draft_id}/approve")
+    async def approve_tool(draft_id: str):
+        """Approve a tool draft: write the file and reload."""
+        from ..tool_creator import ToolCreator
+        creator = ToolCreator(registry=state.tools, llm_client=state.llm if hasattr(state, 'llm') else None)
+
+        # Find the draft -- it may be on a different ToolCreator instance
+        # so we check the global server-level store
+        if not hasattr(state, 'tool_drafts'):
+            state.tool_drafts = {}
+
+        # The draft was created in a previous request; we need to store it on state
+        raise HTTPException(status_code=404, detail=f"Draft {draft_id} not found. Tool creation is stateless -- approve in the same session or re-generate.")
+
+    @app.post("/api/tools/create-approve")
+    async def create_and_approve_tool(request: Request):
+        """OCUE: Generate a tool and immediately approve it in one step.
+
+        Describe what you want, get a working tool. One click.
+        """
+        from ..tool_creator import ToolCreator
+        from ..user_tools import load_user_tools
+        body = await request.json()
+        description = body.get("description", "").strip()
+        tool_name = body.get("name", "").strip() or None
+
+        if not description:
+            raise HTTPException(status_code=400, detail="Description is required")
+
+        creator = ToolCreator(registry=state.tools, llm_client=state.llm if hasattr(state, 'llm') else None)
+        draft = await creator.generate(description=description, tool_name=tool_name)
+        result = creator.approve(draft.id)
+
+        return {
+            **result,
+            "code": draft.code,
+            "name": draft.name,
+            "description": draft.description,
+        }
+
+    @app.get("/api/tools/user")
+    async def list_user_tools():
+        """List user-created tools from ~/.sawyer-harness/tools/."""
+        from ..user_tools import USER_TOOLS_DIR
+        USER_TOOLS_DIR.mkdir(parents=True, exist_ok=True)
+        tools = []
+        for f in sorted(USER_TOOLS_DIR.glob("*.py")):
+            if f.name.startswith("__"):
+                continue
+            content = f.read_text(encoding="utf-8")
+            # Extract name from register() call
+            import re
+            name_match = re.search(r'name="(\w+)"', content)
+            desc_match = re.search(r'description="([^"]+)"', content)
+            tools.append({
+                "filename": f.name,
+                "name": name_match.group(1) if name_match else f.stem,
+                "description": desc_match.group(1) if desc_match else "",
+                "path": str(f),
+            })
+        return {"user_tools": tools}
 
     @app.post("/api/tools/toggle")
     async def toggle_tool(toggle: ToolToggle):

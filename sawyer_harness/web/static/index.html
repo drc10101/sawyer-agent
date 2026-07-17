@@ -402,8 +402,29 @@
             <button class="btn btn--subtle btn-sm" onclick="reloadUserTools()">Reload User Tools</button>
           </div>
           <div style="font-size:13px;color:var(--text-2);margin-bottom:12px">
-            Built-in tools available to the agent. Add custom tools in <code>~/.sawyer-harness/tools/</code> -- they survive upgrades.
+            Built-in tools available to the agent. Describe a new tool below and it will be created automatically.
           </div>
+
+          <!-- OCUE: Create Tool -->
+          <div class="ctrl-card" style="margin-bottom:16px">
+            <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Create a Tool</h4>
+            <div style="font-size:12px;color:var(--text-2);margin-bottom:8px">Describe what you want the tool to do. Sawyer generates the code, saves it, and registers it. One click.</div>
+            <div style="display:flex;gap:8px;margin-bottom:8px">
+              <input id="new-tool-name" placeholder="Tool name (optional)" style="flex:1;padding:6px 10px;background:var(--bg-2);border:1px solid var(--border);border-radius:6px;color:var(--text-0);font-size:13px">
+            </div>
+            <textarea id="new-tool-desc" placeholder="What should this tool do? e.g. &quot;Search the web for current stock prices given a ticker symbol&quot;" style="width:100%;min-height:60px;resize:vertical;padding:8px;background:var(--bg-2);border:1px solid var(--border);border-radius:6px;color:var(--text-0);font-size:13px"></textarea>
+            <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+              <button class="btn btn--primary btn-sm" onclick="createTool()">Create Tool</button>
+              <span id="create-tool-status" style="font-size:12px;color:var(--text-2)"></span>
+            </div>
+          </div>
+
+          <!-- User Tools -->
+          <div id="user-tools-section" style="margin-bottom:16px;display:none">
+            <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Your Custom Tools</h4>
+            <div id="user-tools-list"></div>
+          </div>
+
           <div class="ctrl-grid" id="tools-grid"></div>
         </div>
       </div>
@@ -895,7 +916,7 @@ function switchPanel(panel) {
   if (panel === 'models') loadModels();
   if (panel === 'settings') loadAgentConfig();
   if (panel === 'goals') loadGoals();
-  if (panel === 'tools') loadTools();
+  if (panel === 'tools') { loadTools(); loadUserTools(); }
   if (panel === 'cron') loadCron();
   if (panel === 'context') loadContextStats();
   if (panel === 'sessions') { loadSessions(); loadSuggestions(); }
@@ -2014,6 +2035,69 @@ async function reloadUserTools() {
   } catch(e) {
     alert('Error: ' + e.message);
   }
+}
+
+async function createTool() {
+  const nameInput = document.getElementById('new-tool-name');
+  const descInput = document.getElementById('new-tool-desc');
+  const statusEl = document.getElementById('create-tool-status');
+  const desc = descInput.value.trim();
+  if (!desc) { statusEl.textContent = 'Describe what the tool should do'; statusEl.style.color = 'var(--danger)'; return; }
+
+  statusEl.textContent = 'Creating tool...';
+  statusEl.style.color = 'var(--text-2)';
+
+  try {
+    const res = await fetch(API + '/api/tools/create-approve', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        description: desc,
+        name: nameInput.value.trim() || undefined,
+      }),
+    });
+    const data = await res.json();
+
+    if (data.status === 'approved') {
+      statusEl.textContent = 'Created: ' + data.name + ' (' + data.total_tools + ' tools total)';
+      statusEl.style.color = 'var(--brand)';
+      nameInput.value = '';
+      descInput.value = '';
+      loadTools();
+      loadUserTools();
+    } else {
+      statusEl.textContent = data.message || 'Error creating tool';
+      statusEl.style.color = 'var(--danger)';
+    }
+  } catch(e) {
+    statusEl.textContent = 'Error: ' + e.message;
+    statusEl.style.color = 'var(--danger)';
+  }
+}
+
+async function loadUserTools() {
+  try {
+    const res = await fetch(API + '/api/tools/user');
+    const data = await res.json();
+    const section = document.getElementById('user-tools-section');
+    const list = document.getElementById('user-tools-list');
+
+    if (!data.user_tools || data.user_tools.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+
+    section.style.display = 'block';
+    let html = '';
+    for (const t of data.user_tools) {
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bg-2);border:1px solid var(--border);border-radius:6px;margin-bottom:4px">';
+      html += '<span style="color:var(--brand);font-weight:600;font-size:13px">' + escapeHtml(t.name) + '</span>';
+      html += '<span style="color:var(--text-2);font-size:12px">' + escapeHtml(t.description) + '</span>';
+      html += '<span style="color:var(--text-2);font-size:11px;margin-left:auto">' + escapeHtml(t.filename) + '</span>';
+      html += '</div>';
+    }
+    list.innerHTML = html;
+  } catch(e) { console.error(e); }
 }
 
 async function loadTools() {
