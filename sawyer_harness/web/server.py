@@ -2567,8 +2567,13 @@ def _register_routes(app: FastAPI, state: _AppState):
 
     @app.get("/")
     async def serve_index():
-        """Serve the web UI."""
-        return FileResponse(STATIC_DIR / "index.html")
+        """Serve the web UI. No-cache to ensure updates appear immediately."""
+        from starlette.responses import FileResponse
+        response = FileResponse(STATIC_DIR / "index.html")
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
 
     if STATIC_DIR.exists():
         app.mount("/icons", StaticFiles(directory=str(STATIC_DIR / "icons")), name="icons")
