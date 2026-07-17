@@ -20,9 +20,23 @@
   <img src="docs/sawyer-screenshot.png" alt="Sawyer Agent web UI" width="768">
 </p>
 
-Sawyer is a standalone AI agent that runs on your machine with no telemetry, no phone-home, and no data leaving your network. It ships with 19 tools, real token counting, sub-agent templates, goal-seeking loops, and ClawHub import -- connect any OpenAI-compatible LLM and go.
+Sawyer is a standalone AI agent that runs on your machine with no telemetry, no phone-home, and no data leaving your network. It ships with 19 tools, real token counting, sub-agent templates, goal-seeking loops, streaming chat, seizure detection, and a one-click tool creator -- connect any OpenAI-compatible LLM and go.
 
 **Principles:** Secure by default. Model-agnostic. Self-hosted. Observable. Self-improving.
+
+## What's New in v0.7.4
+
+**Streaming chat with WebSocket** -- responses stream in real time instead of waiting for the entire reply. See tool calls as they execute, read the agent's thinking summary (not raw reasoning), and watch results arrive live. No more staring at a blank screen while the agent works.
+
+**Seizure detection** -- if the agent calls the same tool with the same arguments 3+ times in a row, it stops automatically with a clear warning. No infinite loops. No wasted tokens. The agent recognizes when it's stuck and tells you why.
+
+**Stop button** -- a Stop button appears during execution. Click it to cancel mid-stream. No more waiting for a runaway agent to finish.
+
+**One-click Tool Creator** -- describe what you want a tool to do, click Create Tool, and it's done. Sawyer generates the Python code, writes it to `~/.sawyer-harness/tools/`, and registers it immediately. No Python knowledge required. Custom tools survive upgrades because they live outside the pip package.
+
+**User tools directory** -- `~/.sawyer-harness/tools/` is where custom tools live. Drop a `.py` file with a `register()` function and it loads on startup. Hit "Reload User Tools" in the Tools panel to pick up new ones without restarting. Everything in `~/.sawyer-harness/` (tools, skills, memory, keys, config, cron) survives `pip install --upgrade`.
+
+**Skills panel** -- renamed from "Skill Creator" to "Skills". The Browse tab now explains that these are custom instruction sets injected into the agent's context, not built-in tools (those are in the Tools panel).
 
 ## What's New in v0.7.3
 
@@ -215,6 +229,28 @@ The Sub-Agents panel lets you create specialized agent templates. Each sub-agent
 
 Create a template, then spawn a session from it to get a focused agent. In orchestrator mode, the main agent delegates subtasks to these sub-agents automatically.
 
+## User Tools
+
+Custom tools live in `~/.sawyer-harness/tools/` and survive upgrades. Two ways to create one:
+
+1. **One-click Tool Creator** -- open the Tools panel, describe what you want, click Create Tool. Sawyer generates the Python code, writes the file, and registers it immediately. No Python knowledge required.
+2. **Manual** -- drop a `.py` file in `~/.sawyer-harness/tools/` that defines a `register(registry)` function. Hit "Reload User Tools" to pick it up without restarting.
+
+All user data in `~/.sawyer-harness/` (tools, skills, memory, keys, config, cron) is preserved across `pip install --upgrade`. Only the Python package code changes -- your data stays.
+
+## Streaming Chat
+
+The chat interface streams responses in real time via WebSocket. Instead of waiting for the entire reply, you see:
+
+- **Thinking summary** -- one-line status like "Reading file..." or "Running shell..." (not raw reasoning)
+- **Tool calls** -- `[file_read]`, `[shell]`, `[patch]` as they execute
+- **Tool results** -- abbreviated output from each tool
+- **Text response** -- the agent's answer, streamed as it arrives
+- **Seizure warning** -- red alert if the agent loops on the same tool+args 3+ times
+- **Stop button** -- appears during execution, click to cancel
+
+If WebSocket is unavailable, it falls back to the REST endpoint automatically.
+
 ## Goals & Goal-Seeking Loops
 
 The Goals panel decomposes goals into subtasks and runs them in an automated loop with hard stops.
@@ -247,19 +283,24 @@ The context meter in the header shows real numbers. When context gets tight, Saw
 
 ```
 Web UI (FastAPI + static HTML/CSS/JS at localhost:8765)
-   15 panels (Chat, Goals, Skill Creator, Tools, Files, Models, Sessions,
+   15 panels (Chat, Goals, Skills, Tools, Files, Models, Sessions,
                Projects, Cron, Memory, Keys, Rules, Sub-Agents, Orchestrate, Settings)
         |
    Channel Layer (Telegram, Discord, CLI, API)
         |
    Router/Dispatcher (ModelRouter: Sawyer priority, health, fallback)
         |
+   WebSocket Layer (streaming events: thinking, tool_call, tool_result, text, seizure, done)
+        |
     Agent Core
     |-- Memory (SQLite)
     |-- Skills (YAML+Markdown, find_relevant, self-patch)
     |-- Scheduler (APScheduler: interval/cron/one-shot, SQLite persist)
-    |-- Tool Registry (19 tools, sandboxed, audit logged)
+    |-- Tool Registry (19 built-in + N user tools, sandboxed, audit logged)
+    |-- User Tools (~/.sawyer-harness/tools/, auto-loaded, survive upgrades)
+    |-- Tool Creator (describe what you want, generates .py, one-click)
     |-- Goal Engine (decompose, loop with hard stops, diagnose stalls)
+    |-- Seizure Detection (same tool+args 3x = auto-stop with warning)
     |-- Orchestrator (goal decomposition, dependency tracking, session notes)
     |-- Skill Creator (5-phase collaborative skill design)
     |-- Key Storage (encrypted credentials, permission levels)
