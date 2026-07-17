@@ -30,7 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from ..agent import Agent
-from ..config import HarnessConfig, VERBOSITY_LEVELS, AGREEABILITY_LEVELS, REASONING_LEVELS
+from ..config import HarnessConfig, VERBOSITY_LEVELS, AGREEABILITY_LEVELS, REASONING_LEVELS, COMPACTION_LEVELS
 from .. import __version__
 from ..llm import LLMClient
 from ..memory import MemoryStore
@@ -42,7 +42,7 @@ from ..lkg import LKGStore
 from ..tools import create_default_registry
 from ..compression import ContextCompressor
 from ..session_engine import SessionEngine
-from ..context_manager import ContextManager
+from ..context_manager import ContextManager, CompactionPolicy
 from ..project import Project, ProjectManager
 from ..skill_creator import SkillCreator, SkillCreationSession, SessionPhase
 from ..key_storage import KeyStorage
@@ -108,6 +108,7 @@ class AgentConfigUpdate(BaseModel):
     base_url: str | None = None       # LLM base URL
     agreeability: str | None = None   # agreeable | balanced | honest
     reasoning: str | None = None      # low | medium | medium_high | high
+    compaction_policy: str | None = None  # conservative | balanced | aggressive
 
 class ToolToggle(BaseModel):
     tool_name: str
@@ -217,6 +218,11 @@ class _AppState:
         self.context_manager = ContextManager(
             model_name=config.llm.model or "gpt-4o",
             context_length_override=config.llm.context_length,
+            compaction_policy=CompactionPolicy.from_dict({
+                "policy": config.compaction.policy,
+                "threshold": config.compaction.threshold,
+                "recency_pct": config.compaction.recency_pct,
+            }),
         )
         self.project_manager = ProjectManager()
         self.skill_creator = SkillCreator(skill_store=self.skills)
@@ -245,6 +251,11 @@ class _AppState:
             skills=self.skills,
             rules_store=self.rules_store,
             context_window=self.context_manager.window_size,
+            compaction_policy=CompactionPolicy.from_dict({
+                "policy": self.config.compaction.policy,
+                "threshold": self.config.compaction.threshold,
+                "recency_pct": self.config.compaction.recency_pct,
+            }),
         )
         self.sessions[new_id] = agent
         return new_id, agent
@@ -565,6 +576,12 @@ def _register_routes(app: FastAPI, state: _AppState):
             "base_url": state.config.llm.base_url,
             "agreeability": state.config.agent.agreeability,
             "reasoning": state.config.agent.reasoning,
+            "compaction_policy": {
+                "policy": state.config.compaction.policy,
+                "threshold": state.config.compaction.threshold,
+                "recency_pct": state.config.compaction.recency_pct,
+                "presets": list(CompactionPolicy.PRESETS.keys()),
+            },
         }
 
     @app.post("/api/agent-config")
@@ -607,6 +624,20 @@ def _register_routes(app: FastAPI, state: _AppState):
             if update.reasoning not in ("low", "medium", "medium_high", "high"):
                 raise HTTPException(status_code=400, detail="reasoning must be one of: low, medium, medium_high, high")
             state.config.agent.reasoning = update.reasoning
+        if update.compaction_policy is not None:
+            if update.compaction_policy not in COMPACTION_LEVELS:
+                raise HTTPException(status_code=400, detail=f"compaction_policy must be one of: {', '.join(COMPACTION_LEVELS)}")
+            state.config.compaction.policy = update.compaction_policy
+            # Rebuild context manager with new policy
+            state.context_manager = ContextManager(
+                model_name=state.config.llm.model or "gpt-4o",
+                context_length_override=state.config.llm.context_length,
+                compaction_policy=CompactionPolicy.from_dict({
+                    "policy": state.config.compaction.policy,
+                    "threshold": state.config.compaction.threshold,
+                    "recency_pct": state.config.compaction.recency_pct,
+                }),
+            )
         return {"status": "updated", "agent_config": {
             "max_tool_rounds": state.config.agent.max_tool_rounds,
             "verbosity": state.config.agent.verbosity,
@@ -617,6 +648,12 @@ def _register_routes(app: FastAPI, state: _AppState):
             "base_url": state.config.llm.base_url,
             "agreeability": state.config.agent.agreeability,
             "reasoning": state.config.agent.reasoning,
+            "compaction_policy": {
+                "policy": state.config.compaction.policy,
+                "threshold": state.config.compaction.threshold,
+                "recency_pct": state.config.compaction.recency_pct,
+                "presets": list(CompactionPolicy.PRESETS.keys()),
+            },
         }}
 
     # ----------------------------------------------------------
@@ -2573,6 +2610,11 @@ def _register_routes(app: FastAPI, state: _AppState):
             system_prompt=system_prompt,
             skills=state.skills,
             context_window=state.context_manager.window_size,
+            compaction_policy=CompactionPolicy.from_dict({
+                "policy": config.compaction.policy,
+                "threshold": config.compaction.threshold,
+                "recency_pct": config.compaction.recency_pct,
+            }),
         )
 
         session_id = str(uuid.uuid4())[:8]

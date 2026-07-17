@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import AsyncIterator, Any
 
 from .config import HarnessConfig
+from .context_manager import CompactionPolicy
 from .llm import LLMClient, LLMResponse, Message, ToolCall
 from .memory import MemoryStore
 from .skills import SkillStore
@@ -24,9 +25,6 @@ logger = logging.getLogger("sawyer-harness.agent")
 
 # Default safety limit — overridden by config.agent.max_tool_rounds
 DEFAULT_MAX_TOOL_ROUNDS = 20
-
-# Context pressure threshold — fraction of context window that triggers wrap-up
-CONTEXT_PRESSURE_THRESHOLD = 0.80
 
 # Verbosity-specific system prompt additions
 VERBOSITY_PROMPTS = {
@@ -188,6 +186,7 @@ class Agent:
         skills: SkillStore | None = None,
         rules_store: Any | None = None,
         context_window: int | None = None,
+        compaction_policy: CompactionPolicy | None = None,
     ):
         self.config = config
         self.llm = llm
@@ -199,6 +198,8 @@ class Agent:
         self.conversation: list[Message] = []
         # Context window size for pressure detection
         self.context_window = context_window or 128000  # Default 128K
+        # Compaction policy: controls when and how to compress context
+        self.compaction_policy = compaction_policy or CompactionPolicy()
 
     def _build_system_prompt(self, user_message: str = "", wrap_up: bool = False) -> str:
         """Assemble system prompt with injected memory, skills, capabilities, and tool descriptions.
@@ -367,14 +368,14 @@ class Agent:
             # Check context pressure BEFORE calling the LLM
             # If we're past the threshold, this is our final round regardless
             pressure = self._check_context_pressure()
-            context_pressure = pressure >= CONTEXT_PRESSURE_THRESHOLD
+            context_pressure = pressure >= self.compaction_policy.threshold
 
             # Final round: either max_tool_rounds limit or context pressure
             is_final_round = (round_num == max_rounds - 1) or context_pressure
 
             if context_pressure:
                 logger.warning(
-                    f"Context pressure at {pressure:.0%} (threshold {CONTEXT_PRESSURE_THRESHOLD:.0%}). "
+                    f"Context pressure at {pressure:.0%} (threshold {self.compaction_policy.threshold:.0%}). "
                     f"Wrapping up at round {round_num + 1}/{max_rounds}."
                 )
 
@@ -420,7 +421,7 @@ class Agent:
                         self.conversation,
                         tool_calls_made,
                         round_num + 1,
-                        f"Context window {pressure:.0%} full (threshold {CONTEXT_PRESSURE_THRESHOLD:.0%})",
+                        f"Context window {pressure:.0%} full (threshold {self.compaction_policy.threshold:.0%})",
                     )
                     self.memory.add(
                         key=f"session-handoff-{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",

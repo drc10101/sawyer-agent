@@ -88,12 +88,28 @@ class NotificationConfig:
     to_address: str = ""     # Where suggestions get sent
     use_tls: bool = True
 
+# Compaction policy levels — maps to CompactionPolicy presets
+COMPACTION_LEVELS = ("conservative", "balanced", "aggressive")
+
+@dataclass
+class CompactionConfig:
+    """Controls when and how context is compressed.
+
+    policy: preset name — conservative (70%), balanced (80%), aggressive (90%)
+    threshold: override the compression trigger fraction (0.0-1.0)
+    recency_pct: override the fraction of space for recent messages
+    """
+    policy: str = "balanced"
+    threshold: float | None = None
+    recency_pct: float | None = None
+
 @dataclass
 class HarnessConfig:
     llm: LLMConfig = field(default_factory=LLMConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     agent: AgentConfig = field(default_factory=AgentConfig)
+    compaction: CompactionConfig = field(default_factory=CompactionConfig)
     channels: list[ChannelConfig] = field(default_factory=list)
     notifications: NotificationConfig = field(default_factory=NotificationConfig)
 
@@ -146,6 +162,12 @@ class HarnessConfig:
         if reasoning not in REASONING_LEVELS:
             reasoning = "medium"
 
+        # Compaction config
+        comp_data = data.get("compaction", {})
+        compaction_policy = comp_data.get("policy", "balanced")
+        if compaction_policy not in COMPACTION_LEVELS:
+            compaction_policy = "balanced"
+
         return cls(
             llm=LLMConfig(
                 provider=llm_data.get("provider", "ollama"),
@@ -173,6 +195,11 @@ class HarnessConfig:
                 stream_tool_output=agent_data.get("stream_tool_output", True),
                 agreeability=agreeability,
                 reasoning=reasoning,
+            ),
+            compaction=CompactionConfig(
+                policy=compaction_policy,
+                threshold=comp_data.get("threshold"),
+                recency_pct=comp_data.get("recency_pct"),
             ),
             channels=channels,
             notifications=NotificationConfig(
@@ -225,6 +252,9 @@ class HarnessConfig:
                 "stream_tool_output": self.agent.stream_tool_output,
                 "agreeability": self.agent.agreeability,
                 "reasoning": self.agent.reasoning,
+            },
+            "compaction": {
+                "policy": self.compaction.policy,
             },
             "notifications": {
                 "smtp_host": self.notifications.smtp_host,

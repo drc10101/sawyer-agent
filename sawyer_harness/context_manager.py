@@ -16,6 +16,13 @@ A 128K window with smart compression holds more useful context than a
 
 Different models have different window sizes. This module knows them.
 
+CompactionPolicy (v0.8) controls when and how aggressively context is
+compressed. Users choose from presets or fine-tune via config.yaml:
+
+  conservative:  compress at 70%, keep 50% of recent messages
+  balanced:      compress at 80%, keep 40% of recent messages (default)
+  aggressive:    compress at 90%, keep 25% of recent messages
+
 Token counting uses tiktoken (OpenAI's actual BPE tokenizer) for real
 counts instead of the old len(text)//4 heuristic. See token_count.py.
 """
@@ -29,6 +36,126 @@ from typing import Optional
 from .token_count import count_tokens, count_message_tokens, get_counter
 
 logger = logging.getLogger("sawyer-harness.context_manager")
+
+
+# ============================================================
+# CompactionPolicy — configurable context compression
+# ============================================================
+
+class CompactionPolicy:
+    """Controls when and how aggressively context is compressed.
+
+    Presets:
+        conservative — compress early (70%), keep more recent context (50%)
+        balanced     — compress at 80%, keep 40% recent (default, same as v0.7)
+        aggressive   — compress late (90%), keep less recent context (25%)
+
+    Each policy defines:
+        threshold: fraction of context window that triggers wrap-up
+        recency_pct: fraction of available space reserved for recent messages
+        free_pct: fraction of window kept free for new messages
+        system_pct: fraction reserved for system prompt
+        memory_pct: fraction reserved for memory
+        skills_pct: fraction reserved for skills
+
+    Users can also fine-tune via config.yaml:
+        compaction:
+          policy: balanced
+          threshold: 0.75
+          recency_pct: 0.45
+    """
+
+    PRESETS: dict[str, dict] = {
+        "conservative": {
+            "threshold": 0.70,
+            "recency_pct": 0.50,
+            "free_pct": 0.20,
+            "system_pct": 0.05,
+            "memory_pct": 0.05,
+            "skills_pct": 0.03,
+        },
+        "balanced": {
+            "threshold": 0.80,
+            "recency_pct": 0.40,
+            "free_pct": 0.20,
+            "system_pct": 0.05,
+            "memory_pct": 0.05,
+            "skills_pct": 0.03,
+        },
+        "aggressive": {
+            "threshold": 0.90,
+            "recency_pct": 0.25,
+            "free_pct": 0.15,
+            "system_pct": 0.03,
+            "memory_pct": 0.03,
+            "skills_pct": 0.02,
+        },
+    }
+
+    def __init__(
+        self,
+        policy: str = "balanced",
+        threshold: float | None = None,
+        recency_pct: float | None = None,
+        free_pct: float | None = None,
+        system_pct: float | None = None,
+        memory_pct: float | None = None,
+        skills_pct: float | None = None,
+    ):
+        # Start from preset, then let explicit values override
+        base = self.PRESETS.get(policy, self.PRESETS["balanced"]).copy()
+        if threshold is not None:
+            base["threshold"] = threshold
+        if recency_pct is not None:
+            base["recency_pct"] = recency_pct
+        if free_pct is not None:
+            base["free_pct"] = free_pct
+        if system_pct is not None:
+            base["system_pct"] = system_pct
+        if memory_pct is not None:
+            base["memory_pct"] = memory_pct
+        if skills_pct is not None:
+            base["skills_pct"] = skills_pct
+
+        self.policy = policy
+        self.threshold = base["threshold"]
+        self.recency_pct = base["recency_pct"]
+        self.free_pct = base["free_pct"]
+        self.system_pct = base["system_pct"]
+        self.memory_pct = base["memory_pct"]
+        self.skills_pct = base["skills_pct"]
+
+    def to_dict(self) -> dict:
+        return {
+            "policy": self.policy,
+            "threshold": self.threshold,
+            "recency_pct": self.recency_pct,
+            "free_pct": self.free_pct,
+            "system_pct": self.system_pct,
+            "memory_pct": self.memory_pct,
+            "skills_pct": self.skills_pct,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> CompactionPolicy:
+        if not data:
+            return cls()
+        return cls(
+            policy=data.get("policy", "balanced"),
+            threshold=data.get("threshold"),
+            recency_pct=data.get("recency_pct"),
+            free_pct=data.get("free_pct"),
+            system_pct=data.get("system_pct"),
+            memory_pct=data.get("memory_pct"),
+            skills_pct=data.get("skills_pct"),
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"CompactionPolicy(policy={self.policy!r}, "
+            f"threshold={self.threshold}, "
+            f"recency={self.recency_pct})"
+        )
 
 
 # Known model context windows (in tokens)
@@ -137,19 +264,27 @@ class ContextManager:
         self,
         model_name: str = "",
         window_size: int | None = None,
-        reserve_ratio: float = 0.20,
+        reserve_ratio: float | None = None,
         context_length_override: int | None = None,
+        compaction_policy: CompactionPolicy | None = None,
     ):
         """
         Args:
             model_name: Name of the model (used to look up window size and tokenizer)
             window_size: Override the model's default window size
-            reserve_ratio: Fraction of window to keep free (0.20 = 20%)
+            reserve_ratio: DEPRECATED — use compaction_policy instead.
+                Kept for backward compat; if provided, sets free_pct = reserve_ratio.
             context_length_override: Explicit context window size from config
                 (takes precedence over window_size and model lookup)
+            compaction_policy: CompactionPolicy controlling when/how to compress.
+                If None, uses balanced defaults (same behavior as v0.7).
         """
         self.model_name = model_name
-        self.reserve_ratio = reserve_ratio
+        self.compaction_policy = compaction_policy or CompactionPolicy()
+
+        # Backward compat: if reserve_ratio is given, override free_pct
+        if reserve_ratio is not None:
+            self.compaction_policy.free_pct = reserve_ratio
 
         if context_length_override and context_length_override > 0:
             self.window_size = context_length_override
@@ -257,20 +392,21 @@ class ContextManager:
         them before passing them here.
         """
         w = self.window_size
+        cp = self.compaction_policy
 
         # Calculate fixed reserves - use actual token counts when provided
-        system_reserve = system_prompt_tokens if system_prompt_tokens > 0 else int(w * 0.05)
-        memory_reserve = memory_tokens if memory_tokens > 0 else int(w * 0.05)
-        skills_reserve = skills_tokens if skills_tokens > 0 else int(w * 0.03)
+        system_reserve = system_prompt_tokens if system_prompt_tokens > 0 else int(w * cp.system_pct)
+        memory_reserve = memory_tokens if memory_tokens > 0 else int(w * cp.memory_pct)
+        skills_reserve = skills_tokens if skills_tokens > 0 else int(w * cp.skills_pct)
         session_reserve = session_notes_tokens if session_notes_tokens > 0 else int(w * 0.03)
-        free_space = int(w * self.reserve_ratio)
+        free_space = int(w * cp.free_pct)
 
         # Remaining after fixed allocations
         fixed = system_reserve + memory_reserve + skills_reserve + session_reserve + free_space
         remaining = max(0, w - fixed)
 
-        # Recency window: 40% of remaining
-        recency_window = int(remaining * 0.40)
+        # Recency window: policy-defined fraction of remaining
+        recency_window = int(remaining * cp.recency_pct)
 
         # Compression target: whatever's left
         compression_target = remaining - recency_window
