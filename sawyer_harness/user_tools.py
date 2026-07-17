@@ -92,7 +92,7 @@ def ensure_user_tools_dir() -> Path:
     USER_TOOLS_DIR.mkdir(parents=True, exist_ok=True)
 
     # Write an example tool file if the directory is empty
-    example_path = USER_TOOLS_DIR / "_example_tool.py"
+    example_path = USER_TOOLS_DIR / "example_user_tool.py"
     if not example_path.exists() and not any(USER_TOOLS_DIR.glob("*.py")):
         example_path.write_text(_EXAMPLE_TOOL, encoding="utf-8")
         logger.info(f"Created example user tool at {example_path}")
@@ -111,10 +111,10 @@ def load_user_tools(registry: ToolRegistry) -> list[str]:
     loaded: list[str] = []
     errors: list[str] = []
 
-    # Skip __init__.py and files starting with _
+    # Skip __init__.py and pycache files
     tool_files = sorted(
         f for f in tools_dir.glob("*.py")
-        if f.name != "__init__.py" and not f.name.startswith("_")
+        if f.name != "__init__.py" and not f.name.startswith("__")
     )
 
     if not tool_files:

@@ -1787,7 +1787,7 @@ async function loadSkills() {
     for (const s of data.skills) {
       html += '<div class="skill-card" onclick="showSkill(\'' + s.name + '\')">\n        <h4>' + s.name + '</h4>\n        <div class="meta">v' + s.version + ' | ' + s.category + ' | ' + s.chars + ' chars</div>\n        <div class="desc">' + s.description + '</div>\n      </div>';
     }
-    if (!data.skills.length) html = '<div style="color:var(--text-2)">No skills loaded. Create one with + New Skill.</div>';
+    if (!data.skills.length) html = '<div style="color:var(--text-2)">No custom skills yet. Switch to the Create tab to design one, or use clawhub_import to download from ClawHub.</div>';
     list.innerHTML = html;
   } catch(e) { console.error(e); }
 }
