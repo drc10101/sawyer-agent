@@ -103,6 +103,40 @@ class ToolRegistry:
         """Set shared context objects (memory_store, skill_store, etc.)."""
         self._context.update(kwargs)
 
+    # ── Foreground process management ──
+
+    def register_foreground(self, process: subprocess.Popen) -> None:
+        """Track a running foreground subprocess for kill_foreground()."""
+        self._foreground_process = process
+
+    def unregister_foreground(self) -> None:
+        """Clear the tracked foreground process after it completes."""
+        self._foreground_process = None
+
+    def kill_foreground(self) -> bool:
+        """Terminate the current foreground subprocess.
+
+        Returns True if a process was killed, False if none was running.
+        Sends SIGTERM first, then SIGKILL after 2 seconds if still alive.
+        """
+        proc = getattr(self, '_foreground_process', None)
+        if proc is None or proc.poll() is not None:
+            return False
+        try:
+            import signal
+            proc.terminate()  # SIGTERM
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()  # SIGKILL
+                proc.wait(timeout=2)
+            logger.info(f"Killed foreground process PID {proc.pid}")
+            self._foreground_process = None
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to kill foreground process: {e}")
+            return False
+
     def register(self, tool: ToolDefinition):
         """Register a tool. It won't be executable unless allowed."""
         self._tools[tool.name] = tool
@@ -163,6 +197,10 @@ class ToolRegistry:
         # Audit log
         start = time.time()
         try:
+            # For tools that register foreground processes (shell, code_execute),
+            # the handler will call registry.register_foreground() before blocking.
+            # After completion, they call registry.unregister_foreground().
+            # This allows kill_foreground() to terminate them mid-execution.
             result = tool.handler(**args)
             result.duration_ms = (time.time() - start) * 1000
         except Exception as e:
@@ -206,62 +244,74 @@ class ToolRegistry:
 # Built-in tools
 # ============================================================
 
-def _shell_handler(
-    command: str,
-    timeout: int = 60,
-    workdir: str = "",
-) -> ToolResult:
-    """Execute a shell command in a constrained environment."""
-    import os as _os
+def _make_shell_handler(registry: ToolRegistry) -> Callable[..., ToolResult]:
+    """Create a shell handler with foreground process tracking for kill_foreground()."""
+    def handler(
+        command: str,
+        timeout: int = 60,
+        workdir: str = "",
+    ) -> ToolResult:
+        """Execute a shell command in a constrained environment."""
+        import os as _os
 
-    # Block the agent from killing its own PID or the web server PID.
-    my_pid = str(_os.getpid())
-    blocked_patterns = [
-        f"kill {my_pid}", f"kill -9 {my_pid}", f"kill -15 {my_pid}",
-        f"taskkill /PID {my_pid}", f"taskkill /F /PID {my_pid}",
-    ]
-    cmd_lower = command.lower().strip()
-    for blocked in blocked_patterns:
-        if blocked.lower() in cmd_lower:
-            return ToolResult(
-                success=False, output="",
-                error=f"BLOCKED: Agent cannot terminate its own process (PID {my_pid}). "
-                      f"Self-termination is not permitted.",
-            )
-    # Also block killall pkill taskkill that target the process name
-    proc_name = _os.path.basename(sys.executable).lower()
-    proc_base = proc_name.replace(".exe", "")  # e.g. "python" from "python.exe"
-    for pat in [f"killall {proc_name}", f"killall {proc_base}",
-                f"pkill {proc_name}", f"pkill {proc_base}",
-                f"taskkill /IM {proc_name}", f"taskkill /F /IM {proc_name}"]:
-        if pat.lower() in cmd_lower:
-            return ToolResult(
-                success=False, output="",
-                error=f"BLOCKED: Agent cannot terminate its own process type ({proc_name}). "
-                      f"Self-termination is not permitted.",
-            )
+        # Block the agent from killing its own PID or the web server PID.
+        my_pid = str(_os.getpid())
+        blocked_patterns = [
+            f"kill {my_pid}", f"kill -9 {my_pid}", f"kill -15 {my_pid}",
+            f"taskkill /PID {my_pid}", f"taskkill /F /PID {my_pid}",
+        ]
+        cmd_lower = command.lower().strip()
+        for blocked in blocked_patterns:
+            if blocked.lower() in cmd_lower:
+                return ToolResult(
+                    success=False, output="",
+                    error=f"BLOCKED: Agent cannot terminate its own process (PID {my_pid}). "
+                          f"Self-termination is not permitted.",
+                )
+        # Also block killall pkill taskkill that target the process name
+        proc_name = _os.path.basename(sys.executable).lower()
+        proc_base = proc_name.replace(".exe", "")  # e.g. "python" from "python.exe"
+        for pat in [f"killall {proc_name}", f"killall {proc_base}",
+                    f"pkill {proc_name}", f"pkill {proc_base}",
+                    f"taskkill /IM {proc_name}", f"taskkill /F /IM {proc_name}"]:
+            if pat.lower() in cmd_lower:
+                return ToolResult(
+                    success=False, output="",
+                    error=f"BLOCKED: Agent cannot terminate its own process type ({proc_name}). "
+                          f"Self-termination is not permitted.",
+                )
 
-    try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=workdir or None,
-        )
-        output = result.stdout
-        if result.stderr:
-            output += f"\nSTDERR:\n{result.stderr}"
-        return ToolResult(
-            success=result.returncode == 0,
-            output=output,
-            error="" if result.returncode == 0 else f"Exit code: {result.returncode}",
-        )
-    except subprocess.TimeoutExpired:
-        return ToolResult(success=False, output="", error=f"Command timed out after {timeout}s")
-    except Exception as e:
-        return ToolResult(success=False, output="", error=str(e))
+        try:
+            # Use Popen so we can register for kill_foreground()
+            proc = subprocess.Popen(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=workdir or None,
+            )
+            registry.register_foreground(proc)
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                stdout, stderr = proc.communicate(timeout=5)
+                return ToolResult(success=False, output="", error=f"Command timed out after {timeout}s")
+            finally:
+                registry.unregister_foreground()
+
+            output = stdout
+            if stderr:
+                output += f"\nSTDERR:\n{stderr}"
+            return ToolResult(
+                success=proc.returncode == 0,
+                output=output,
+                error="" if proc.returncode == 0 else f"Exit code: {proc.returncode}",
+            )
+        except Exception as e:
+            return ToolResult(success=False, output="", error=str(e))
+    return handler
 
 
 def _file_read_handler(path: str, offset: int = 0, limit: int = 500) -> ToolResult:
@@ -385,82 +435,92 @@ def _web_fetch_handler(url: str, max_length: int = 20000) -> ToolResult:
 # Code execution tool
 # ============================================================
 
-def _code_execute_handler(
-    code: str,
-    language: str = "python",
-    timeout: int = 30,
-) -> ToolResult:
-    """Execute code in a sandboxed environment and return the output.
+def _make_code_execute_handler(registry: ToolRegistry) -> Callable[..., ToolResult]:
+    """Create a code execution handler with foreground process tracking."""
+    def handler(
+        code: str,
+        language: str = "python",
+        timeout: int = 30,
+    ) -> ToolResult:
+        """Execute code in a sandboxed environment and return the output.
 
-    Supports Python (runs in subprocess). The code runs in isolation --
-    no state persists between executions unless written to disk.
-    """
-    if language.lower() != "python":
-        return ToolResult(
-            success=False, output="",
-            error=f"Unsupported language: {language}. Only Python is supported.",
-        )
-
-    import tempfile
-    import os
-
-    tmp_path = ""  # Track temp file for cleanup
-    try:
-        # Write code to a temp file and execute it
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".py", delete=False, prefix="sawyer_exec_"
-        ) as f:
-            # Wrap in a harness that captures stdout and reports errors cleanly
-            wrapped = textwrap.dedent(f"""\
-            import sys
-            import io
-            _stdout_capture = io.StringIO()
-            _stderr_capture = io.StringIO()
-            sys.stdout = _stdout_capture
-            sys.stderr = _stderr_capture
-            try:
-            {textwrap.indent(code, '    ')}
-            except Exception as _e:
-                import traceback
-                print(traceback.format_exc(), file=sys.__stderr__)
-            finally:
-                sys.stdout = sys.__stdout__
-                sys.stderr = sys.__stderr__
-                _out = _stdout_capture.getvalue()
-                _err = _stderr_capture.getvalue()
-                if _out:
-                    print(_out, end='')
-                if _err:
-                    print(_err, end='', file=sys.stderr)
-            """)
-            f.write(wrapped)
-            tmp_path = f.name
-
-        try:
-            result = subprocess.run(
-                [sys.executable, tmp_path],
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                cwd=str(Path.home()),
-            )
-            output = result.stdout
-            if result.stderr:
-                output += f"\nSTDERR:\n{result.stderr}"
+        Supports Python (runs in subprocess). The code runs in isolation --
+        no state persists between executions unless written to disk.
+        """
+        if language.lower() != "python":
             return ToolResult(
-                success=result.returncode == 0,
-                output=output if output else "(No output)",
-                error="" if result.returncode == 0 else f"Exit code: {result.returncode}",
+                success=False, output="",
+                error=f"Unsupported language: {language}. Only Python is supported.",
             )
-        except subprocess.TimeoutExpired:
-            return ToolResult(success=False, output="", error=f"Execution timed out after {timeout}s")
-    except Exception as e:
-        return ToolResult(success=False, output="", error=f"Code execution setup failed: {e}")
-    finally:
+
+        import tempfile
+        import os
+
+        tmp_path = ""  # Track temp file for cleanup
         try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
+            # Write code to a temp file and execute it
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".py", delete=False, prefix="sawyer_exec_"
+            ) as f:
+                # Wrap in a harness that captures stdout and reports errors cleanly
+                wrapped = textwrap.dedent(f"""\
+                import sys
+                import io
+                _stdout_capture = io.StringIO()
+                _stderr_capture = io.StringIO()
+                sys.stdout = _stdout_capture
+                sys.stderr = _stderr_capture
+                try:
+                {textwrap.indent(code, '    ')}
+                except Exception as _e:
+                    import traceback
+                    print(traceback.format_exc(), file=sys.__stderr__)
+                finally:
+                    sys.stdout = sys.__stdout__
+                    sys.stderr = sys.__stderr__
+                    _out = _stdout_capture.getvalue()
+                    _err = _stderr_capture.getvalue()
+                    if _out:
+                        print(_out, end='')
+                    if _err:
+                        print(_err, end='', file=sys.stderr)
+                """)
+                f.write(wrapped)
+                tmp_path = f.name
+
+            try:
+                proc = subprocess.Popen(
+                    [sys.executable, tmp_path],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    cwd=str(Path.home()),
+                )
+                registry.register_foreground(proc)
+                try:
+                    stdout, stderr = proc.communicate(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    stdout, stderr = proc.communicate(timeout=5)
+                    return ToolResult(success=False, output="", error=f"Execution timed out after {timeout}s")
+                finally:
+                    registry.unregister_foreground()
+
+                output = stdout
+                if stderr:
+                    output += f"\nSTDERR:\n{stderr}"
+                return ToolResult(
+                    success=proc.returncode == 0,
+                    output=output if output else "(No output)",
+                    error="" if proc.returncode == 0 else f"Exit code: {proc.returncode}",
+                )
+            finally:
+                import os as _os
+                if tmp_path and _os.path.exists(tmp_path):
+                    _os.unlink(tmp_path)
+        except Exception as e:
+            return ToolResult(success=False, output="", error=str(e))
+    return handler
 
 
 # ============================================================
@@ -1075,7 +1135,7 @@ def create_default_registry(
             },
             "required": ["command"],
         },
-        handler=_shell_handler,
+        handler=_make_shell_handler(registry),
         requires_sandbox=True,
         dangerous=True,
         task_kind=TaskKind.SHELL,
@@ -1183,7 +1243,7 @@ def create_default_registry(
             },
             "required": ["code"],
         },
-        handler=_code_execute_handler,
+        handler=_make_code_execute_handler(registry),
         requires_sandbox=True,
         dangerous=False,
         task_kind=TaskKind.SHELL,

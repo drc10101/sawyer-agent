@@ -456,6 +456,16 @@ def _register_routes(app: FastAPI, state: _AppState):
             return {"status": "cleared"}
         raise HTTPException(status_code=404, detail="Session not found")
 
+    @app.post("/api/kill-foreground")
+    async def kill_foreground():
+        """Kill the current foreground subprocess (shell, code_execute, etc.).
+
+        Use when the user wants to cancel a running tool execution.
+        Returns whether a process was killed.
+        """
+        killed = state.tools.kill_foreground()
+        return {"killed": killed, "status": "killed" if killed else "no_process"}
+
     @app.post("/api/session/{session_id}/notes")
     async def generate_session_notes(session_id: str):
         """Auto-generate session notes at end of session."""
