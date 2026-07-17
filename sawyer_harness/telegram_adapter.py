@@ -276,7 +276,7 @@ class TelegramAdapter:
         # Initialize shared components
         self._memory = MemoryStore(self.config.memory.path)
         self._skills = SkillStore(
-            __import__("pathlib").Path("~/.sawyer-harness/skills").expanduser()
+            __import__("sawyer_harness.paths", fromlist=["UserData"]).UserData.skills_dir
         )
 
         application = Application.builder().token(self.token).build()

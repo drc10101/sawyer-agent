@@ -18,6 +18,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from .paths import UserData
 import yaml
 
 logger = logging.getLogger("sawyer-harness.orchestrator")
@@ -217,7 +218,7 @@ class OrchestratorEngine:
 
     def __init__(self, path: str | Path | None = None):
         if path is None:
-            path = Path.home() / ".sawyer-harness" / "orchestrations.yaml"
+            path = UserData.orchestrations_file
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._runs: dict[str, OrchestrationRun] = {}

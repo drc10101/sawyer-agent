@@ -27,6 +27,8 @@ from typing import Any, Callable
 
 import httpx
 
+from .paths import UserData
+
 logger = logging.getLogger("sawyer-harness.tools")
 
 
@@ -825,7 +827,7 @@ def _make_clawhub_import_handler(registry: ToolRegistry) -> Callable[..., ToolRe
     import urllib.error
     import re
 
-    SKILLS_DIR = Path.home() / ".sawyer-harness" / "skills"
+    SKILLS_DIR = UserData.skills_dir
 
     def handler(slug: str = "", search: str = "") -> ToolResult:
         # --- Search mode: list ClawHub skills ---

@@ -19,9 +19,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .paths import UserData
+
 logger = logging.getLogger("sawyer-harness.scoring")
 
-SCORES_DIR = Path.home() / ".sawyer-harness" / "session-scores"
+SCORES_DIR = UserData.session_scores_dir
 
 # The specific set of questions asked after every session
 SCORING_QUESTIONS = {

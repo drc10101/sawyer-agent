@@ -38,9 +38,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .tools import ToolRegistry
 
+from .paths import UserData
+
 logger = logging.getLogger("sawyer-harness.user_tools")
 
-USER_TOOLS_DIR = Path.home() / ".sawyer-harness" / "tools"
+USER_TOOLS_DIR = UserData.tools_dir
 
 # Example user tool template written to disk on first load
 _EXAMPLE_TOOL = '''"""

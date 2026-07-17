@@ -168,7 +168,7 @@ class _AppState:
     def __init__(self, config: HarnessConfig):
         self.config = config
         self.memory = MemoryStore(config.memory.path)
-        self.skills = SkillStore(Path("~/.sawyer-harness/skills").expanduser())
+        self.skills = SkillStore(UserData.skills_dir)
         self.tools = create_default_registry(
             allowed_tools=config.security.allowed_tools or None,
             denied_paths=config.security.denied_paths,
@@ -226,7 +226,7 @@ class _AppState:
         self.orchestrator = OrchestratorEngine()
         self.lkg_store = LKGStore()
         self.current_project: Project | None = None
-        self.upload_dir = Path("~/.sawyer-harness/uploads").expanduser()
+        self.upload_dir = UserData.uploads_dir
         self.upload_dir.mkdir(parents=True, exist_ok=True)
 
     def get_or_create_session(self, session_id: str = "") -> tuple[str, Agent]:
@@ -2031,7 +2031,7 @@ def _register_routes(app: FastAPI, state: _AppState):
         my_pid = os.getpid()
 
         if is_windows:
-            script_path = Path.home() / ".sawyer-harness" / "_restart.bat"
+            script_path = UserData.restart_script.with_suffix(".bat")
             # Windows batch: kill old PID, wait for it to die, restart server
             script_lines = [
                 "@echo off",
@@ -2047,7 +2047,7 @@ def _register_routes(app: FastAPI, state: _AppState):
             ]
             script_content = "\n".join(script_lines)
         else:
-            script_path = Path.home() / ".sawyer-harness" / "_restart.sh"
+            script_path = UserData.restart_script.with_suffix(".sh")
             script_lines = [
                 "#!/bin/bash",
                 "echo 'Sawyer Agent - Restarting after upgrade...'",
@@ -2114,7 +2114,7 @@ def _register_routes(app: FastAPI, state: _AppState):
         port = getattr(state, "_port", 8765)
 
         if is_windows:
-            script_path = Path.home() / ".sawyer-harness" / "_restart.bat"
+            script_path = UserData.restart_script.with_suffix(".bat")
             script_lines = [
                 "@echo off",
                 "echo Sawyer Agent - Restarting...",
@@ -2129,7 +2129,7 @@ def _register_routes(app: FastAPI, state: _AppState):
             ]
             script_content = "\n".join(script_lines)
         else:
-            script_path = Path.home() / ".sawyer-harness" / "_restart.sh"
+            script_path = UserData.restart_script.with_suffix(".sh")
             script_lines = [
                 "#!/bin/bash",
                 "echo 'Sawyer Agent - Restarting...'",
@@ -2934,7 +2934,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Sawyer Agent Web UI")
-    parser.add_argument("--config", "-c", default=None, help="Config file path (default: ~/.sawyer-harness/config.yaml)")
+    parser.add_argument("--config", "-c", default=None, help="Config file path (default: Sawyer user data dir)")
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind")
     parser.add_argument("--port", "-p", type=int, default=8765, help="Port to bind")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose logging")

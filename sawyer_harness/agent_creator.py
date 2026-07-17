@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .paths import UserData
 import yaml
 
 logger = logging.getLogger("sawyer-harness.agent_creator")
@@ -390,7 +391,7 @@ class AgentCreator:
 
     def __init__(self, path: str | Path | None = None):
         if path is None:
-            path = Path.home() / ".sawyer-harness" / "agent_templates.yaml"
+            path = UserData.agent_templates_file
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._templates: dict[str, AgentTemplate] = {}

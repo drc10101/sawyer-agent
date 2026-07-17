@@ -47,9 +47,11 @@ from typing import Any
 
 import yaml
 
+from .paths import UserData
 
-KEYS_DIR = Path.home() / ".sawyer-harness"
-KEYS_FILE = KEYS_DIR / "keys.yaml"
+
+KEYS_DIR = UserData.home
+KEYS_FILE = UserData.keys_file
 
 CATEGORIES = ["ssh", "api", "tokens", "custom"]
 PERMISSIONS = ["ask", "allowlist", "session", "approve"]

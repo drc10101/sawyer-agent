@@ -15,7 +15,9 @@ from typing import Any
 
 import yaml
 
-DEFAULT_CONFIG_PATH = Path.home() / ".sawyer-harness" / "config.yaml"
+from .paths import UserData
+
+DEFAULT_CONFIG_PATH = UserData.config_file
 
 
 @dataclass
@@ -65,7 +67,7 @@ class SecurityConfig:
 @dataclass
 class MemoryConfig:
     backend: str = "sqlite"
-    path: str = "~/.sawyer-harness/memory.db"
+    path: str = ""  # defaults to UserData.memory_db at runtime
 
 
 @dataclass
@@ -150,7 +152,7 @@ class HarnessConfig:
             ),
             memory=MemoryConfig(
                 backend=mem_data.get("backend", "sqlite"),
-                path=mem_data.get("path", "~/.sawyer-harness/memory.db"),
+                path=mem_data.get("path", str(UserData.memory_db)),
             ),
             agent=AgentConfig(
                 max_tool_rounds=agent_data.get("max_tool_rounds", 20),
@@ -301,9 +303,9 @@ def _create_desktop_shortcut() -> None:
     icon_path = Path(__file__).parent / "web" / "static" / "sawyer.ico"
 
     # Launcher batch file -- starts server, waits for ready, then opens browser
-    app_dir = Path.home() / ".sawyer-harness"
+    app_dir = UserData.home
     app_dir.mkdir(parents=True, exist_ok=True)
-    launcher = app_dir / "launch.bat"
+    launcher = UserData.launch_script
 
     launcher.write_text(
         '@echo off\n'

@@ -25,9 +25,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .paths import UserData
+
 logger = logging.getLogger("sawyer-harness.lkg")
 
-LKG_FILE = Path.home() / ".sawyer-harness" / "lkg.json"
+LKG_FILE = UserData.lkg_file
 
 # Where the sawyer-agent repo lives (used for git operations)
 REPO_DIR = Path(__file__).parent.parent

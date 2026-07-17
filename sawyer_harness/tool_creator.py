@@ -20,9 +20,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .tools import ToolRegistry
 
+from .paths import UserData
+
 logger = logging.getLogger("sawyer-harness.tool_creator")
 
-USER_TOOLS_DIR = Path.home() / ".sawyer-harness" / "tools"
+USER_TOOLS_DIR = UserData.tools_dir
 
 # Template for generating a user tool. The agent fills in the blanks.
 _TOOL_TEMPLATE = '''"""
