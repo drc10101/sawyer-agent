@@ -77,12 +77,21 @@ def _cmd_setup(args):
 
 
 def _cmd_uninstall(args):
-    """Remove Sawyer: stop server, delete data, uninstall package.
+    """Remove Sawyer: stop server, delete ephemeral data, uninstall package.
+
+    Preserves the user/ directory (config, memory, skills, keys, suggestions,
+    tools, projects, LKG, cron, rules, goal loops, agent templates) so
+    reinstalling picks up right where you left off.
 
     On Windows the running exe cannot delete itself, so we spawn a detached
     cleanup script that waits for us to exit before running pip uninstall.
     """
-    data_dir = Path.home() / ".sawyer-harness"
+    from sawyer_harness.paths import UserData
+
+    data_dir = UserData.home
+    user_dir = UserData.user_dir
+    cache_dir = UserData.cache_dir
+    log_dir = UserData.log_dir
     found = False
 
     # 1. Stop running server
@@ -104,11 +113,65 @@ def _cmd_uninstall(args):
         subprocess.run(["pkill", "-f", "sawyer_harness.web.server"],
                        capture_output=True, timeout=10)
 
-    # 2. Delete config, memory, skills, keys
+    # 2. Delete ephemeral data (cache/, logs/, root-level files)
+    #    Explicitly PRESERVE user/ — config, memory, skills, keys, tools, etc.
     if data_dir.exists():
-        print(f"Removing {data_dir}...")
-        shutil.rmtree(data_dir, ignore_errors=True)
-        found = True
+        # Wipe cache and logs (safe to delete)
+        for ephemeral in (cache_dir, log_dir):
+            if ephemeral.exists():
+                print(f"Removing {ephemeral}...")
+                shutil.rmtree(ephemeral, ignore_errors=True)
+                found = True
+
+        # Remove root-level ephemeral files (legacy locations pre-migration)
+        ephemeral_root_files = [
+            "session-scores",   # directory — moved to cache/ by migration
+            "uploads",           # directory — moved to cache/ by migration
+        ]
+        for name in ephemeral_root_files:
+            p = data_dir / name
+            if p.exists():
+                print(f"Removing {p}...")
+                shutil.rmtree(p, ignore_errors=True)
+                found = True
+
+        # Remove root-level ephemeral single files (legacy, pre-migration)
+        ephemeral_root_single = [
+            "_restart",          # restart script
+        ]
+        for name in ephemeral_root_single:
+            p = data_dir / name
+            if p.exists():
+                p.unlink(missing_ok=True)
+                found = True
+
+        # Remove the launch script at root
+        launch_script = UserData.launch_script
+        if launch_script.exists():
+            launch_script.unlink(missing_ok=True)
+            found = True
+
+        # Remove migration marker (will re-migrate if user reinstalls and has
+        # legacy files, but user/ is already in the right place)
+        migration_marker = UserData._migration_marker
+        if migration_marker.exists():
+            migration_marker.unlink(missing_ok=True)
+
+        # Confirm user/ survives
+        if user_dir.exists():
+            print(f"\nPreserved {user_dir} (config, memory, skills, keys, tools, projects)")
+        else:
+            print(f"\nNo user data directory at {user_dir}")
+
+        # Clean up empty parent dirs only if user/ is empty too
+        # (if user/ has content, leave the whole .sawyer-harness/ tree intact)
+        if user_dir.exists() and any(user_dir.iterdir()):
+            print(f"Keeping {data_dir} with your user data intact.")
+        else:
+            # user/ is empty or gone — safe to remove the whole tree
+            print(f"Removing {data_dir} (no user data to preserve)...")
+            shutil.rmtree(data_dir, ignore_errors=True)
+            found = True
     else:
         print(f"No data directory at {data_dir}")
 
@@ -173,7 +236,12 @@ def _cmd_uninstall(args):
         else:
             print(result.stdout.strip() or "Done.")
 
-    if found:
+    if user_dir.exists() and any(user_dir.iterdir()):
+        print("\nSawyer Agent uninstalled. Your data is preserved at:")
+        print(f"  {user_dir}")
+        print("Reinstall with: pip install sawyer-agent")
+        print("To fully delete all data, remove that directory manually.")
+    elif found:
         print("\nSawyer Agent has been removed.")
     else:
         print("\nNothing to remove -- Sawyer was not installed.")

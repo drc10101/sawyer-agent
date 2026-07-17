@@ -1881,6 +1881,9 @@ def _register_routes(app: FastAPI, state: _AppState):
         """Submit a new suggestion. Requires name and suggestion text.
         Optionally includes 'biggest_problem' — the user's biggest pain
         point with their current AI agent.
+
+        If SMTP is configured in config.yaml notifications section,
+        an email is sent to the configured address.
         """
         name = body.get("name", "").strip()
         suggestion = body.get("suggestion", "").strip()
@@ -1893,6 +1896,24 @@ def _register_routes(app: FastAPI, state: _AppState):
 
         store = SuggestionStore()
         entry = store.add(name=name, suggestion=suggestion, biggest_problem=biggest_problem)
+
+        # Send email notification if SMTP is configured
+        notif = state.config.notifications
+        if notif.smtp_host and notif.to_address:
+            from ..suggestions import send_suggestion_email
+            import asyncio
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(None, lambda: send_suggestion_email(
+                suggestion=entry,
+                smtp_host=notif.smtp_host,
+                smtp_port=notif.smtp_port,
+                smtp_user=notif.smtp_user,
+                smtp_password=notif.smtp_password,
+                from_address=notif.from_address,
+                to_address=notif.to_address,
+                use_tls=notif.use_tls,
+            ))
+
         return vars(entry)
 
     @app.patch("/api/suggestions/{suggestion_id}")
@@ -2170,6 +2191,34 @@ def _register_routes(app: FastAPI, state: _AppState):
             "status": "restarting",
             "message": "Server is restarting. Wait for the reconnect prompt.",
         }
+
+    @app.post("/api/open-data-folder")
+    async def open_data_folder():
+        """Open the user data directory in the OS file explorer.
+
+        Opens ~/.sawyer-harness/user/ which contains config, memory, skills,
+        keys, tools, projects — everything that survives uninstall.
+        """
+        import subprocess
+        import platform
+
+        folder = UserData.user_dir
+        folder.mkdir(parents=True, exist_ok=True)
+
+        system = platform.system()
+        try:
+            if system == "Windows":
+                subprocess.Popen(["explorer", str(folder)])
+            elif system == "Darwin":
+                subprocess.Popen(["open", str(folder)])
+            else:
+                subprocess.Popen(["xdg-open", str(folder)])
+            return {"status": "opened", "path": str(folder)}
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Could not open folder: {e}",
+            )
 
     @app.get("/api/capabilities")
     async def get_capabilities():

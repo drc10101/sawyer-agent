@@ -296,6 +296,23 @@ class Agent:
             if rules_prompt:
                 parts.append(rules_prompt)
 
+        # Inject user data paths so the agent knows where files live
+        from .paths import UserData
+        parts.append(
+            "\n## User Data Paths\n"
+            f"- Config: {UserData.config_file}\n"
+            f"- Memory: {UserData.memory_db}\n"
+            f"- Skills: {UserData.skills_dir}\n"
+            f"- Tools: {UserData.tools_dir}\n"
+            f"- Projects: {UserData.projects_dir}\n"
+            f"- Keys: {UserData.keys_file}\n"
+            f"- Rules: {UserData.rules_file}\n"
+            f"- Cron: {UserData.cron_db}\n"
+            f"- Suggestions: {UserData.suggestions_dir}\n"
+            f"- LKG: {UserData.lkg_file}\n"
+            f"- Logs: {UserData.log_file}\n"
+        )
+
         return "\n".join(parts)
 
     def _check_context_pressure(self) -> float:

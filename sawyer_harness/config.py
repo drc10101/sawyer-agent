@@ -76,6 +76,17 @@ class ChannelConfig:
     enabled: bool = False
     config: dict[str, Any] = field(default_factory=dict)
 
+@dataclass
+class NotificationConfig:
+    """Email notification settings for suggestions and alerts.
+    If smtp_host is empty, email sending is silently skipped."""
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""  # App password, not account password
+    from_address: str = ""
+    to_address: str = ""     # Where suggestions get sent
+    use_tls: bool = True
 
 @dataclass
 class HarnessConfig:
@@ -84,6 +95,7 @@ class HarnessConfig:
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     agent: AgentConfig = field(default_factory=AgentConfig)
     channels: list[ChannelConfig] = field(default_factory=list)
+    notifications: NotificationConfig = field(default_factory=NotificationConfig)
 
     @classmethod
     def from_file(cls, path: str | Path | None = None) -> HarnessConfig:
@@ -108,6 +120,7 @@ class HarnessConfig:
         mem_data = data.get("memory", {})
         agent_data = data.get("agent", {})
         chan_data = data.get("channels", [])
+        notif_data = data.get("notifications", {})
 
         channels = [
             ChannelConfig(
@@ -162,6 +175,15 @@ class HarnessConfig:
                 reasoning=reasoning,
             ),
             channels=channels,
+            notifications=NotificationConfig(
+                smtp_host=notif_data.get("smtp_host", ""),
+                smtp_port=notif_data.get("smtp_port", 587),
+                smtp_user=notif_data.get("smtp_user", ""),
+                smtp_password=notif_data.get("smtp_password", ""),
+                from_address=notif_data.get("from_address", ""),
+                to_address=notif_data.get("to_address", ""),
+                use_tls=notif_data.get("use_tls", True),
+            ),
         )
 
     def needs_setup(self) -> bool:
@@ -203,6 +225,15 @@ class HarnessConfig:
                 "stream_tool_output": self.agent.stream_tool_output,
                 "agreeability": self.agent.agreeability,
                 "reasoning": self.agent.reasoning,
+            },
+            "notifications": {
+                "smtp_host": self.notifications.smtp_host,
+                "smtp_port": self.notifications.smtp_port,
+                "smtp_user": self.notifications.smtp_user,
+                "smtp_password": self.notifications.smtp_password,
+                "from_address": self.notifications.from_address,
+                "to_address": self.notifications.to_address,
+                "use_tls": self.notifications.use_tls,
             },
         }
         path.write_text(yaml.dump(data, default_flow_style=False, sort_keys=False), encoding="utf-8")

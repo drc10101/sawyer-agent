@@ -4,6 +4,10 @@ Suggestions — user-submitted feature requests and pain points.
 Each suggestion is stored as a JSON file in UserData.suggestions_dir
 so it survives upgrades and even full reinstalls.
 
+When a suggestion is submitted, an email notification is sent if
+SMTP is configured (notifications section in config.yaml).
+If SMTP is not configured, the suggestion is still stored locally.
+
 Structure of each suggestion file:
   {
     "id": "uuid4",
@@ -19,8 +23,11 @@ from __future__ import annotations
 
 import json
 import logging
+import smtplib
+import ssl
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
+from email.mime.text import MIMEText
 from pathlib import Path
 from typing import Optional
 from uuid import uuid4
@@ -117,3 +124,59 @@ class SuggestionStore:
             if s.status in counts:
                 counts[s.status] += 1
         return counts
+
+
+def send_suggestion_email(
+    suggestion: Suggestion,
+    smtp_host: str,
+    smtp_port: int = 587,
+    smtp_user: str = "",
+    smtp_password: str = "",
+    from_address: str = "",
+    to_address: str = "",
+    use_tls: bool = True,
+) -> bool:
+    """Send an email notification for a new suggestion.
+
+    Returns True if sent successfully, False if SMTP is not configured or
+    sending fails. Failures are logged but never raise — the local JSON
+    record is the source of truth.
+    """
+    if not smtp_host or not to_address:
+        logger.debug("SMTP not configured — skipping email notification")
+        return False
+
+    subject = f"Sawyer Suggestion from {suggestion.name}: {suggestion.suggestion[:60]}"
+    body_parts = [
+        f"Name: {suggestion.name}",
+        f"Suggestion: {suggestion.suggestion}",
+    ]
+    if suggestion.biggest_problem:
+        body_parts.append(f"\nBiggest Problem:\n{suggestion.biggest_problem}")
+    body_parts.append(f"\nID: {suggestion.id}")
+    body_parts.append(f"Submitted: {suggestion.created}")
+    body = "\n".join(body_parts)
+
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = subject
+    msg["From"] = from_address or smtp_user
+    msg["To"] = to_address
+
+    try:
+        if use_tls:
+            context = ssl.create_default_context()
+            with smtplib.SMTP(smtp_host, smtp_port) as server:
+                server.starttls(context=context)
+                if smtp_user:
+                    server.login(smtp_user, smtp_password)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(smtp_host, smtp_port) as server:
+                if smtp_user:
+                    server.login(smtp_user, smtp_password)
+                server.send_message(msg)
+        logger.info("Suggestion email sent to %s", to_address)
+        return True
+    except Exception as e:
+        logger.warning("Failed to send suggestion email: %s", e)
+        return False
