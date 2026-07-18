@@ -1090,6 +1090,14 @@ def _register_routes(app: FastAPI, state: _AppState):
             raise HTTPException(status_code=500, detail="Failed to add memory")
         return {"status": "added", "key": entry.key}
 
+    @app.get("/api/memory/search")
+    async def search_memory(q: str = "", limit: int = 20):
+        """Search memory entries by query string."""
+        if not q:
+            return {"results": [], "query": q}
+        results = state.memory.search(q, limit=limit)
+        return {"results": results, "query": q}
+
     @app.delete("/api/memory/{key}")
     async def delete_memory(key: str):
         """Delete a memory entry."""

@@ -43,6 +43,10 @@ class MemoryStore:
     """
 
     def __init__(self, db_path: str | Path):
+        # Handle empty string — fall back to default UserData path
+        if not db_path:
+            from .paths import UserData
+            db_path = str(UserData.memory_db)
         self.db_path = Path(db_path).expanduser()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self.db_path))
@@ -156,15 +160,28 @@ class MemoryStore:
         """Search memories using the best available method.
 
         Priority:
-        1. FTS5 BM25 ranking (if available)
+        1. FTS5 BM25 ranking (if available) — with prefix matching for partial terms
         2. LIKE fallback (always works)
         """
         if self._fts5_available:
-            return self._search_fts5(query, limit)
+            results = self._search_fts5(query, limit)
+            if results:
+                return results
+            # FTS5 only matches whole tokens. If no results, fall back to
+            # LIKE which handles substring matching (e.g. "Dav" matches "David").
+            return self._search_like(query, limit)
         return self._search_like(query, limit)
 
     def _search_fts5(self, query: str, limit: int) -> list[dict]:
-        """Search using FTS5 BM25 ranking."""
+        """Search using FTS5 BM25 ranking with prefix matching.
+
+        Appends '*' to search terms for prefix matching so "Dav" matches "David".
+        Falls back to LIKE on query syntax errors.
+        """
+        # Add prefix wildcard for partial term matching
+        fts_query = query.strip()
+        if fts_query and not fts_query.endswith("*"):
+            fts_query = fts_query + "*"
         try:
             rows = self._conn.execute(
                 """SELECT m.key, m.content, m.category, m.updated_at
@@ -172,7 +189,7 @@ class MemoryStore:
                    JOIN memories m ON m.id = fts.rowid
                    WHERE memories_fts MATCH ?
                    ORDER BY bm25(memories_fts) LIMIT ?""",
-                (query, limit),
+                (fts_query, limit),
             ).fetchall()
             return [
                 {"key": r[0], "content": r[1], "category": r[2], "updated_at": r[3]}

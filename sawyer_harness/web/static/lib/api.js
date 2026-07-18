@@ -195,6 +195,12 @@ export async function addMemory(key, content, category = 'general') {
   });
 }
 
+/** Search memory entries */
+export async function searchMemory(query, limit = 20) {
+  const res = await api(`/api/memory/search?q=${encodeURIComponent(query)}&limit=${limit}`);
+  return res.results || [];
+}
+
 /** Delete a memory entry */
 export async function deleteMemory(key) {
   await api(`/api/memory/${encodeURIComponent(key)}`, { method: 'DELETE' });

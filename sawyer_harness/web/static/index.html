@@ -66,6 +66,10 @@
       </div>
       <div class="sidebar-nav-item" data-panel="context" onclick="switchPanel('context')">
         <span class="nav-icon"><i data-lucide="brain"></i></span>
+        <span class="nav-label">Context</span>
+      </div>
+      <div class="sidebar-nav-item" data-panel="memory" onclick="switchPanel('memory')">
+        <span class="nav-icon"><i data-lucide="database"></i></span>
         <span class="nav-label">Memory</span>
       </div>
       <div class="sidebar-nav-item" data-panel="keys" onclick="switchPanel('keys')">
@@ -197,6 +201,55 @@
             <h3>Last Compression</h3>
             <div id="compression-stats" style="font-size:13px;color:var(--text-1)"></div>
           </div>
+        </div>
+      </div>
+
+      <!-- Memory CRUD Panel -->
+      <div class="panel" id="panel-memory">
+        <div style="max-width:1200px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <h3 style="color:var(--brand);font-size:1rem">Memory Store</h3>
+            <div style="display:flex;gap:8px;align-items:center">
+              <span style="font-size:12px;color:var(--text-2)" id="memory-total-chars">0 chars</span>
+              <button class="btn btn--primary btn-sm" onclick="showAddMemoryForm()">+ Add Memory</button>
+            </div>
+          </div>
+
+          <!-- Search bar -->
+          <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
+            <input type="text" id="memory-search" placeholder="Search memories..." style="flex:1;background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:8px 12px;color:var(--text-0);font-size:13px;outline:none" onkeydown="if(event.key==='Enter')searchMemoryEntries()">
+            <button class="btn btn--primary btn-sm" onclick="searchMemoryEntries()">Search</button>
+            <button class="btn btn--subtle btn-sm" onclick="clearMemorySearch(); loadMemoryEntries()">Show All</button>
+          </div>
+
+          <!-- Category filter tabs -->
+          <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap" id="memory-category-tabs">
+            <button class="btn btn--subtle btn-sm mem-cat-tab active" data-cat="all" onclick="filterMemoryByCategory('all')" style="border-color:var(--brand);color:var(--brand)">All</button>
+          </div>
+
+          <!-- Add memory form (hidden by default) -->
+          <div id="memory-add-form" class="ctrl-card" style="display:none;margin-bottom:16px">
+            <h3 id="memory-form-title" style="margin-bottom:12px">Add Memory</h3>
+            <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px">Key</label>
+            <input id="mem-key" placeholder="e.g. user preference" style="width:100%;background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px"></div>
+            <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px">Content</label>
+            <textarea id="mem-content" placeholder="e.g. Prefers concise responses" style="width:100%;min-height:60px;background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px;resize:vertical"></textarea></div>
+            <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px">Category</label>
+            <select id="mem-category" style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px;width:200px">
+              <option value="general">general</option>
+              <option value="user">user</option>
+              <option value="project">project</option>
+              <option value="procedure">procedure</option>
+              <option value="preference">preference</option>
+            </select></div>
+            <div style="display:flex;gap:8px;margin-top:12px">
+              <button class="btn btn--primary btn-sm" onclick="submitAddMemory()">Add</button>
+              <button class="btn btn--subtle btn-sm" onclick="hideAddMemoryForm()">Cancel</button>
+            </div>
+          </div>
+
+          <!-- Memory entries list -->
+          <div id="memory-entries-list"></div>
         </div>
       </div>
 
@@ -1037,16 +1090,17 @@ function switchPanel(panel) {
   document.querySelector('[data-panel="' + panel + '"]').classList.add('active');
   document.getElementById('panel-' + panel).classList.add('active');
   const titles = {chat:'Chat',goals:'Goal Loops','skill-creator':'Skills',
-    tools:'Tools',files:'Files',models:'Models',settings:'Settings',sessions:'Sessions',projects:'Projects',
-    cron:'Cron',context:'Memory',keys:'Keys',rules:'Rules',agents:'Sub-Agents',orchestration:'Orchestrate',suggestions:'Suggest'};
-  document.getElementById('panel-title').textContent = titles[panel] || panel;
-  if (panel === 'models') loadModels();
-  if (panel === 'settings') { loadAgentConfig(); loadLKGHistory(); loadScoreHistory(); }
-  if (panel === 'goals') loadGoals();
-  if (panel === 'tools') { loadTools(); loadUserTools(); }
-  if (panel === 'cron') loadCron();
-  if (panel === 'context') loadContextStats();
-  if (panel === 'sessions') { loadSessions(); }
+      tools:'Tools',files:'Files',models:'Models',settings:'Settings',sessions:'Sessions',projects:'Projects',
+      cron:'Cron',context:'Context',memory:'Memory',keys:'Keys',rules:'Rules',agents:'Sub-Agents',orchestration:'Orchestrate',suggestions:'Suggest'};
+    document.getElementById('panel-title').textContent = titles[panel] || panel;
+    if (panel === 'models') loadModels();
+    if (panel === 'settings') { loadAgentConfig(); loadLKGHistory(); loadScoreHistory(); }
+    if (panel === 'goals') loadGoals();
+    if (panel === 'tools') { loadTools(); loadUserTools(); }
+    if (panel === 'cron') loadCron();
+    if (panel === 'context') loadContextStats();
+    if (panel === 'memory') { loadMemoryEntries(); }
+    if (panel === 'sessions') { loadSessions(); }
   if (panel === 'projects') loadProjects();
   if (panel === 'files') { loadUploadedFiles(); loadProjectFiles(); }
   if (panel === 'skill-creator') { loadSkills(); loadSkillSessions(); }
@@ -3815,6 +3869,150 @@ async function submitScore() {
     console.error('submitScore error:', e);
   }
   closeScoringModal();
+}
+
+// ============================================================
+// Memory CRUD Panel
+// ============================================================
+
+let _memoryEntries = [];
+let _memoryFilter = 'all';
+
+async function loadMemoryEntries() {
+  try {
+    const res = await fetch(API + '/api/memory');
+    const data = await res.json();
+    _memoryEntries = data.entries || [];
+    const totalChars = data.total_chars || 0;
+    document.getElementById('memory-total-chars').textContent = totalChars.toLocaleString() + ' chars';
+    renderMemoryCategoryTabs();
+    renderMemoryEntries();
+  } catch(e) {
+    console.error('loadMemoryEntries:', e);
+    document.getElementById('memory-entries-list').innerHTML = '<div style="color:var(--danger);padding:16px">Failed to load memories</div>';
+  }
+}
+
+function renderMemoryCategoryTabs() {
+  const cats = new Set();
+  _memoryEntries.forEach(e => cats.add(e.category || 'general'));
+  const tabContainer = document.getElementById('memory-category-tabs');
+  const allCats = ['all', ...Array.from(cats).sort()];
+  tabContainer.innerHTML = allCats.map(c =>
+    `<button class="btn btn--subtle btn-sm mem-cat-tab ${_memoryFilter === c ? 'active' : ''}" data-cat="${c}" onclick="filterMemoryByCategory('${c}')" style="${_memoryFilter === c ? 'border-color:var(--brand);color:var(--brand)' : ''}">${c === 'all' ? 'All' : c}</button>`
+  ).join('');
+}
+
+function filterMemoryByCategory(cat) {
+  _memoryFilter = cat;
+  renderMemoryCategoryTabs();
+  renderMemoryEntries();
+}
+
+function renderMemoryEntries() {
+  let entries = _memoryEntries;
+  if (_memoryFilter !== 'all') {
+    entries = entries.filter(e => (e.category || 'general') === _memoryFilter);
+  }
+  const container = document.getElementById('memory-entries-list');
+  if (!entries.length) {
+    container.innerHTML = '<div style="text-align:center;color:var(--text-2);padding:32px;font-size:13px">No memory entries found</div>';
+    return;
+  }
+  container.innerHTML = entries.map(e => {
+    const cat = e.category || 'general';
+    const catColors = {
+      user: 'background:rgba(18,199,239,0.12);color:#12c7ef;border:1px solid rgba(18,199,239,0.3)',
+      project: 'background:rgba(139,92,246,0.12);color:#8b5cf6;border:1px solid rgba(139,92,246,0.3)',
+      procedure: 'background:rgba(34,197,94,0.12);color:#22c55e;border:1px solid rgba(34,197,94,0.3)',
+      preference: 'background:rgba(251,146,60,0.12);color:#fb923c;border:1px solid rgba(251,146,60,0.3)',
+      general: 'background:var(--bg-2);color:var(--text-2);border:1px solid var(--border-1)'
+    };
+    const catStyle = catColors[cat] || catColors.general;
+    return `<div class="ctrl-card" style="margin-bottom:8px;display:flex;align-items:flex-start;gap:12px">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <code style="font-size:12px;color:var(--brand);font-weight:600">${escapeHtml(e.key)}</code>
+          <span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;${catStyle}">${escapeHtml(cat)}</span>
+        </div>
+        <div style="font-size:13px;color:var(--text-1);line-height:1.5;word-break:break-word">${escapeHtml(e.content)}</div>
+      </div>
+      <button class="btn btn--subtle btn-sm" onclick="deleteMemoryEntry('${escapeHtml(e.key)}')" title="Delete" style="flex-shrink:0;color:var(--danger);border-color:var(--danger-dim)">Delete</button>
+    </div>`;
+  }).join('');
+  // Re-init lucide icons if any new ones were added
+  if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+}
+
+function showAddMemoryForm() {
+  document.getElementById('memory-add-form').style.display = 'block';
+  document.getElementById('mem-key').value = '';
+  document.getElementById('mem-content').value = '';
+  document.getElementById('mem-category').value = 'general';
+  document.getElementById('mem-key').focus();
+}
+
+function hideAddMemoryForm() {
+  document.getElementById('memory-add-form').style.display = 'none';
+}
+
+async function submitAddMemory() {
+  const key = document.getElementById('mem-key').value.trim();
+  const content = document.getElementById('mem-content').value.trim();
+  const category = document.getElementById('mem-category').value;
+  if (!key || !content) { alert('Key and content are required'); return; }
+  try {
+    const res = await fetch(API + '/api/memory', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({key, content, category})
+    });
+    if (!res.ok) { const err = await res.json(); throw new Error(err.detail || 'Failed to add memory'); }
+    hideAddMemoryForm();
+    await loadMemoryEntries();
+    showToast('Memory added: ' + key, 'success');
+  } catch(e) {
+    alert('Error adding memory: ' + e.message);
+  }
+}
+
+async function deleteMemoryEntry(key) {
+  if (!confirm('Delete memory "' + key + '"?')) return;
+  try {
+    const res = await fetch(API + '/api/memory/' + encodeURIComponent(key), {method: 'DELETE'});
+    if (!res.ok) { const err = await res.json(); throw new Error(err.detail || 'Failed to delete'); }
+    await loadMemoryEntries();
+    showToast('Memory deleted: ' + key, 'success');
+  } catch(e) {
+    alert('Error deleting memory: ' + e.message);
+  }
+}
+
+async function searchMemoryEntries() {
+  const query = document.getElementById('memory-search').value.trim();
+  if (!query) { loadMemoryEntries(); return; }
+  try {
+    const res = await fetch(API + '/api/memory/search?q=' + encodeURIComponent(query));
+    const data = await res.json();
+    _memoryEntries = data.results || [];
+    // Reset filter to 'all' when searching
+    _memoryFilter = 'all';
+    // Rebuild category tabs from results
+    renderMemoryCategoryTabs();
+    const container = document.getElementById('memory-entries-list');
+    if (!_memoryEntries.length) {
+      container.innerHTML = '<div style="text-align:center;color:var(--text-2);padding:32px;font-size:13px">No results for "' + escapeHtml(query) + '"</div>';
+      return;
+    }
+    renderMemoryEntries();
+  } catch(e) {
+    console.error('searchMemoryEntries:', e);
+    alert('Search failed: ' + e.message);
+  }
+}
+
+function clearMemorySearch() {
+  document.getElementById('memory-search').value = '';
 }
 </script>
 
