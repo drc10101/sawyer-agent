@@ -102,6 +102,45 @@ class UserData:
     _DIR_PATHS: list[Path] = None  # computed at class init time
 
     @classmethod
+    def _merge_memory_dbs(cls, root_db: Path, user_db: Path) -> None:
+        """Merge entries from root memory.db into user memory.db.
+
+        When config.path pointed to the legacy root location, new entries
+        were written there instead of the canonical user/ location. This
+        merges any missing entries from root into user so no data is lost.
+        """
+        import sqlite3
+        try:
+            root_conn = sqlite3.connect(str(root_db))
+            user_conn = sqlite3.connect(str(user_db))
+
+            # Find keys in root that aren't in user
+            root_keys = {row[0] for row in root_conn.execute("SELECT key FROM memories")}
+            user_keys = {row[0] for row in user_conn.execute("SELECT key FROM memories")}
+            missing = root_keys - user_keys
+
+            if missing:
+                for key in missing:
+                    row = root_conn.execute(
+                        "SELECT key, content, category, created_at, updated_at, access_count FROM memories WHERE key = ?",
+                        (key,),
+                    ).fetchone()
+                    if row:
+                        user_conn.execute(
+                            "INSERT OR IGNORE INTO memories (key, content, category, created_at, updated_at, access_count) VALUES (?, ?, ?, ?, ?, ?)",
+                            row,
+                        )
+                user_conn.commit()
+                logger.info("Merged %d memory entries from root DB into user DB", len(missing))
+            else:
+                logger.debug("No missing memory entries to merge from root DB")
+
+            root_conn.close()
+            user_conn.close()
+        except Exception as e:
+            logger.warning("Failed to merge memory DBs (non-fatal): %s", e)
+
+    @classmethod
     def _all_dirs(cls) -> list[Path]:
         """Return all Path attributes that are directories (no suffix)."""
         dirs = []
@@ -194,6 +233,13 @@ class UserData:
             if src.is_dir() and not dst.exists():
                 shutil.copytree(str(src), str(dst))
                 logger.debug("  Copied ephemeral %s -> %s", src.name, dst)
+
+        # Merge memory.db data if both root and user DBs exist
+        # (root DB may have entries that user DB doesn't due to config.path pointing to root)
+        root_db = SAWYER_HOME / "memory.db"
+        user_db = cls.memory_db
+        if root_db.exists() and user_db.exists():
+            cls._merge_memory_dbs(root_db, user_db)
 
         # Mark migration as done
         cls._migration_marker.write_text("v1", encoding="utf-8")

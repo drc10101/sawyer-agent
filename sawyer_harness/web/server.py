@@ -17,6 +17,7 @@ WebSocket endpoint for streaming agent responses.
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import os
 import logging
@@ -51,7 +52,7 @@ from ..agent_creator import AgentCreator
 from ..agent_discovery import AgentDiscovery
 from ..orchestrator import OrchestratorEngine, TaskStatus, TaskPriority, AgentBriefing
 from ..suggestions import SuggestionStore
-from ..paths import UserData
+from ..paths import SAWYER_HOME, UserData
 
 logger = logging.getLogger("sawyer-harness.web")
 
@@ -171,6 +172,11 @@ class _AppState:
     def __init__(self, config: HarnessConfig):
         self.config = config
         memory_path = config.memory.path or str(UserData.memory_db)
+        # Merge legacy root memory.db into canonical user/ location if needed
+        UserData._merge_memory_dbs(
+            SAWYER_HOME / "memory.db",
+            UserData.memory_db,
+        )
         self.memory = MemoryStore(memory_path)
         self.skills = SkillStore(UserData.skills_dir)
         self.tools = create_default_registry(
@@ -2444,8 +2450,7 @@ def _register_routes(app: FastAPI, state: _AppState):
 
     @app.get("/health")
     async def health_check():
-        """Simple health check endpoint."""
-        return {"status": "ok", "version": "0.4.0"}
+        return {"status": "ok", "version": __version__}
 
     # ----------------------------------------------------------
     # Agent Rules
@@ -2649,8 +2654,11 @@ def _register_routes(app: FastAPI, state: _AppState):
 
         system_prompt = "\n".join(system_parts)
 
-        # Override model config if template specifies
-        config = HarnessConfig()
+        # Inherit running config, then overlay template overrides.
+        # Must copy from state.config so the API key and other settings
+        # carry through — a fresh HarnessConfig() loses the API key,
+        # causing 401 Unauthorized on cloud providers.
+        config = copy.deepcopy(state.config)
         if tpl.model:
             config.llm.model = tpl.model
         if tpl.provider:

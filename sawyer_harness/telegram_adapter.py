@@ -24,6 +24,7 @@ from typing import Any, Callable, Optional
 from .agent import Agent
 from .config import HarnessConfig, ChannelConfig
 from .memory import MemoryStore
+from .paths import UserData
 from .skills import SkillStore
 from .tools import create_default_registry
 
@@ -106,7 +107,7 @@ class TelegramAdapter:
         """Create a new agent instance for a chat session."""
         from .llm import LLMClient
 
-        memory = MemoryStore(self.config.memory.path)
+        memory = MemoryStore(self.config.memory.path or str(UserData.memory_db))
         tools = create_default_registry(
             allowed_tools=self.config.security.allowed_tools or None,
             denied_paths=self.config.security.denied_paths,
@@ -274,7 +275,7 @@ class TelegramAdapter:
             return
 
         # Initialize shared components
-        self._memory = MemoryStore(self.config.memory.path)
+        self._memory = MemoryStore(self.config.memory.path or str(UserData.memory_db))
         self._skills = SkillStore(
             __import__("sawyer_harness.paths", fromlist=["UserData"]).UserData.skills_dir
         )

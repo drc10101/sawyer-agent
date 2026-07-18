@@ -15,7 +15,7 @@ from typing import Any
 
 import yaml
 
-from .paths import UserData
+from .paths import SAWYER_HOME, UserData
 
 DEFAULT_CONFIG_PATH = UserData.config_file
 
@@ -71,7 +71,27 @@ class SecurityConfig:
 @dataclass
 class MemoryConfig:
     backend: str = "sqlite"
-    path: str = ""  # defaults to UserData.memory_db at runtime
+    path: str = ""  # empty string = use UserData.memory_db (canonical location)
+
+    @staticmethod
+    def _normalize_path(path: str) -> str:
+        """Resolve legacy paths to the canonical UserData location.
+
+        Older configs stored memory.db at the root ~/.sawyer-harness/memory.db
+        instead of the correct ~/.sawyer-harness/user/memory.db. This normalizes
+        the path so all modules use the same DB file, preventing data fragmentation.
+        """
+        if not path:
+            return ""  # let the caller fall back to UserData.memory_db
+
+        expanded = Path(path).expanduser()
+        legacy_root = SAWYER_HOME / "memory.db"
+
+        # If the path is the legacy root location, redirect to canonical user/ path
+        if expanded == legacy_root:
+            return str(UserData.memory_db)
+
+        return path  # user chose a custom path — respect it
 
 
 @dataclass
@@ -192,7 +212,7 @@ class HarnessConfig:
             ),
             memory=MemoryConfig(
                 backend=mem_data.get("backend", "sqlite"),
-                path=mem_data.get("path", str(UserData.memory_db)),
+                path=MemoryConfig._normalize_path(mem_data.get("path", "")),
             ),
             agent=AgentConfig(
                 max_tool_rounds=agent_data.get("max_tool_rounds", 20),
@@ -250,7 +270,7 @@ class HarnessConfig:
             },
             "memory": {
                 "backend": self.memory.backend,
-                "path": self.memory.path,
+                "path": self.memory.path or str(UserData.memory_db),
             },
             "agent": {
                 "max_tool_rounds": self.agent.max_tool_rounds,
