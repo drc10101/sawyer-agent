@@ -130,7 +130,7 @@
           <span class="metric-value" id="metric-tasks">0</span>
         </div>
         <span id="update-badge" style="display:none;align-items:center;gap:6px;margin-left:4px"><a href="https://github.com/drc10101/sawyer-agent/releases" target="_blank" rel="noopener" style="text-decoration:none;background:var(--brand);color:#fff;font-size:11px;font-weight:600;padding:3px 10px;border-radius:12px" id="update-badge-link" title="Update available"></a><button class="btn btn--primary btn-sm" id="upgrade-btn" style="font-size:10px;padding:2px 8px;display:none" onclick="upgradeSawyer()">Upgrade Now</button></span>
-        <button class="btn btn--subtle btn-sm" onclick="newSession()" title="New session">+ NEW SESSION</button>
+        <button class="btn btn--subtle btn-sm" id="new-session-btn" onclick="newSession()" title="New session">+ NEW SESSION</button>
       </div>
     </header>
 
@@ -179,11 +179,15 @@
               <button class="toolbar-btn toolbar-btn--rate" id="toolbar-down" onclick="rateResponse('down')" title="Poor response">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/><line x1="17" y1="2" x2="17" y2="13"/></svg>
               </button>
+              <span class="toolbar-separator"></span>
+              <button class="toolbar-btn" id="stop-btn" onclick="stopStreaming()" title="Stop agent" disabled style="opacity:0.3;color:var(--text-2)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+                <span>Stop</span>
+              </button>
             </div>
             <div class="chat-input-row">
               <textarea id="chat-input" placeholder="Send a message..." rows="2" autofocus></textarea>
               <button class="btn btn--primary" id="send-btn" onclick="sendMessage()">Send</button>
-              <button class="btn btn--danger" id="stop-btn" onclick="stopStreaming()" style="display:none">Stop</button>
             </div>
           </div>
         </div>
@@ -215,9 +219,10 @@
                 <tr><td>System</td><td id="ctx-budget-system">--</td><td id="ctx-budget-system-pct">--</td></tr>
                 <tr><td>Memory</td><td id="ctx-budget-memory">--</td><td id="ctx-budget-memory-pct">--</td></tr>
                 <tr><td>Skills</td><td id="ctx-budget-skills">--</td><td id="ctx-budget-skills-pct">--</td></tr>
-                <tr><td>Session Context</td><td id="ctx-budget-session">--</td><td id="ctx-budget-session-pct">--</td></tr>
-                <tr><td>Recent Messages</td><td id="ctx-budget-recent">--</td><td id="ctx-budget-recent-pct">--</td></tr>
-                <tr><td>Free</td><td id="ctx-budget-free">--</td><td id="ctx-budget-free-pct">--</td></tr>
+                <tr><td>Session</td><td id="ctx-budget-session">--</td><td id="ctx-budget-session-pct">--</td></tr>
+                <tr><td>Messages</td><td id="ctx-budget-recent">--</td><td id="ctx-budget-recent-pct">--</td></tr>
+                <tr style="border-top:1px solid var(--border-1)"><td style="font-weight:600">Used</td><td id="ctx-budget-used" style="font-weight:600">--</td><td id="ctx-budget-used-pct">--</td></tr>
+                <tr><td>Available</td><td id="ctx-budget-free">--</td><td id="ctx-budget-free-pct">--</td></tr>
               </table>
             </div>
           </div>
@@ -649,7 +654,7 @@
             </div>
             <div style="margin:8px 0">
               <label style="font-size:11px;color:var(--text-2)">Description</label><br>
-              <input id="new-project-desc" style="width:100%">
+              <textarea id="new-project-desc" style="width:100%;min-height:80px;max-height:200px;resize:vertical;font-family:var(--font-sans);font-size:13px;padding:6px 8px;border:1px solid var(--border-1);border-radius:var(--radius-sm);background:var(--bg-0);color:var(--text-1)"></textarea>
             </div>
             <button class="btn btn--primary btn-sm" onclick="createProject()">Create</button>
             <button class="btn btn--ghost" onclick="document.getElementById('new-project-form').style.display='none'">Cancel</button>
@@ -1403,7 +1408,7 @@ async function sendMessage() {
   const sendBtn = document.getElementById('send-btn');
   const stopBtn = document.getElementById('stop-btn');
   if (sendBtn) sendBtn.style.display = 'none';
-  if (stopBtn) stopBtn.style.display = 'inline-flex';
+  activateStopBtn();
   input.disabled = true;
 
   // Connect WebSocket if needed
@@ -1500,7 +1505,21 @@ async function sendMessage() {
           appendMsg('assistant', 'No response received.');
         }
         if (sendBtn) sendBtn.style.display = 'inline-flex';
-        if (stopBtn) stopBtn.style.display = 'none';
+        deactivateStopBtn();
+        input.disabled = false;
+        input.focus();
+        updateContextBar();
+        ws.removeEventListener('message', messageHandler);
+        break;
+
+      case 'cancelled':
+        // Agent was stopped by user
+        removeStatusIndicator(statusEl);
+        if (!responseText && !responseEl) {
+          appendMsg('assistant', '*Response stopped.*');
+        }
+        if (sendBtn) sendBtn.style.display = 'inline-flex';
+        deactivateStopBtn();
         input.disabled = false;
         input.focus();
         updateContextBar();
@@ -1511,7 +1530,7 @@ async function sendMessage() {
         removeStatusIndicator(statusEl);
         appendMsg('assistant', 'Error: ' + escapeHtml(data.content));
         if (sendBtn) sendBtn.style.display = 'inline-flex';
-        if (stopBtn) stopBtn.style.display = 'none';
+        deactivateStopBtn();
         input.disabled = false;
         input.focus();
         ws.removeEventListener('message', messageHandler);
@@ -1522,15 +1541,34 @@ async function sendMessage() {
   ws.addEventListener('message', messageHandler);
 }
 
+// Activate the Stop button (agent is running)
+function activateStopBtn() {
+  const stopBtn = document.getElementById('stop-btn');
+  if (stopBtn) {
+    stopBtn.disabled = false;
+    stopBtn.style.opacity = '1';
+    stopBtn.style.color = 'var(--danger)';
+    stopBtn.style.animation = 'pulse-stop 1.5s ease-in-out infinite';
+  }
+}
+
+// Deactivate the Stop button (agent is idle)
+function deactivateStopBtn() {
+  const stopBtn = document.getElementById('stop-btn');
+  if (stopBtn) {
+    stopBtn.disabled = true;
+    stopBtn.style.opacity = '0.3';
+    stopBtn.style.color = 'var(--text-2)';
+    stopBtn.style.animation = 'none';
+  }
+}
+
 // Stop the current streaming response
 function stopStreaming() {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({action: 'stop'}));
   }
-  const sendBtn = document.getElementById('send-btn');
-  const stopBtn = document.getElementById('stop-btn');
-  if (sendBtn) sendBtn.style.display = 'inline-flex';
-  if (stopBtn) stopBtn.style.display = 'none';
+  deactivateStopBtn();
   const input = document.getElementById('chat-input');
   input.disabled = false;
   input.focus();
@@ -1601,7 +1639,7 @@ async function sendMessageREST(msg, statusEl, sendBtn, stopBtn, input) {
     appendMsg('assistant', 'Error: ' + e.message);
   } finally {
     if (sendBtn) sendBtn.style.display = 'inline-flex';
-    if (stopBtn) stopBtn.style.display = 'none';
+    deactivateStopBtn();
     input.disabled = false;
     input.focus();
   }
@@ -1855,7 +1893,7 @@ function newSession() {
   document.getElementById('chat-messages').innerHTML = '';
   document.getElementById('chat-input').value = '';
   const tokensEl = document.getElementById('status-tokens');
-  if (tokensEl) tokensEl.textContent = 'CTX 0/128K';
+  if (tokensEl) tokensEl.textContent = 'CTX 0';
   // Reset context stats to zero
   if (typeof loadContextStats === 'function') {
     // Clear the display immediately

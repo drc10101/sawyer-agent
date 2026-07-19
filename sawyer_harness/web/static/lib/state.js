@@ -416,21 +416,26 @@ function updateContextBars(stats) {
   const b = stats.budget;
   const total = stats.window_size || b.total_window || 128000;
 
-  // Calculate percentages from absolute token counts
+  // Real measured token counts (not budget allocations)
   const system_tokens = b.system_prompt || 0;
   const memory_tokens = b.memory || 0;
   const skills_tokens = b.skills || 0;
   const session_tokens = b.session_notes || 0;
-  const recent_tokens = b.recency_window || b.messages || 0;
-  const free_tokens = b.free_space || 0;
+  const message_tokens = b.messages || 0;
 
-  // Update budget table in Memory panel
+  // Used = sum of all real token usage
+  const used_tokens = system_tokens + memory_tokens + skills_tokens + session_tokens + message_tokens;
+  // Available = what's left in the window
+  const available_tokens = total - used_tokens;
+
+  // Update budget table in Context panel (real measurements only)
   setBudgetRow('system', system_tokens, total);
   setBudgetRow('memory', memory_tokens, total);
   setBudgetRow('skills', skills_tokens, total);
   setBudgetRow('session', session_tokens, total);
-  setBudgetRow('recent', recent_tokens, total);
-  setBudgetRow('free', free_tokens, total);
+  setBudgetRow('recent', message_tokens, total);
+  setBudgetRow('used', used_tokens, total);
+  setBudgetRow('free', available_tokens, total);
 
   const modelEl = document.getElementById('ctx-model-name');
   if (modelEl) modelEl.textContent = stats.model || state.currentModel.value || '--';
@@ -520,11 +525,14 @@ export async function initApp() {
 function updateHeaderMetrics() {
   const modelEl = document.getElementById('metric-model');
   if (modelEl) modelEl.textContent = activeModelName.value;
-  // Context meter: use actual tokens, not budget reserves
+  // Context meter: show total used tokens / window size.
+  // This includes system overhead + memory + skills + session + messages.
   const stats = state.contextStats.value;
   const total = stats?.window_size || stats?.budget?.total_window || 128000;
   const budget = stats?.budget || {};
-  const used = (budget.messages || 0) + (budget.system_prompt || 0) + (budget.memory || 0) + (budget.skills || 0) + (budget.session_notes || 0);
+  const used = (budget.system_prompt || 0) + (budget.memory || 0) +
+               (budget.skills || 0) + (budget.session_notes || 0) +
+               (budget.messages || 0);
   const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
   const tokenEl = document.getElementById('metric-tokens');
   if (tokenEl) {
@@ -537,6 +545,12 @@ function updateHeaderMetrics() {
     if (pct > 90) fillEl.style.background = 'var(--danger)';
     else if (pct > 70) fillEl.style.background = 'var(--warning)';
     else fillEl.style.background = 'var(--brand)';
+  }
+  // Turn New Session button red when context pressure is high
+  const newBtn = document.getElementById('new-session-btn');
+  if (newBtn) {
+    const needsCompression = stats?.needs_compression || pct >= 80;
+    newBtn.classList.toggle('ctx-warning', needsCompression);
   }
   const taskEl = document.getElementById('metric-tasks');
   if (taskEl) {

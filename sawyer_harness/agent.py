@@ -199,6 +199,8 @@ class Agent:
         self.context_window = context_window or 128000  # Default 128K
         # Compaction policy: controls when and how to compress context
         self.compaction_policy = compaction_policy or CompactionPolicy()
+        # Cancel flag: set by Stop button to abort the agent loop
+        self._cancelled = False
 
     def _build_system_prompt(self, user_message: str = "", wrap_up: bool = False) -> str:
         """Assemble system prompt with injected memory, skills, capabilities, and tool descriptions.
@@ -207,6 +209,18 @@ class Agent:
         to summarize progress instead of making more tool calls.
         """
         parts = [self.system_prompt]
+
+        # Inject platform info so the agent knows its host OS
+        import platform as _platform
+        import os as _os
+        _os_name = _platform.system()
+        if _os_name == "Windows":
+            _os_info = f"Windows ({_platform.release()})"
+            _platform_hint = "Use Windows-compatible commands (dir, findstr, type, cmd /c) in the shell tool. Paths use backslashes."
+        else:
+            _os_info = f"{_os_name} ({_platform.release()})"
+            _platform_hint = "Use standard Unix commands (ls, grep, find, cat) in the shell tool."
+        parts.append(f"\n## Platform\nYou are running on {_os_info}. {_platform_hint} Home directory: {_os.path.expanduser('~')}.")
 
         # Inject verbosity style from config
         verbosity = getattr(self.config, "agent", None)
@@ -386,8 +400,18 @@ class Agent:
         # If the same tool+args pattern repeats 3+ times, the agent is stuck in a loop
         recent_tool_signatures: list[tuple[str, str]] = []
         SEIZURE_THRESHOLD = 3  # Same tool+args this many times = stuck
+        # Consecutive error tracking: stop on first tool failure
+        # Only Avalon (orchestrator) should retry -- regular agents fail fast
+        consecutive_errors = 0
+        MAX_CONSECUTIVE_ERRORS = 1
 
         for round_num in range(max_rounds):
+            # Check if user requested stop
+            if self._cancelled:
+                logger.info(f"Agent loop cancelled by user at round {round_num + 1}")
+                self._cancelled = False  # Reset for next message
+                break
+
             # Check context pressure BEFORE calling the LLM
             # If we're past the threshold, this is our final round regardless
             pressure = self._check_context_pressure()
@@ -565,6 +589,36 @@ class Agent:
 
                 result: ToolResult = self.tools.execute(tc.name, tc.arguments)
                 tool_calls_made.append(tc.name)
+
+                # Track consecutive errors
+                if result.success:
+                    consecutive_errors = 0
+                else:
+                    consecutive_errors += 1
+                    if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                        logger.warning(
+                            f"Consecutive tool errors: {consecutive_errors}. "
+                            f"Last error: {tc.name} -> {result.error[:200]}. Stopping."
+                        )
+                        yield (
+                            f"\n\n---\n"
+                            f"**Too many errors:** `{tc.name}` has failed {consecutive_errors} times in a row. "
+                            f"Last error: {result.error[:300]}\n\n"
+                            f"Stopping execution. Review the errors above and adjust your request."
+                        )
+                        # Save handoff notes
+                        handoff = _generate_handoff_notes(
+                            self.conversation,
+                            tool_calls_made,
+                            round_num + 1,
+                            f"Consecutive tool errors: {consecutive_errors} failures, last: {tc.name}",
+                        )
+                        self.memory.add(
+                            key=f"session-handoff-{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
+                            content=handoff,
+                            category="session-handoff",
+                        )
+                        return
 
                 # Add tool result to conversation
                 tool_msg = Message(

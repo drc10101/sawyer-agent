@@ -118,6 +118,14 @@ class SawyerWS {
         // Refresh context stats after response
         import('./state.js').then(m => m.loadContextStats()).catch(() => {});
         break;
+      case 'cancelled':
+        // User stopped the agent mid-stream
+        this._callHandlers('chat_done', data);
+        import('./state.js').then(m => {
+          m.loadContextStats();
+          m.addToast('Response stopped', 'info');
+        }).catch(() => {});
+        break;
       case 'goal_update':
         import('./state.js').then(m => m.loadGoals()).catch(() => {});
         this._callHandlers('goal_update', data);

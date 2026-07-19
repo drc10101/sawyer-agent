@@ -670,19 +670,33 @@ def _file_search_handler(
     file_type: str = "",
     max_results: int = 50,
 ) -> ToolResult:
-    """Search for files by name or content using ripgrep/grep."""
+    """Search for files by name or content using platform-appropriate commands."""
+    import platform
+    import os as _os
+
     try:
+        is_windows = platform.system() == "Windows"
         cmd_parts = []
         if file_type:
             # Search content within files
-            cmd_parts = ["grep", "-rn", "--color=never", f"--include={file_type}", pattern, path]
+            if is_windows:
+                # Windows: use findstr with /S (recursive), /N (line numbers), /I (case-insensitive)
+                # findstr /S /N /I /C:"pattern" *.ext path
+                cmd_parts = ["findstr", "/S", "/N", "/I", f"/C:{pattern}", path]
+            else:
+                cmd_parts = ["grep", "-rn", "--color=never", f"--include={file_type}", pattern, path]
         else:
             # Search filenames
-            pattern.replace('"', '\\"')
-            if Path(path).expanduser().is_dir():
-                cmd_parts = ["find", str(Path(path).expanduser()), "-name", pattern, "-type", "f"]
+            if is_windows:
+                # Windows: use dir /S /B with the pattern
+                search_path = str(Path(path).expanduser()) if Path(path).expanduser().is_dir() else "."
+                cmd_parts = ["cmd", "/c", f"dir /S /B \"{search_path}\\{pattern}\""]
             else:
-                cmd_parts = ["find", ".", "-name", pattern, "-type", "f"]
+                pattern.replace('"', '\\"')
+                if Path(path).expanduser().is_dir():
+                    cmd_parts = ["find", str(Path(path).expanduser()), "-name", pattern, "-type", "f"]
+                else:
+                    cmd_parts = ["find", ".", "-name", pattern, "-type", "f"]
 
         result = subprocess.run(
             cmd_parts,

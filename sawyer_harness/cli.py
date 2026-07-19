@@ -6,6 +6,7 @@ Usage:
     python -m sawyer_harness web                  Start the web server
     python -m sawyer_harness launch <model>       Self-activating: parse model, configure, start
     python -m sawyer_harness setup                Configure or reconfigure API key
+    python -m sawyer_harness sandbox [mode]       Change permission mode (readonly/readwrite/all)
     python -m sawyer_harness install-shortcuts    Create desktop/start menu shortcuts with icon
     python -m sawyer_harness uninstall             Remove Sawyer completely
     python -m sawyer_harness version               Show version
@@ -16,6 +17,11 @@ Self-activating launch examples:
     sawyer launch claude-sonnet-4              Anthropic (prompts for key)
     sawyer launch llama3                        Local Ollama (no key needed)
     sawyer launch --model gpt-4o --key sk-xxx   Explicit, zero prompts
+
+Sandbox examples:
+    sawyer sandbox              Interactive menu
+    sawyer sandbox readwrite    Set read-write mode (recommended)
+    sawyer sandbox all          Set full access
 
 Short form (if on PATH):
     sawyer-web                                  Start the web server
@@ -74,6 +80,42 @@ def _cmd_setup(args):
     config_path = Path(args.config).expanduser().resolve() if args.config else DEFAULT_CONFIG_PATH
     setup_wizard(config_path)
     print("\nConfig saved. Run `python -m sawyer_harness` to start.\n")
+
+
+def _cmd_sandbox(args):
+    """Change the permission mode (sandbox level) without reconfiguring the LLM."""
+    from sawyer_harness.config import HarnessConfig, SecurityConfig, DEFAULT_CONFIG_PATH, PERMISSION_MODES
+
+    config_path = Path(args.config).expanduser().resolve() if args.config else DEFAULT_CONFIG_PATH
+
+    if args.mode:
+        # Non-interactive: mode given as argument
+        mode = args.mode.lower()
+        if mode not in PERMISSION_MODES:
+            print(f"Invalid mode '{args.mode}'. Choose from: {', '.join(PERMISSION_MODES)}")
+            return
+    else:
+        # Interactive: show menu
+        config = HarnessConfig.from_file(config_path) if config_path.exists() else HarnessConfig()
+        cur = config.security.permission_mode
+        print("\n=== Sawyer Permission Mode ===\n")
+        print("  Controls what tools the agent can use.\n")
+        print("  1. readonly   — read files, search, browse web (safest)")
+        print("  2. readwrite  — edit files, run shell commands (recommended)")
+        print("  3. all        — full access, no restrictions")
+        mode_default = {"readonly": "1", "readwrite": "2", "all": "3"}.get(cur, "3")
+        mode_input = input(f"\nCurrent: {cur}. New permission mode [{mode_default}]: ").strip() or mode_default
+        mode = {"1": "readonly", "2": "readwrite", "3": "all"}.get(mode_input, cur)
+
+    # Load existing config, update only security
+    config = HarnessConfig.from_file(config_path) if config_path.exists() else HarnessConfig()
+    config.security.permission_mode = mode
+    config.security.sandbox = mode != "all"
+    saved = config.save(config_path)
+
+    labels = {"readonly": "read-only (safest)", "readwrite": "read-write (recommended)", "all": "full access"}
+    print(f"\nPermission mode set to: {mode} ({labels.get(mode, mode)})")
+    print(f"Config saved to: {saved}\n")
 
 
 def _cmd_uninstall(args):
@@ -473,6 +515,28 @@ def main():
     setup_p = subparsers.add_parser("setup", help="Configure or reconfigure API key and provider")
     setup_p.add_argument("--config", "-c", default=None, help="Config file path")
     setup_p.set_defaults(func=_cmd_setup)
+
+    # sandbox
+    sandbox_p = subparsers.add_parser(
+        "sandbox",
+        help="Change permission mode (sandbox level)",
+        description=(
+            "Set the agent permission mode without reconfiguring the LLM.\n\n"
+            "Modes:\n"
+            "  readonly   — read files, search, browse web (safest)\n"
+            "  readwrite  — edit files, run shell commands (recommended)\n"
+            "  all        — full access, no restrictions\n\n"
+            "Run without a mode argument for interactive selection.\n\n"
+            "Examples:\n"
+            "  sawyer sandbox              # Interactive menu\n"
+            "  sawyer sandbox readwrite    # Set directly\n"
+            "  sawyer sandbox all          # Full access"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    sandbox_p.add_argument("mode", nargs="?", default=None, help="Permission mode: readonly, readwrite, or all")
+    sandbox_p.add_argument("--config", "-c", default=None, help="Config file path")
+    sandbox_p.set_defaults(func=_cmd_sandbox)
 
     # uninstall
     uninstall_p = subparsers.add_parser("uninstall", help="Remove Sawyer completely")

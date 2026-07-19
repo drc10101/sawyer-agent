@@ -458,6 +458,13 @@ a:hover { color: var(--text-0); }
 .btn--danger {
   background: var(--danger);
   color: #fff;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn--danger:hover {
+  background: #dc2626;
 }
 
 .btn--subtle {
@@ -468,6 +475,28 @@ a:hover { color: var(--text-0); }
 .btn--subtle:hover {
   background: var(--bg-3);
   color: var(--text-0);
+}
+
+#new-session-btn.ctx-warning {
+  background-color: #ef4444 !important;
+  color: #ffffff !important;
+  border-color: #ef4444 !important;
+  animation: pulse-danger 2s ease-in-out infinite;
+}
+
+#new-session-btn.ctx-warning:hover {
+  background-color: #dc2626 !important;
+  border-color: #dc2626 !important;
+}
+
+@keyframes pulse-danger {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
+@keyframes pulse-stop {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
 }
 
 .btn--icon {

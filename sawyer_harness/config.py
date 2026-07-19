@@ -354,12 +354,27 @@ def setup_wizard(config_path: str | Path | None = None) -> HarnessConfig:
         print("\nNo API key provided. Sawyer will start but won't chat until you add one.")
         print("Run `python -m sawyer_harness setup` later to reconfigure.\n")
 
+    # ── Permission mode (sandbox level) ──
+    print("\n--- Permission Mode ---")
+    print("  Controls what tools the agent can use.")
+    print("  1. readonly   — read files, search, browse web (safest)")
+    print("  2. readwrite  — edit files, run shell commands (recommended)")
+    print("  3. all        — full access, no restrictions (default)")
+    cur_mode = existing.security.permission_mode if existing else "all"
+    mode_default = {"readonly": "1", "readwrite": "2", "all": "3"}.get(cur_mode, "3")
+    mode_input = input(f"\nPermission mode [{mode_default}]: ").strip() or mode_default
+    permission_mode = {"1": "readonly", "2": "readwrite", "3": "all"}.get(mode_input, cur_mode)
+
     config = HarnessConfig(
         llm=LLMConfig(
             provider=provider_id,
             model=model,
             api_key=api_key,
             base_url=base_url,
+        ),
+        security=SecurityConfig(
+            permission_mode=permission_mode,
+            sandbox=permission_mode != "all",
         ),
     )
     saved_path = config.save(config_path)

@@ -11,6 +11,7 @@ title Sawyer Agent Installer
 ::    (no arg)   Full install: Python check + pip install + setup + shortcut
 ::    reinstall  Update package + re-run setup + shortcut
 ::    setup      Reconfigure API key and provider
+::    sandbox    Change permission mode (readonly/readwrite/all)
 ::    uninstall  Remove Sawyer completely
 ::    start      Start the server (browser opens automatically)
 :: ────────────────────────────────────────────────────────────────
@@ -19,6 +20,7 @@ if "%~1"=="" goto install
 if /i "%~1"=="install" goto install
 if /i "%~1"=="reinstall" goto reinstall
 if /i "%~1"=="setup" goto setup
+if /i "%~1"=="sandbox" goto sandbox
 if /i "%~1"=="uninstall" goto uninstall
 if /i "%~1"=="start" goto start
 goto usage
@@ -194,6 +196,13 @@ pause
 exit /b 0
 
 :: ────────────────────────────────────────────────────────────────
+:sandbox
+echo.
+python -m sawyer_harness sandbox %2
+pause
+exit /b 0
+
+:: ────────────────────────────────────────────────────────────────
 :uninstall
 echo.
 echo   ============================================
@@ -222,6 +231,7 @@ echo   Commands:
 echo     (none)      Full install: Python check + pip install + setup + shortcut
 echo     reinstall   Update package and reconfigure
 echo     setup       Reconfigure API key and provider
+echo     sandbox     Change permission mode (interactive or pass mode name)
 echo     uninstall   Remove Sawyer completely
 echo     start       Start the server
 echo.

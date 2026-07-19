@@ -368,86 +368,135 @@ def _register_routes(app: FastAPI, state: _AppState):
                 # Allow client to cancel mid-stream
                 if payload.get("action") == "stop":
                     logger.info(f"Client requested stop for session {session_id}")
+                    # Also cancel any running agent
+                    if session_id in state.sessions:
+                        state.sessions[session_id]._cancelled = True
                     break
 
                 _, agent = state.get_or_create_session(session_id)
+                # Reset cancel flag at start of new message
+                agent._cancelled = False
+
+                # Run a concurrent listener for stop messages while streaming
+                stop_event = asyncio.Event()
+
+                async def _listen_for_stop():
+                    """Listen for incoming stop messages while agent is streaming."""
+                    try:
+                        while not stop_event.is_set():
+                            msg = await asyncio.wait_for(websocket.receive_text(), timeout=0.5)
+                            p = json.loads(msg)
+                            if p.get("action") == "stop":
+                                logger.info(f"Stop requested during streaming for session {session_id}")
+                                agent._cancelled = True
+                                break
+                    except (asyncio.TimeoutError, WebSocketDisconnect):
+                        pass
+
+                listener = asyncio.create_task(_listen_for_stop())
 
                 # Track tool calls for status summaries
+                cancelled = False
+                try:
+                    async for chunk in agent.run(user_message):
+                        # Check if user cancelled mid-stream
+                        if agent._cancelled:
+                            cancelled = True
+                            break
 
-                async for chunk in agent.run(user_message):
-                    # Classify the chunk by its content markers
-                    if chunk.startswith("<thinking>"):
-                        # Thinking content -- summarize, don't stream raw reasoning
-                        content = chunk.replace("<thinking>", "").replace("</thinking>", "").strip()
-                        if content:
-                            # Extract first sentence as a status summary
-                            summary = content.split(".")[0]
-                            if len(summary) > 120:
-                                summary = summary[:117] + "..."
+                        # Classify the chunk by its content markers
+                        if chunk.startswith("<thinking>"):
+                            # Thinking content -- summarize, don't stream raw reasoning
+                            content = chunk.replace("<thinking>", "").replace("</thinking>", "").strip()
+                            if content:
+                                # Extract first sentence as a status summary
+                                summary = content.split(".")[0]
+                                if len(summary) > 120:
+                                    summary = summary[:117] + "..."
+                                await websocket.send_json({
+                                    "type": "thinking",
+                                    "summary": summary,
+                                    "session_id": session_id,
+                                })
+                        elif chunk.startswith("[") and "]" in chunk[:30]:
+                            # Tool output: [tool_name] result...
+                            # Split into tool_call and tool_result
+                            bracket_end = chunk.index("]")
+                            tool_name = chunk[1:bracket_end]
+                            result = chunk[bracket_end + 1:].strip()
+
+                            # Send tool_call event
                             await websocket.send_json({
-                                "type": "thinking",
-                                "summary": summary,
+                                "type": "tool_call",
+                                "name": tool_name,
                                 "session_id": session_id,
                             })
-                    elif chunk.startswith("[") and "]" in chunk[:30]:
-                        # Tool output: [tool_name] result...
-                        # Split into tool_call and tool_result
-                        bracket_end = chunk.index("]")
-                        tool_name = chunk[1:bracket_end]
-                        result = chunk[bracket_end + 1:].strip()
 
-                        # Send tool_call event
-                        await websocket.send_json({
-                            "type": "tool_call",
-                            "name": tool_name,
-                            "session_id": session_id,
-                        })
+                            # Send tool_result event (truncated for display)
+                            display_result = result[:2000] if len(result) > 2000 else result
+                            await websocket.send_json({
+                                "type": "tool_result",
+                                "name": tool_name,
+                                "content": display_result,
+                                "session_id": session_id,
+                            })
+                        elif chunk.startswith("---\n**Loop detected:**") or chunk.startswith("\n\n---\n**Loop detected:**"):
+                            # Seizure warning
+                            await websocket.send_json({
+                                "type": "seizure",
+                                "content": chunk.replace("---\n", "").replace("\n\n---\n", "").strip(),
+                                "session_id": session_id,
+                            })
+                        elif chunk.startswith("---\n**Too many errors:**") or chunk.startswith("\n\n---\n**Too many errors:**"):
+                            # Consecutive error warning
+                            await websocket.send_json({
+                                "type": "seizure",
+                                "content": chunk.replace("---\n", "").replace("\n\n---\n", "").strip(),
+                                "session_id": session_id,
+                            })
+                        elif chunk.startswith("*Session context is full") or chunk.startswith("\n\n---\n*Session"):
+                            # Handoff signal
+                            await websocket.send_json({
+                                "type": "handoff",
+                                "content": chunk.strip(),
+                                "session_id": session_id,
+                            })
+                        elif chunk.startswith("[") and "ERROR" in chunk[:50]:
+                            # Tool error
+                            bracket_end = chunk.index("]")
+                            tool_name = chunk[1:bracket_end]
+                            error_msg = chunk[bracket_end + 1:].strip()
+                            await websocket.send_json({
+                                "type": "tool_error",
+                                "name": tool_name,
+                                "content": error_msg,
+                                "session_id": session_id,
+                            })
+                        else:
+                            # Normal text content
+                            await websocket.send_json({
+                                "type": "text",
+                                "content": chunk,
+                                "session_id": session_id,
+                            })
+                finally:
+                    stop_event.set()
+                    listener.cancel()
+                    try:
+                        await listener
+                    except asyncio.CancelledError:
+                        pass
 
-                        # Send tool_result event (truncated for display)
-                        display_result = result[:2000] if len(result) > 2000 else result
-                        await websocket.send_json({
-                            "type": "tool_result",
-                            "name": tool_name,
-                            "content": display_result,
-                            "session_id": session_id,
-                        })
-                    elif chunk.startswith("---\n**Loop detected:**") or chunk.startswith("\n\n---\n**Loop detected:**"):
-                        # Seizure warning
-                        await websocket.send_json({
-                            "type": "seizure",
-                            "content": chunk.replace("---\n", "").replace("\n\n---\n", "").strip(),
-                            "session_id": session_id,
-                        })
-                    elif chunk.startswith("*Session context is full") or chunk.startswith("\n\n---\n*Session"):
-                        # Handoff signal
-                        await websocket.send_json({
-                            "type": "handoff",
-                            "content": chunk.strip(),
-                            "session_id": session_id,
-                        })
-                    elif chunk.startswith("[") and "ERROR" in chunk[:50]:
-                        # Tool error
-                        bracket_end = chunk.index("]")
-                        tool_name = chunk[1:bracket_end]
-                        error_msg = chunk[bracket_end + 1:].strip()
-                        await websocket.send_json({
-                            "type": "tool_error",
-                            "name": tool_name,
-                            "content": error_msg,
-                            "session_id": session_id,
-                        })
-                    else:
-                        # Normal text content
-                        await websocket.send_json({
-                            "type": "text",
-                            "content": chunk,
-                            "session_id": session_id,
-                        })
-
-                await websocket.send_json({
-                    "type": "done",
-                    "session_id": session_id,
-                })
+                if cancelled:
+                    await websocket.send_json({
+                        "type": "cancelled",
+                        "session_id": session_id,
+                    })
+                else:
+                    await websocket.send_json({
+                        "type": "done",
+                        "session_id": session_id,
+                    })
         except WebSocketDisconnect:
             logger.info(f"WebSocket disconnected: {session_id}")
         except Exception as e:
@@ -878,8 +927,8 @@ def _register_routes(app: FastAPI, state: _AppState):
 
     @app.get("/api/skills")
     async def list_skills():
-        """List all loaded skills."""
-        return {"skills": state.skills.list_skills()}
+        """List all loaded skills (excludes session-note artifacts)."""
+        return {"skills": [s for s in state.skills.list_skills() if s.get("category") != "session-notes"]}
 
     @app.get("/api/skills/{name}")
     async def get_skill(name: str):
