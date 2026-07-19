@@ -403,7 +403,10 @@
 
           <!-- Version Control -->
           <div class="ctrl-card" style="margin-bottom:12px">
-            <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Version Control</h4>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <h4 style="font-size:13px;color:var(--text-0);margin:0">Version Control</h4>
+              <span id="version-display" style="font-size:12px;color:var(--text-2);font-family:var(--font-mono)">v--</span>
+            </div>
             <p style="font-size:12px;color:var(--text-2);margin-bottom:10px">
               Mark a version as "last known good" when things are working. Revert to it if something breaks.
             </p>
@@ -418,10 +421,24 @@
 
           <!-- Session Scores -->
           <div class="ctrl-card" style="margin-bottom:12px">
-            <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Session Scores</h4>
+            <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Session Rating</h4>
             <p style="font-size:12px;color:var(--text-2);margin-bottom:10px">
-              Rate sessions to track agent quality over time. Higher honesty scores mean the agreeability setting is working.
+              Rate this session. The agent uses past ratings as a reward signal -- higher ratings reinforce what worked.
             </p>
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+              <div id="star-rating-widget" style="display:flex;gap:4px">
+                <button class="star-btn" data-star="1" onclick="submitStarRating(1)" title="1 star -- Needs improvement">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                </button>
+                <button class="star-btn" data-star="2" onclick="submitStarRating(2)" title="2 stars -- Good, solid work">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                </button>
+                <button class="star-btn" data-star="3" onclick="submitStarRating(3)" title="3 stars -- Excellent, beyond expectations">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                </button>
+              </div>
+              <span id="star-rating-label" style="font-size:12px;color:var(--text-2)"></span>
+            </div>
             <div id="score-history" style="max-height:150px;overflow-y:auto"></div>
           </div>
 
@@ -1145,7 +1162,7 @@ function switchPanel(panel) {
       cron:'Cron',context:'Context',memory:'Memory',keys:'Keys',rules:'Rules',agents:'Sub-Agents',orchestration:'Orchestrate',suggestions:'Suggest'};
     document.getElementById('panel-title').textContent = titles[panel] || panel;
     if (panel === 'models') loadModels();
-    if (panel === 'settings') { loadAgentConfig(); loadLKGHistory(); loadScoreHistory(); }
+    if (panel === 'settings') { loadAgentConfig(); loadLKGHistory(); loadScoreHistory(); loadVersionDisplay(); }
     if (panel === 'goals') loadGoals();
     if (panel === 'tools') { loadTools(); loadUserTools(); }
     if (panel === 'cron') loadCron();
@@ -2317,21 +2334,73 @@ async function loadScoreHistory() {
     const container = document.getElementById('score-history');
     if (!container) return;
     if (!data.scores || data.scores.length === 0) {
-      container.innerHTML = '<div style="color:var(--text-2);font-size:12px;padding:4px 0">No session scores yet.</div>';
+      container.innerHTML = '<div style="color:var(--text-2);font-size:12px;padding:4px 0">No session ratings yet. Rate a session above.</div>';
       return;
     }
-    container.innerHTML = data.scores.map(s => {
-      const dims = Object.entries(s.scores).map(([k, v]) =>
-        '<span style="color:var(--text-2)">' + k + '</span>: <span style="color:var(--brand);font-weight:600">' + v + '/5</span>'
-      ).join(' &middot; ');
+    const STAR_LABELS = {1: 'Needs improvement', 2: 'Good, solid work', 3: 'Excellent'};
+    container.innerHTML = data.scores.filter(s => s.star_rating > 0).map(s => {
+      const stars = Array.from({length: 3}, (_, i) =>
+        i < s.star_rating
+          ? '<span style="color:#12c7ef;font-size:13px">&#9733;</span>'
+          : '<span style="color:var(--text-3);font-size:13px">&#9734;</span>'
+      ).join('');
       const date = s.timestamp ? new Date(s.timestamp).toLocaleDateString() : '';
-      return '<div style="padding:4px 0;border-bottom:1px solid var(--border-1);font-size:12px">' +
-        '<strong style="color:var(--brand)">' + s.average.toFixed(1) + '/5.0</strong> &middot; ' + dims +
-        '<span style="float:right;color:var(--text-2);font-size:11px">' + date + '</span>' +
+      const ver = s.version ? ' <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-3)">v' + s.version + '</span>' : '';
+      return '<div style="padding:4px 0;border-bottom:1px solid var(--border-1);font-size:12px;display:flex;justify-content:space-between;align-items:center">' +
+        '<span>' + stars + ' <span style="color:var(--text-2);margin-left:4px">' + (STAR_LABELS[s.star_rating] || '') + '</span>' + ver + '</span>' +
+        '<span style="color:var(--text-3);font-size:11px">' + date + '</span>' +
         '</div>';
-    }).join('');
+    }).join('') || '<div style="color:var(--text-2);font-size:12px;padding:4px 0">No star ratings yet.</div>';
+    // Highlight the current star rating if present
+    const latest = data.scores.find(s => s.star_rating > 0);
+    if (latest) highlightStars(latest.star_rating);
   } catch(e) {
     console.error('loadScoreHistory error:', e);
+  }
+}
+
+function highlightStars(rating) {
+  document.querySelectorAll('.star-btn').forEach(btn => {
+    const star = parseInt(btn.dataset.star);
+    if (star <= rating) {
+      btn.classList.add('star-active');
+    } else {
+      btn.classList.remove('star-active');
+    }
+  });
+  const labels = {1: 'Needs improvement', 2: 'Good, solid work', 3: 'Excellent -- beyond expectations'};
+  const label = document.getElementById('star-rating-label');
+  if (label && rating > 0) label.textContent = labels[rating] || '';
+}
+
+async function submitStarRating(rating) {
+  try {
+    const res = await fetch(API + '/api/scoring/star', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ star_rating: rating })
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      alert(err.detail || 'Failed to save rating');
+      return;
+    }
+    highlightStars(rating);
+    loadScoreHistory();
+  } catch(e) {
+    console.error('submitStarRating error:', e);
+  }
+}
+
+// Load version number for display
+async function loadVersionDisplay() {
+  try {
+    const res = await fetch(API + '/api/status');
+    const data = await res.json();
+    const el = document.getElementById('version-display');
+    if (el && data.version) el.textContent = 'v' + data.version;
+  } catch(e) {
+    console.error('loadVersionDisplay error:', e);
   }
 }
 

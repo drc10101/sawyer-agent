@@ -89,6 +89,8 @@ class SessionScore:
     scores: dict[str, int] = field(default_factory=dict)  # question_key -> 1-5
     free_text: str = ""
     agent_config: dict[str, Any] = field(default_factory=dict)
+    star_rating: int = 0      # 1-3 stars (quick rating)
+    version: str = ""         # Sawyer version at time of rating
 
     def __post_init__(self):
         if not self.timestamp:
@@ -97,7 +99,7 @@ class SessionScore:
     def average(self) -> float:
         """Overall score across all rated dimensions."""
         if not self.scores:
-            return 0.0
+            return float(self.star_rating) if self.star_rating else 0.0
         return sum(self.scores.values()) / len(self.scores)
 
     def save(self) -> Path:

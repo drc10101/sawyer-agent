@@ -21,6 +21,7 @@ from .memory import MemoryStore
 from .skills import SkillStore
 from .tools import ToolRegistry, ToolResult
 from .token_count import count_tokens, count_message_tokens
+from .scoring import SessionScore
 
 logger = logging.getLogger("sawyer-harness.agent")
 
@@ -280,6 +281,30 @@ class Agent:
             for entry in other_entries:
                 parts.append(f"- {entry['key']}: {entry['content']}")
             parts.append("")
+
+        # Inject recent session ratings as a reward signal
+        try:
+            recent_scores = SessionScore.list_all(limit=10)
+            rated = [s for s in recent_scores if s.star_rating > 0]
+            if rated:
+                parts.append("\n## Session Ratings (Reward Signal)\n")
+                parts.append("Your recent session ratings from the user. Higher ratings mean the user was satisfied. Aim for 3 stars.\n")
+                for s in rated[:5]:
+                    stars = s.star_rating
+                    ver = f" (v{s.version})" if s.version else ""
+                    note = f" -- {s.free_text}" if s.free_text else ""
+                    parts.append(f"- {'*' * stars}{'_' * (3 - stars)} {stars}/3{ver}{note}")
+                # Compute trend
+                if len(rated) >= 2:
+                    recent_avg = sum(s.star_rating for s in rated[:3]) / min(len(rated), 3)
+                    older_avg = sum(s.star_rating for s in rated[3:6]) / max(min(len(rated) - 3, 3), 1)
+                    if recent_avg > older_avg:
+                        parts.append("\nTrend: improving. Keep doing what you're doing.")
+                    elif recent_avg < older_avg:
+                        parts.append("\nTrend: declining. Focus on what worked in higher-rated sessions.")
+                parts.append("")
+        except Exception:
+            pass  # Scoring is optional
 
         # Inject available tools
         tool_schemas = self.tools.list_tools()

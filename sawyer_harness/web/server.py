@@ -122,6 +122,11 @@ class SessionScoreSubmit(BaseModel):
     scores: dict[str, int]      # question_key -> rating (1-5)
     free_text: str = ""
 
+class StarRatingSubmit(BaseModel):
+    star_rating: int             # 1-3 stars
+    session_id: str = ""
+    note: str = ""
+
 class LKGMarkRequest(BaseModel):
     commit: str = ""     # empty = current HEAD
     tag: str = ""
@@ -730,6 +735,35 @@ def _register_routes(app: FastAPI, state: _AppState):
         path = score.save()
         return {"status": "saved", "average": score.average(), "path": str(path)}
 
+    @app.post("/api/scoring/star")
+    async def submit_star_rating(submission: StarRatingSubmit):
+        """Submit a quick 1-3 star rating for the current session.
+
+        The rating is tied to the Sawyer version so the agent can track
+        quality trends per version. Ratings persist to disk and are injected
+        into the agent's system prompt as a reward signal.
+        """
+        if not (1 <= submission.star_rating <= 3):
+            raise HTTPException(status_code=400, detail="star_rating must be 1, 2, or 3")
+
+        session_id = submission.session_id or f"star-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
+        agent_config = {
+            "model": state.config.llm.model,
+            "provider": state.config.llm.provider,
+            "verbosity": state.config.agent.verbosity,
+            "agreeability": state.config.agent.agreeability,
+            "reasoning": state.config.agent.reasoning,
+        }
+        score = SessionScore(
+            session_id=session_id,
+            star_rating=submission.star_rating,
+            version=__version__,
+            free_text=submission.note,
+            agent_config=agent_config,
+        )
+        path = score.save()
+        return {"status": "saved", "star_rating": submission.star_rating, "version": __version__, "average": score.average(), "path": str(path)}
+
     @app.get("/api/scoring/history")
     async def get_scoring_history(limit: int = 50):
         """Get scoring history and trends."""
@@ -744,6 +778,8 @@ def _register_routes(app: FastAPI, state: _AppState):
                     "average": s.average(),
                     "free_text": s.free_text,
                     "agent_config": s.agent_config,
+                    "star_rating": s.star_rating,
+                    "version": s.version,
                 }
                 for s in scores
             ],
