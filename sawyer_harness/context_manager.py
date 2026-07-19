@@ -491,7 +491,7 @@ class ContextManager:
         memory_text: str = "",
         skills_text: str = "",
         session_notes_text: str = "",
-        messages: list = None,
+        messages: list | None = None,
     ) -> dict:
         """
         Get comprehensive context window statistics.

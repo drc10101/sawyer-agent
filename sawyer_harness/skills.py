@@ -314,6 +314,7 @@ class SkillStore:
 
         # Write updated file
         try:
+            assert skill.file_path is not None, "Skill file_path is None"
             path = Path(skill.file_path)
             path.write_text(self._serialize_skill(skill), encoding="utf-8")
             return True

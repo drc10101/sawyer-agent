@@ -287,7 +287,7 @@ class CronScheduler:
         logger.info(f"Updated cron job {job_id}")
         return job
 
-    async def run_job_now(self, job_id: str) -> str | None:
+    async def run_job_now(self, job_id: str) -> dict[str, Any] | None:
         """Trigger a job to run immediately, regardless of schedule."""
         job = self._jobs.get(job_id)
         if not job:

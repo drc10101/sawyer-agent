@@ -242,6 +242,7 @@ class _AppState:
         self.orchestrator = OrchestratorEngine()
         self.lkg_store = LKGStore()
         self.current_project: Project | None = None
+        self.tool_drafts: dict[str, Any] = {}
         self.upload_dir = UserData.uploads_dir
         self.upload_dir.mkdir(parents=True, exist_ok=True)
 
@@ -484,7 +485,7 @@ def _register_routes(app: FastAPI, state: _AppState):
         conversation = agent.conversation
 
         # Build notes from conversation
-        notes = {
+        notes: dict[str, Any] = {
             "session_id": session_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "message_count": len(conversation),
@@ -1009,7 +1010,7 @@ def _register_routes(app: FastAPI, state: _AppState):
                     "examples": spec.examples,
                     "notes": spec.notes,
                 },
-                "phase": session.phase.value,
+                "phase": session.phase.value if session else "unknown",
             }
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -1032,8 +1033,8 @@ def _register_routes(app: FastAPI, state: _AppState):
                     "examples": spec.examples,
                     "notes": spec.notes,
                 },
-                "revision_count": session.revision_count,
-                "phase": session.phase.value,
+                "revision_count": session.revision_count if session else 0,
+                "phase": session.phase.value if session else "unknown",
             }
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -1140,7 +1141,7 @@ def _register_routes(app: FastAPI, state: _AppState):
             decomposition = "".join(response_parts)
 
             # Parse subtasks from numbered list
-            subtasks = []
+            subtasks: list[dict[str, Any]] = []
             for line in decomposition.split("\n"):
                 line = line.strip()
                 if line and line[0].isdigit() and "." in line:
@@ -1891,7 +1892,7 @@ def _register_routes(app: FastAPI, state: _AppState):
     # ----------------------------------------------------------
 
     @app.post("/api/files/upload")
-    async def upload_file(file: bytes = None, filename: str = "upload"):
+    async def upload_file(file: bytes | None = None, filename: str = "upload"):
         """Upload a file to the drop zone."""
         if not file:
             raise HTTPException(status_code=400, detail="No file provided")

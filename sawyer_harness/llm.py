@@ -114,7 +114,7 @@ class LLMClient:
             headers["X-Sawyer-Priority"] = "low-latency"
 
         # Build message list
-        api_messages = []
+        api_messages: list[dict[str, Any]] = []
         if system_prompt:
             api_messages.append({"role": "system", "content": system_prompt})
 
@@ -141,6 +141,9 @@ class LLMClient:
                     "role": "assistant",
                     "content": msg.content or None,
                     "tool_calls": tc_list,
+                } if tc_list else {
+                    "role": "assistant",
+                    "content": msg.content or None,
                 })
             else:
                 api_messages.append({"role": msg.role, "content": msg.content})
@@ -207,7 +210,7 @@ class LLMClient:
             "anthropic-version": "2023-06-01",
         }
 
-        api_messages = []
+        api_messages: list[dict[str, Any]] = []
         for msg in messages:
             api_messages.append({"role": msg.role, "content": msg.content})
 

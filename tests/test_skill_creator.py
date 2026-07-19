@@ -182,7 +182,7 @@ class TestApprove:
         skill = creator.approve(session.id)
         assert skill.name == "production-deploy"
         assert skill.category
-        assert skill.version == 1
+        assert skill.version == "1"
         assert session.status == SessionStatus.COMPLETED
         assert session.phase == SessionPhase.APPROVE
 

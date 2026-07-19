@@ -266,7 +266,7 @@ class SkillCreator:
             description=spec.description,
             triggers=spec.triggers,
             content=content,
-            version=1,
+            version="1",
         )
 
         # Save to skill store
@@ -336,7 +336,7 @@ class SkillCreator:
         for signal_type, _ in all_signals:
             signal_counts[signal_type] = signal_counts.get(signal_type, 0) + 1
 
-        top_signal = max(signal_counts, key=signal_counts.get)
+        top_signal = max(signal_counts, key=lambda k: signal_counts[k])
         confidence = min(signal_counts[top_signal] / len(recent_messages), 1.0)
 
         # Only suggest if confidence is high enough

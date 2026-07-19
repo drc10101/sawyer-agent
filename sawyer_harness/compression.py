@@ -335,17 +335,18 @@ class ContextCompressor:
 
         # Add system prompt if provided
         if system_prompt:
-            compressed.append(type(messages[0])(
-                role="system", content=system_prompt
-            ) if messages else None)
+            if messages:
+                compressed.append(type(messages[0])(
+                    role="system", content=system_prompt
+                ))
 
         # Add summary of older messages if we have one
         if summary:
-            summary_msg = type(messages[0])(
-                role="system",
-                content=summary,
-            ) if messages else None
-            if summary_msg:
+            if messages:
+                summary_msg = type(messages[0])(
+                    role="system",
+                    content=summary,
+                )
                 compressed.append(summary_msg)
 
         # Add kept messages in original order
@@ -379,8 +380,8 @@ class ContextCompressor:
     def get_context_stats(self, messages: list, system_prompt: str = "") -> dict:
         """Get context window statistics without compressing."""
         total_tokens = 0
-        by_role = {}
-        by_priority = {}
+        by_role: dict[str, int] = {}
+        by_priority: dict[str, int] = {}
 
         if system_prompt:
             total_tokens += self.estimate_tokens(system_prompt)
@@ -426,7 +427,7 @@ class LLMCompressor(ContextCompressor):
         super().__init__(**kwargs)
         self.llm = llm_client
 
-    async def summarize_block(self, messages: list) -> str:
+    def summarize_block(self, messages: list) -> str:
         """Use LLM for summarization if available, otherwise rule-based."""
         if self.llm is None:
             return super().summarize_block(messages)

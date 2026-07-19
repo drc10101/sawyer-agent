@@ -188,7 +188,7 @@ class ModelRouter:
         """
         skip = set(skip_providers or [])
         preferences = self._task_preferences.get(task_type, [])
-        fallback_chain = []
+        fallback_chain: list[str] = []
 
         for provider_name in preferences:
             if provider_name in skip:

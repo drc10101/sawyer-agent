@@ -98,8 +98,8 @@ class OrchestratedTask:
     completed: str = ""
     error: str = ""
 
-    def to_dict(self) -> dict:
-        d = {
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
             "id": self.id,
             "goal": self.goal,
             "status": self.status.value,
@@ -424,7 +424,7 @@ class OrchestratorEngine:
         evaluation framework. The actual LLM call happens in the agent loop;
         this provides the evaluation prompt and parses the response.
         """
-        improvements = []
+        improvements: list[str] = []
 
         if task.status != TaskStatus.COMPLETED:
             return improvements
@@ -538,7 +538,7 @@ class OrchestratorEngine:
             return None
 
         total = len(run.tasks)
-        by_status = {}
+        by_status: dict[str, int] = {}
         for t in run.tasks:
             s = t.status.value
             by_status[s] = by_status.get(s, 0) + 1

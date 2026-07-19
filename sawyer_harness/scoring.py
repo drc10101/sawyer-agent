@@ -336,7 +336,7 @@ def score_result(
     # --- Compute weighted overall score ---
     overall = 0.0
     for dim_name, dim_config in QUALITY_DIMENSIONS.items():
-        weight = dim_config["weight"]
+        weight = float(dim_config["weight"])  # type: ignore[arg-type]
         score = dimensions.get(dim_name, 0.5)
         overall += score * weight
     overall = round(overall, 2)

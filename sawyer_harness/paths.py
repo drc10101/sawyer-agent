@@ -99,7 +99,7 @@ class UserData:
     _migration_marker: Path = USER_DIR / ".migrated"
 
     # ── Directories that must exist at startup ──
-    _DIR_PATHS: list[Path] = None  # computed at class init time
+    _DIR_PATHS: list[Path] | None = None  # computed at class init time
 
     @classmethod
     def _merge_memory_dbs(cls, root_db: Path, user_db: Path) -> None:

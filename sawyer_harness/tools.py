@@ -107,7 +107,7 @@ class ToolRegistry:
 
     def register_foreground(self, process: subprocess.Popen) -> None:
         """Track a running foreground subprocess for kill_foreground()."""
-        self._foreground_process = process
+        self._foreground_process: subprocess.Popen | None = process
 
     def unregister_foreground(self) -> None:
         """Clear the tracked foreground process after it completes."""
@@ -794,7 +794,7 @@ def _http_request_handler(
     try:
         import urllib.request
         import urllib.error
-        parsed_headers = {}
+        parsed_headers: dict[str, str] = {}
         if headers:
             try:
                 parsed_headers = _json.loads(headers) if headers.strip().startswith("{") else dict(
@@ -912,7 +912,7 @@ def _project_create_handler(
     if template not in templates:
         return ToolResult(success=False, output="",
                           error=f"Unknown template: {template}. Available: {', '.join(templates.keys())}")
-    tmpl = templates[template]
+    tmpl: dict[str, Any] = templates[template]
     base = Path(path or name).expanduser()
     if base.exists():
         return ToolResult(success=False, output="", error=f"Directory already exists: {base}")
@@ -1032,7 +1032,7 @@ def _make_clawhub_import_handler(registry: ToolRegistry) -> Callable[..., ToolRe
 
         # Convert to Sawyer format
         # Parse existing frontmatter
-        frontmatter = {}
+        frontmatter: dict[str, Any] = {}
         body = skill_content
         if skill_content.startswith("---"):
             parts = skill_content.split("---", 2)
