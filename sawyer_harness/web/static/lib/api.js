@@ -218,6 +218,33 @@ export async function createSession() {
   return data;
 }
 
+/** Get session details and messages */
+export async function getSession(sessionId) {
+  return api(`/api/sessions/${sessionId}`);
+}
+
+/** Delete a session */
+export async function deleteSession(sessionId) {
+  return api(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+}
+
+/** Get messages for a session */
+export async function getSessionMessages(sessionId, limit = 1000) {
+  return api(`/api/sessions/${sessionId}/messages?limit=${limit}`);
+}
+
+/** Resume a session (load messages back into active agent) */
+export async function resumeSession(sessionId) {
+  return api(`/api/sessions/${sessionId}/resume`, { method: 'POST' });
+}
+
+/** Export a session as Markdown */
+export async function exportSession(sessionId) {
+  const res = await fetch(`${API}/api/sessions/${sessionId}/export`);
+  if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+  return res.text();
+}
+
 /** Save session notes */
 export async function saveNotes(sessionId) {
   const sid = sessionId || state.sessionId.value;
