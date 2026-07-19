@@ -2460,12 +2460,52 @@ async function loadModels() {
     html += '<div class="ctrl-card"><h3>Routing Config</h3><p style="color:var(--text-2);font-size:12px">Provider priority and task-type preferences.</p>';
     html += '<div style="margin-top:10px"><button class="btn btn--primary btn-sm" onclick="checkAllHealth()">Health Check All</button></div></div>';
 
+    // Local models section
+    const localModels = data.local_models || [];
+    const currentModel = data.current_model || '';
+    const currentProvider = data.current_provider || '';
+    if (localModels.length > 0) {
+      html += '<div class="ctrl-card" style="margin-bottom:12px"><h3 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Local Models</h3>';
+      html += '<p style="font-size:12px;color:var(--text-2);margin-bottom:10px">Models available on this machine via Ollama. Click to set as active model.</p>';
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+      for (const m of localModels) {
+        const isActive = (m.name === currentModel || m.name.split(':')[0] === currentModel);
+        const sizeMB = m.size ? (m.size / (1024*1024)).toFixed(0) + ' MB' : '';
+        const detail = m.details || {};
+        const family = detail.family || '';
+        const quant = detail.quantization_level || detail.format || '';
+        const badge = isActive ? '<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:var(--brand);color:#fff;margin-left:6px">ACTIVE</span>' : '';
+        html += '<div style="cursor:pointer;padding:8px 12px;border:1px solid ' + (isActive ? 'var(--brand)' : 'var(--border-1)') + ';border-radius:8px;background:' + (isActive ? 'rgba(18,199,239,0.08)' : 'var(--bg-0)') + '" onclick="selectLocalModel(\'' + m.name.replace(/'/g, "\\\\'") + '\')">';
+        html += '<div style="font-size:13px;color:var(--text-0);font-weight:600">' + m.name + badge + '</div>';
+        if (family || quant) {
+          html += '<div style="font-size:11px;color:var(--text-2)">' + [family, quant].filter(Boolean).join(' / ') + '</div>';
+        }
+        if (sizeMB) {
+          html += '<div style="font-size:11px;color:var(--text-3)">' + sizeMB + '</div>';
+        }
+        html += '</div>';
+      }
+      html += '</div></div>';
+    } else {
+      html += '<div class="ctrl-card" style="margin-bottom:12px"><h3 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Local Models</h3>';
+      html += '<p style="font-size:12px;color:var(--text-2)">No local models detected. ';
+      html += 'Make sure <a href="https://ollama.com" target="_blank" rel="noopener" style="color:var(--brand);text-decoration:underline">Ollama</a> is running and you have pulled at least one model.</p></div>';
+    }
+
     grid.innerHTML = html;
 
     // Update header metric
     const healthy = Object.values(data.providers).filter(p => p.health === 'healthy').length;
     document.getElementById('metric-model').textContent = healthy + '/' + Object.keys(data.providers).length;
   } catch(e) { console.error('loadModels error:', e); }
+}
+
+function selectLocalModel(modelName) {
+  const providerInput = document.getElementById('main-provider');
+  const modelInput = document.getElementById('main-model');
+  if (providerInput) providerInput.value = 'ollama';
+  if (modelInput) modelInput.value = modelName;
+  updateAgentConfig();
 }
 
 async function checkAllHealth() {

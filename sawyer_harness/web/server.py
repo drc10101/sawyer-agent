@@ -542,9 +542,31 @@ def _register_routes(app: FastAPI, state: _AppState):
 
     @app.get("/api/models")
     async def list_models():
-        """List all configured providers with health status."""
+        """List all configured providers with health status, plus locally available models."""
         stats = state.router.get_routing_stats()
-        return {"providers": stats}
+        local_models = []
+
+        # Query Ollama for locally available models
+        try:
+            import httpx as _httpx
+            async with _httpx.AsyncClient(timeout=3.0) as client:
+                ollama_url = state.config.llm.base_url or "http://localhost:11434"
+                # Normalize: strip /v1 suffix if present, then use /api/tags
+                base = ollama_url.replace("/v1", "").rstrip("/")
+                resp = await client.get(f"{base}/api/tags")
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for model in data.get("models", []):
+                        local_models.append({
+                            "name": model.get("name", ""),
+                            "size": model.get("size", 0),
+                            "modified_at": model.get("modified_at", ""),
+                            "details": model.get("details", {}),
+                        })
+        except Exception:
+            pass  # Ollama not running or unreachable
+
+        return {"providers": stats, "local_models": local_models, "current_model": state.config.llm.model, "current_provider": state.config.llm.provider}
 
     @app.post("/api/models/{provider_name}/health")
     async def check_provider_health(provider_name: str):
