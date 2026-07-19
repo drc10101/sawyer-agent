@@ -50,6 +50,9 @@ class UserData:
     # ── Last Known Good ──
     lkg_file: Path = USER_DIR / "lkg.json"
 
+    # ── Process management ──
+    pid_file: Path = CACHE_DIR / "sawyer.pid"
+
     # ── Goal loops ──
     goal_loops_file: Path = USER_DIR / "goal_loops.yaml"
 

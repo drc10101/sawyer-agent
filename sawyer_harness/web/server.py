@@ -3024,6 +3024,11 @@ def _kill_port_holder(host: str, port: int) -> None:
     On POSIX systems ``lsof`` or ``fuser`` is used, falling back to
     ``pkill`` on the Sawyer process name.
 
+    Also checks for a PID file written by the previous Sawyer instance
+    and kills that process if it's still alive.  This is more reliable
+    than port detection alone because it handles the brief window
+    between uvicorn starting and the port being bound.
+
     The current process is never killed (we skip our own PID).
     """
     import os
@@ -3032,6 +3037,36 @@ def _kill_port_holder(host: str, port: int) -> None:
     import platform
 
     my_pid = os.getpid()
+
+    # ── Check PID file first (most reliable) ─────────────────────
+    pid_file = UserData.pid_file
+    if pid_file.exists():
+        try:
+            old_pid = int(pid_file.read_text().strip())
+            if old_pid != my_pid:
+                system = platform.system()
+                if system == "Windows":
+                    # Check if the old process is still running
+                    check = subprocess.run(
+                        ["tasklist", "/FI", f"PID eq {old_pid}", "/NH"],
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    if str(old_pid) in check.stdout:
+                        subprocess.run(
+                            ["taskkill", "/F", "/PID", str(old_pid)],
+                            capture_output=True, timeout=10,
+                        )
+                else:
+                    try:
+                        os.kill(old_pid, signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass  # already dead
+        except (ValueError, OSError):
+            pass  # corrupt PID file, ignore
+
+    # ── Write our PID file ───────────────────────────────────────
+    pid_file.parent.mkdir(parents=True, exist_ok=True)
+    pid_file.write_text(str(my_pid), encoding="utf-8")
 
     # ── Fast check: is anything even listening? ──────────────────
     import socket
