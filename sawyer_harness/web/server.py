@@ -1997,9 +1997,10 @@ def _register_routes(app: FastAPI, state: _AppState):
     # ----------------------------------------------------------
 
     @app.post("/api/files/upload")
-    async def upload_file(file: bytes | None = None, filename: str = "upload"):
+    async def upload_file(request: Request, filename: str = "upload"):
         """Upload a file to the drop zone."""
-        if not file:
+        body = await request.body()
+        if not body:
             raise HTTPException(status_code=400, detail="No file provided")
 
         # Save to project outputs if project is open, otherwise uploads dir
@@ -2010,7 +2011,7 @@ def _register_routes(app: FastAPI, state: _AppState):
         else:
             dest = state.upload_dir / filename
 
-        dest.write_bytes(file)
+        dest.write_bytes(body)
         return {"status": "uploaded", "path": str(dest), "filename": filename}
 
     @app.get("/api/files/uploads")
