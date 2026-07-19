@@ -158,6 +158,28 @@
           </div>
           <div class="chat-messages" id="chat-messages"></div>
           <div class="chat-input">
+            <div class="chat-toolbar" id="chat-toolbar">
+              <button class="toolbar-btn" id="toolbar-copy" onclick="copyLastAssistantMessage()" title="Copy last response">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                <span>Copy</span>
+              </button>
+              <button class="toolbar-btn" id="toolbar-attach" onclick="document.getElementById('chat-file-input').click()" title="Attach a file to your message">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                <span>Attach</span>
+              </button>
+              <input type="file" id="chat-file-input" style="display:none" onchange="handleFileAttach(this)">
+              <button class="toolbar-btn" id="toolbar-share" onclick="shareConversation()" title="Share or export this conversation">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                <span>Share</span>
+              </button>
+              <span class="toolbar-separator"></span>
+              <button class="toolbar-btn toolbar-btn--rate" id="toolbar-up" onclick="rateResponse('up')" title="Good response">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><line x1="7" y1="22" x2="7" y2="11"/></svg>
+              </button>
+              <button class="toolbar-btn toolbar-btn--rate" id="toolbar-down" onclick="rateResponse('down')" title="Poor response">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/><line x1="17" y1="2" x2="17" y2="13"/></svg>
+              </button>
+            </div>
             <textarea id="chat-input" placeholder="Send a message..." rows="2" autofocus></textarea>
             <button class="btn btn--primary" id="send-btn" onclick="sendMessage()">Send</button>
             <button class="btn btn--danger" id="stop-btn" onclick="stopStreaming()" style="display:none">Stop</button>
@@ -1576,8 +1598,156 @@ function appendMsg(role, text) {
   const div = document.createElement('div');
   div.className = 'msg ' + role;
   div.innerHTML = formatResponse(text);
+
+  // Add action buttons on assistant messages (copy, rate)
+  if (role === 'assistant') {
+    const actions = document.createElement('div');
+    actions.className = 'msg-assistant-actions';
+    const msgId = 'msg-' + Date.now();
+
+    // Copy button
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'msg-action-btn';
+    copyBtn.title = 'Copy response';
+    copyBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy';
+    copyBtn.onclick = () => copyMessageText(div);
+
+    // Thumbs up
+    const upBtn = document.createElement('button');
+    upBtn.className = 'msg-action-btn';
+    upBtn.title = 'Good response';
+    upBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><line x1="7" y1="22" x2="7" y2="11"/></svg>';
+    upBtn.onclick = () => rateMessage(div, 'up', upBtn, downBtn);
+
+    // Thumbs down
+    const downBtn = document.createElement('button');
+    downBtn.className = 'msg-action-btn';
+    downBtn.title = 'Poor response';
+    downBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/><line x1="17" y1="2" x2="17" y2="13"/></svg>';
+    downBtn.onclick = () => rateMessage(div, 'down', upBtn, downBtn);
+
+    actions.appendChild(copyBtn);
+    actions.appendChild(upBtn);
+    actions.appendChild(downBtn);
+    div.appendChild(actions);
+  }
+
   document.getElementById('chat-messages').appendChild(div);
   div.scrollIntoView({behavior: 'smooth'});
+}
+
+// ── Chat Toolbar Actions ──────────────────────────────────────────────
+
+// Copy last assistant message to clipboard
+function copyLastAssistantMessage() {
+  const msgs = document.querySelectorAll('.msg.assistant');
+  if (!msgs.length) return;
+  const last = msgs[msgs.length - 1];
+  copyMessageText(last);
+}
+
+// Copy a specific message's text to clipboard
+function copyMessageText(msgEl) {
+  // Get text content, excluding the action buttons div
+  const actionsEl = msgEl.querySelector('.msg-assistant-actions');
+  let text = '';
+  if (actionsEl) {
+    const clone = msgEl.cloneNode(true);
+    const actions = clone.querySelector('.msg-assistant-actions');
+    if (actions) actions.remove();
+    text = clone.textContent.trim();
+  } else {
+    text = msgEl.textContent.trim();
+  }
+  navigator.clipboard.writeText(text).then(() => {
+    // Brief visual feedback on the toolbar copy button
+    const btn = document.getElementById('toolbar-copy');
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg><span>Copied</span>';
+      btn.style.color = '#22c55e';
+      setTimeout(() => { btn.innerHTML = orig; btn.style.color = ''; }, 1500);
+    }
+  });
+}
+
+// Rate a message (up/down)
+function rateMessage(msgEl, direction, upBtn, downBtn) {
+  // Toggle: if already active in this direction, deactivate
+  if (direction === 'up') {
+    const isActive = upBtn.classList.contains('msg-rate--active-up');
+    upBtn.classList.toggle('msg-rate--active-up', !isActive);
+    downBtn.classList.remove('msg-rate--active-down');
+  } else {
+    const isActive = downBtn.classList.contains('msg-rate--active-down');
+    downBtn.classList.toggle('msg-rate--active-down', !isActive);
+    upBtn.classList.remove('msg-rate--active-up');
+  }
+}
+
+// Rate last response (from toolbar)
+function rateResponse(direction) {
+  const msgs = document.querySelectorAll('.msg.assistant');
+  if (!msgs.length) return;
+  const last = msgs[msgs.length - 1];
+  const actions = last.querySelector('.msg-assistant-actions');
+  if (!actions) return;
+  const btns = actions.querySelectorAll('.msg-action-btn');
+  // btns: [copy, up, down]
+  if (btns.length >= 3) {
+    rateMessage(last, direction, btns[1], btns[2]);
+  }
+  // Visual feedback on toolbar button
+  const toolbarBtn = direction === 'up' ? document.getElementById('toolbar-up') : document.getElementById('toolbar-down');
+  const otherBtn = direction === 'up' ? document.getElementById('toolbar-down') : document.getElementById('toolbar-up');
+  if (toolbarBtn) {
+    const cls = direction === 'up' ? 'rate-active--up' : 'rate-active--down';
+    const otherCls = direction === 'up' ? 'rate-active--down' : 'rate-active--up';
+    const isAlready = toolbarBtn.classList.contains(cls);
+    toolbarBtn.classList.toggle(cls, !isAlready);
+    if (otherBtn) otherBtn.classList.remove(otherCls);
+  }
+}
+
+// Handle file attachment
+function handleFileAttach(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const chatInput = document.getElementById('chat-input');
+  const current = chatInput.value.trim();
+  // For now, inject file reference into the message
+  // The agent will use file_read or similar tool to access it
+  const fileInfo = `[Attached: ${file.name} (${(file.size / 1024).toFixed(1)}KB)]`;
+  chatInput.value = current ? current + '\n' + fileInfo : fileInfo;
+  chatInput.focus();
+  input.value = '';  // Reset so same file can be re-attached
+}
+
+// Share / export conversation
+function shareConversation() {
+  const msgs = document.querySelectorAll('.msg');
+  if (!msgs.length) return;
+  let text = '# Sawyer Conversation Export\n\n';
+  msgs.forEach(m => {
+    const role = m.classList.contains('user') ? 'You' : m.classList.contains('assistant') ? 'Sawyer' : 'System';
+    // Skip action buttons from copied text
+    const clone = m.cloneNode(true);
+    const actions = clone.querySelector('.msg-assistant-actions');
+    if (actions) actions.remove();
+    const content = clone.textContent.trim();
+    if (content) {
+      text += `**${role}:** ${content}\n\n`;
+    }
+  });
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('toolbar-share');
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg><span>Copied</span>';
+      btn.style.color = '#22c55e';
+      setTimeout(() => { btn.innerHTML = orig; btn.style.color = ''; }, 1500);
+    }
+  });
 }
 
 function appendTypingIndicator() {
