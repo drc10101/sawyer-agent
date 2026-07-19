@@ -1,8 +1,5 @@
 """Tests for SessionStore -- SQLite-backed persistent session storage."""
 
-import json
-import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -19,7 +16,7 @@ def store(tmp_path):
 class TestSessionStoreInit:
     def test_creates_db_file(self, tmp_path):
         db_path = tmp_path / "test_sessions.db"
-        store = SessionStore(db_path=db_path)
+        SessionStore(db_path=db_path)
         assert db_path.exists()
 
     def test_init_db_idempotent(self, tmp_path):

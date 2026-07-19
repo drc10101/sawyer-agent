@@ -43,7 +43,6 @@ The file format:
 import os
 import stat
 from pathlib import Path
-from typing import Any
 
 import yaml
 

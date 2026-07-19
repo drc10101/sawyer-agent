@@ -2,9 +2,9 @@
 
 __version__ = "0.8.0"
 
-from sawyer_harness.config import HarnessConfig, AgentConfig, VERBOSITY_LEVELS
+from sawyer_harness.config import HarnessConfig, AgentConfig, VERBOSITY_LEVELS  # noqa: F401
 from sawyer_harness.memory import MemoryStore
-from sawyer_harness.tools import ToolRegistry, create_default_registry
+from sawyer_harness.tools import ToolRegistry, create_default_registry  # noqa: F401
 from sawyer_harness.llm import LLMClient, Message, ToolCall, LLMResponse
 from sawyer_harness.agent import Agent
 from sawyer_harness.skills import SkillStore, Skill

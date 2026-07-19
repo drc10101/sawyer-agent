@@ -24,19 +24,19 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from ..agent import Agent
-from ..config import HarnessConfig, VERBOSITY_LEVELS, AGREEABILITY_LEVELS, REASONING_LEVELS, COMPACTION_LEVELS, PERMISSION_MODES
+from ..config import HarnessConfig, VERBOSITY_LEVELS, COMPACTION_LEVELS, PERMISSION_MODES
 from .. import __version__
 from ..llm import LLMClient
 from ..memory import MemoryStore
-from ..routing import ModelRouter, ProviderEndpoint, ProviderHealth, TaskType
-from ..scheduler import CronJob, CronScheduler, ScheduleType
+from ..routing import ModelRouter, ProviderEndpoint, TaskType
+from ..scheduler import CronScheduler, ScheduleType
 from ..skills import Skill, SkillStore
 from ..scoring import SessionScore, SCORING_QUESTIONS, compute_trends
 from ..lkg import LKGStore
@@ -45,7 +45,7 @@ from ..compression import ContextCompressor
 from ..session_engine import SessionEngine
 from ..context_manager import ContextManager, CompactionPolicy
 from ..project import Project, ProjectManager
-from ..skill_creator import SkillCreator, SkillCreationSession, SessionPhase
+from ..skill_creator import SkillCreator
 from ..key_storage import KeyStorage
 from ..rules import RulesStore, RulePriority, RuleScope
 from ..agent_creator import AgentCreator
@@ -368,7 +368,6 @@ def _register_routes(app: FastAPI, state: _AppState):
                 _, agent = state.get_or_create_session(session_id)
 
                 # Track tool calls for status summaries
-                current_tool = ""
 
                 async for chunk in agent.run(user_message):
                     # Classify the chunk by its content markers
@@ -1441,8 +1440,8 @@ def _register_routes(app: FastAPI, state: _AppState):
                 + "\n".join(f"  - {st['task']}" for st in remaining) + "\n"
                 f"\nFailed subtasks ({len(failed)}):\n"
                 + "\n".join(f"  - {st['task']}" for st in failed) + "\n"
-                f"\nIn 2-3 sentences, explain why the goal was not fully achieved and what the user could do differently. "
-                f"Be specific about what's missing."
+                "\nIn 2-3 sentences, explain why the goal was not fully achieved and what the user could do differently. "
+                "Be specific about what's missing."
             )
             try:
                 session_id, agent = state.get_or_create_session(f"goal-loop-{goal_id}")
@@ -1510,7 +1509,7 @@ def _register_routes(app: FastAPI, state: _AppState):
     async def approve_tool(draft_id: str):
         """Approve a tool draft: write the file and reload."""
         from ..tool_creator import ToolCreator
-        creator = ToolCreator(registry=state.tools, llm_client=state.llm if hasattr(state, 'llm') else None)
+        ToolCreator(registry=state.tools, llm_client=state.llm if hasattr(state, 'llm') else None)
 
         # Find the draft -- it may be on a different ToolCreator instance
         # so we check the global server-level store
@@ -1527,7 +1526,6 @@ def _register_routes(app: FastAPI, state: _AppState):
         Describe what you want, get a working tool. One click.
         """
         from ..tool_creator import ToolCreator
-        from ..user_tools import load_user_tools
         body = await request.json()
         description = body.get("description", "").strip()
         tool_name = body.get("name", "").strip() or None
@@ -2793,7 +2791,7 @@ def _register_routes(app: FastAPI, state: _AppState):
         else:
             # Auto-assemble briefing
             briefing = state.orchestrator.assemble_briefing(
-                purpose=f"Subtask of orchestration run",
+                purpose="Subtask of orchestration run",
                 goal=goal,
                 agent_type=data.get("agent_type", "worker"),
             )
@@ -2904,7 +2902,6 @@ def _register_routes(app: FastAPI, state: _AppState):
     # ----------------------------------------------------------
 
     from fastapi.staticfiles import StaticFiles
-    from fastapi.responses import FileResponse
 
     @app.get("/")
     async def serve_index():
@@ -2931,7 +2928,6 @@ def _ensure_shortcuts() -> None:
     the user to run a separate command.
     """
     import platform
-    import subprocess
 
     system = platform.system()
 
@@ -3066,7 +3062,6 @@ def run_server(config: HarnessConfig | None = None, host: str = "0.0.0.0", port:
     import uvicorn
     import webbrowser
     import threading
-    import platform
 
     # ── Auto-install shortcuts on first run ───────────────────────
     _ensure_shortcuts()

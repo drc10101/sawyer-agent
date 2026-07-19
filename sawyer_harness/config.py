@@ -351,8 +351,8 @@ def setup_wizard(config_path: str | Path | None = None) -> HarnessConfig:
     if not api_key:
         api_key = cur_key
     if not api_key:
-        print(f"\nNo API key provided. Sawyer will start but won't chat until you add one.")
-        print(f"Run `python -m sawyer_harness setup` later to reconfigure.\n")
+        print("\nNo API key provided. Sawyer will start but won't chat until you add one.")
+        print("Run `python -m sawyer_harness setup` later to reconfigure.\n")
 
     config = HarnessConfig(
         llm=LLMConfig(

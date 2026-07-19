@@ -73,7 +73,7 @@ def _cmd_setup(args):
 
     config_path = Path(args.config).expanduser().resolve() if args.config else DEFAULT_CONFIG_PATH
     setup_wizard(config_path)
-    print(f"\nConfig saved. Run `python -m sawyer_harness` to start.\n")
+    print("\nConfig saved. Run `python -m sawyer_harness` to start.\n")
 
 
 def _cmd_uninstall(args):
@@ -260,7 +260,6 @@ def _cmd_install_shortcuts(args):
     On Linux: creates .desktop files.
     On macOS: creates an .app wrapper via AppleScript.
     """
-    import site
     from sawyer_harness import __version__
 
     # Find the Sawyer icon in the package
@@ -271,7 +270,6 @@ def _cmd_install_shortcuts(args):
 
     # Find the sawyer-web entry point
     python_exe = sys.executable
-    script_cmd = f'"{python_exe}" -m sawyer_harness'
 
     system = platform.system()
 

@@ -29,7 +29,6 @@ from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from email.mime.text import MIMEText
 from pathlib import Path
-from typing import Optional
 from uuid import uuid4
 
 from .paths import UserData

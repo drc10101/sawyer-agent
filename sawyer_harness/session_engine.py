@@ -503,7 +503,7 @@ class SessionEngine:
                 - suggestions: List of suggestions for improvement
                 - needs_ralph_loop: Whether to trigger Ralph loop evaluation
         """
-        from .scoring import evaluate_and_score, RALPH_DEFAULTS
+        from .scoring import evaluate_and_score
 
         suggestions = []
         is_complete = False

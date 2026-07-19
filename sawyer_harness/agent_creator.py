@@ -10,13 +10,11 @@ Templates are persisted in agent_templates.yaml.
 
 from __future__ import annotations
 
-import copy
 import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 from .paths import UserData
 import yaml

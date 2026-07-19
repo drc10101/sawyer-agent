@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .tools import ToolRegistry
 
-from .paths import UserData
 
 logger = logging.getLogger("sawyer-harness.tool_creator")
 

@@ -32,7 +32,6 @@ from pathlib import Path
 from .paths import UserData
 from typing import Any
 
-from .paths import UserData
 
 logger = logging.getLogger("sawyer-harness.scoring")
 

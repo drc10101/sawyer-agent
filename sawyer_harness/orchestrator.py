@@ -499,6 +499,158 @@ class OrchestratorEngine:
 
         return created
 
+    # ── Ralph Loop ─────────────────────────────────────────────
+
+    def ralph_loop_step(
+        self,
+        run_id: str,
+        task_id: str,
+        quality_threshold: float | None = None,
+        max_iterations: int | None = None,
+    ) -> dict:
+        """Evaluate a completed task and decide: pass, improve, or force-complete.
+
+        The Ralph Loop is the evaluate-improve-repeat cycle at the heart
+        of the orchestrator. Each step evaluates the task result quality,
+        and either marks it passed, spawns a creative improvement task,
+        or force-completes after max iterations.
+        """
+        from .scoring import evaluate_and_score, RALPH_DEFAULTS
+
+        if quality_threshold is None:
+            quality_threshold = RALPH_DEFAULTS["quality_threshold"]
+        if max_iterations is None:
+            max_iterations = RALPH_DEFAULTS["max_iterations"]
+
+        run = self._runs.get(run_id)
+        if not run:
+            return {"status": "error", "message": f"Run {run_id} not found"}
+
+        task = next((t for t in run.tasks if t.id == task_id), None)
+        if not task:
+            return {"status": "error", "message": f"Task {task_id} not found"}
+
+        if task.status != TaskStatus.COMPLETED:
+            return {"status": "error", "message": f"Task {task_id} is not completed (status: {task.status.value})"}
+
+        # Count existing improvement iterations for this task
+        improvement_iterations = sum(
+            1 for t in run.tasks
+            if t.parent_task_id == task_id and t.agent_type == "creative"
+        )
+
+        if improvement_iterations >= max_iterations:
+            return {
+                "status": "max_iterations_reached",
+                "quality_score": None,
+                "iteration": improvement_iterations,
+                "message": f"Max iterations ({max_iterations}) reached for task {task_id}",
+            }
+
+        # Evaluate the task result
+        score = evaluate_and_score(
+            result=task.result,
+            success_criteria=task.briefing.success_criteria if task.briefing else "",
+            task_id=task.id,
+            quality_threshold=quality_threshold,
+        )
+
+        # Record quality score as improvement annotation
+        quality_annotation = f"[Quality Score] iteration={improvement_iterations + 1} overall={score.overall:.2f} passed={score.passed}"
+        task.improvements.append(quality_annotation)
+
+        if score.passed:
+            run.updated = datetime.now(timezone.utc).isoformat()
+            self._save()
+            return {
+                "status": "passed",
+                "quality_score": score.to_dict(),
+                "iteration": improvement_iterations + 1,
+                "message": f"Task passed with quality score {score.overall:.2f}",
+            }
+
+        # Quality below threshold -- spawn a creative evaluator task
+        improvement_task = self.add_task(
+            run_id=run_id,
+            goal=f"Improve: {task.goal}",
+            agent_type="creative",
+            priority=TaskPriority.P1,
+            parent_task_id=task_id,
+            briefing=self.assemble_briefing(
+                purpose=f"Improve task: {task.goal}",
+                goal=f"Identify improvements for: {task.goal}",
+                agent_type="creative",
+                success_criteria="Identify at least one concrete, actionable improvement.",
+                context=f"Original result:\n{task.result}\n\nQuality score: {score.overall:.2f}\nImprovements needed: {', '.join(score.improvements) if score.improvements else 'general quality'}",
+            ),
+        )
+
+        run.improvements_found += 1
+        run.updated = datetime.now(timezone.utc).isoformat()
+        self._save()
+
+        return {
+            "status": "improving",
+            "quality_score": score.to_dict(),
+            "iteration": improvement_iterations + 1,
+            "improvement_task_id": improvement_task.id if improvement_task else None,
+            "message": f"Task needs improvement (score: {score.overall:.2f}). Spawned creative evaluator.",
+        }
+
+    def ralph_loop_status(self, run_id: str) -> dict:
+        """Get Ralph loop status for a run -- task counts by status."""
+        run = self._runs.get(run_id)
+        if not run:
+            return {"status": "error", "message": f"Run {run_id} not found"}
+
+        by_status: dict[str, int] = {}
+        for t in run.tasks:
+            s = t.status.value
+            by_status[s] = by_status.get(s, 0) + 1
+
+        return {
+            "run_id": run.id,
+            "goal": run.goal,
+            "status": run.status,
+            "total_tasks": len(run.tasks),
+            "by_status": by_status,
+            "improvements_found": run.improvements_found,
+            "improvements_applied": run.improvements_applied,
+        }
+
+    def apply_improvement(
+        self,
+        run_id: str,
+        task_id: str,
+        improvement_result: str = "",
+    ) -> OrchestratedTask | None:
+        """Apply an improvement to a task -- update result and mark completed."""
+        run = self._runs.get(run_id)
+        if not run:
+            return None
+
+        task = next((t for t in run.tasks if t.id == task_id), None)
+        if not task:
+            return None
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Build improved result
+        if improvement_result:
+            improved_result = f"{task.result}\n\n---\n### Improvement Evaluation\n{improvement_result}"
+        else:
+            improved_result = task.result
+
+        task.result = improved_result
+        task.status = TaskStatus.COMPLETED
+        task.completed = now
+        task.improvements.append(f"Improvement applied: {improvement_result[:100]}")
+
+        run.improvements_applied += 1
+        run.updated = now
+        self._save()
+        return task
+
     # ── Run Lifecycle ─────────────────────────────────────────
 
     def start_run(self, run_id: str) -> OrchestrationRun | None:

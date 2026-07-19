@@ -27,7 +27,6 @@ from typing import Any, Callable
 
 import httpx
 
-from .paths import UserData
 
 logger = logging.getLogger("sawyer-harness.tools")
 
@@ -64,6 +63,7 @@ PERMISSION_TOOL_ACCESS = {
         "memory_search", "memory_store", "memory_delete",
         "skill_search", "skill_load", "skill_list",
         "clipboard",
+        "vision_check_url", "vision_check_html",
     },
     "all": None,  # None = all tools allowed (no filtering)
 }
@@ -123,7 +123,6 @@ class ToolRegistry:
         if proc is None or proc.poll() is not None:
             return False
         try:
-            import signal
             proc.terminate()  # SIGTERM
             try:
                 proc.wait(timeout=2)
@@ -454,7 +453,6 @@ def _make_code_execute_handler(registry: ToolRegistry) -> Callable[..., ToolResu
             )
 
         import tempfile
-        import os
 
         tmp_path = ""  # Track temp file for cleanup
         try:
@@ -1112,6 +1110,134 @@ def _make_clawhub_import_handler(registry: ToolRegistry) -> Callable[..., ToolRe
 
     return handler
 
+# ============================================================
+# Vision Check tools (Gemini-powered visual verification)
+# ============================================================
+
+def _vision_check_url_handler(
+    url: str,
+    objective: str,
+    context: str = "",
+    full_page: bool = False,
+    wait_ms: int = 2000,
+    model: str = "gemini-2.5-flash",
+) -> ToolResult:
+    """Check a URL for visual correctness using Gemini vision.
+
+    Captures a screenshot, sends it to Google Gemini for evaluation
+    against the objective, and returns structured JSON feedback for
+    self-correction. Requires GEMINI_API_KEY env var.
+    """
+    import asyncio as _asyncio
+
+    try:
+        from sawyer_harness.vision_bridge import vision_check
+    except ImportError:
+        return ToolResult(
+            success=False, output="",
+            error="Vision bridge not available. Install dependencies: pip install google-genai playwright Pillow && playwright install chromium",
+        )
+
+    try:
+        loop = _asyncio.new_event_loop()
+        try:
+            result = loop.run_until_complete(
+                vision_check(
+                    url=url, objective=objective, model=model,
+                    context=context, full_page=full_page, wait_ms=wait_ms,
+                )
+            )
+        finally:
+            loop.close()
+
+        output_lines = [
+            "VISION CHECK RESULT",
+            "=" * 40,
+            f"Task completed: {result.task_completed}",
+            f"Visual bug detected: {result.visual_bug_detected}",
+            f"Confidence: {result.confidence:.0%}",
+        ]
+        if result.issue_description:
+            output_lines.append(f"Issue: {result.issue_description}")
+        if result.suggested_fix:
+            output_lines.append(f"Fix: {result.suggested_fix}")
+        output_lines.append("")
+        output_lines.append("AGENT FEEDBACK:")
+        output_lines.append(result.to_agent_message())
+
+        return ToolResult(
+            success=result.task_completed and not result.visual_bug_detected,
+            output="\n".join(output_lines),
+            error="" if result.confidence > 0 else "Low confidence result -- consider manual verification",
+        )
+    except ValueError as e:
+        return ToolResult(success=False, output="", error=str(e))
+    except Exception as e:
+        return ToolResult(success=False, output="", error=f"Vision check failed: {e}")
+
+
+def _vision_check_html_handler(
+    html: str,
+    objective: str,
+    context: str = "",
+    full_page: bool = False,
+    wait_ms: int = 1000,
+    model: str = "gemini-2.5-flash",
+) -> ToolResult:
+    """Check locally-generated HTML for visual correctness using Gemini vision.
+
+    Renders the HTML in a headless browser, screenshots it, and evaluates
+    it against the objective. Useful for verifying agent-generated UI code.
+    Requires GEMINI_API_KEY env var.
+    """
+    import asyncio as _asyncio
+
+    try:
+        from sawyer_harness.vision_bridge import vision_check_html
+    except ImportError:
+        return ToolResult(
+            success=False, output="",
+            error="Vision bridge not available. Install dependencies: pip install google-genai playwright Pillow && playwright install chromium",
+        )
+
+    try:
+        loop = _asyncio.new_event_loop()
+        try:
+            result = loop.run_until_complete(
+                vision_check_html(
+                    html=html, objective=objective, model=model,
+                    context=context, full_page=full_page, wait_ms=wait_ms,
+                )
+            )
+        finally:
+            loop.close()
+
+        output_lines = [
+            "VISION CHECK RESULT (HTML)",
+            "=" * 40,
+            f"Task completed: {result.task_completed}",
+            f"Visual bug detected: {result.visual_bug_detected}",
+            f"Confidence: {result.confidence:.0%}",
+        ]
+        if result.issue_description:
+            output_lines.append(f"Issue: {result.issue_description}")
+        if result.suggested_fix:
+            output_lines.append(f"Fix: {result.suggested_fix}")
+        output_lines.append("")
+        output_lines.append("AGENT FEEDBACK:")
+        output_lines.append(result.to_agent_message())
+
+        return ToolResult(
+            success=result.task_completed and not result.visual_bug_detected,
+            output="\n".join(output_lines),
+            error="" if result.confidence > 0 else "Low confidence result -- consider manual verification",
+        )
+    except ValueError as e:
+        return ToolResult(success=False, output="", error=str(e))
+    except Exception as e:
+        return ToolResult(success=False, output="", error=f"Vision check failed: {e}")
+
+
 def create_default_registry(
     allowed_tools: list[str] | None = None,
     denied_paths: list[str] | None = None,
@@ -1404,6 +1530,96 @@ def create_default_registry(
             "required": ["url"],
         },
         handler=_http_request_handler,
+        requires_sandbox=False,
+        dangerous=False,
+        task_kind=TaskKind.NETWORK,
+    ))
+
+    # --- Vision Check tools (Gemini-powered visual verification) ---
+    registry.register(ToolDefinition(
+        name="vision_check_url",
+        description=(
+            "Check a URL for visual correctness using Gemini vision. "
+            "Captures a screenshot and evaluates it against the objective. "
+            "Returns structured feedback: task_completed, visual_bug_detected, "
+            "issue_description, suggested_fix. "
+            "Requires GEMINI_API_KEY env var. Free tier: 10 req/min, 250/day."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The URL to screenshot and evaluate",
+                },
+                "objective": {
+                    "type": "string",
+                    "description": "What the agent was trying to achieve (e.g., 'Login form is visible and functional')",
+                },
+                "context": {
+                    "type": "string",
+                    "description": "Additional context about the task or page state",
+                },
+                "full_page": {
+                    "type": "boolean",
+                    "description": "Capture the full scrollable page instead of viewport only",
+                },
+                "wait_ms": {
+                    "type": "integer",
+                    "description": "Milliseconds to wait for page animations to settle (default: 2000)",
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Gemini model to use (default: gemini-2.5-flash)",
+                },
+            },
+            "required": ["url", "objective"],
+        },
+        handler=_vision_check_url_handler,
+        requires_sandbox=False,
+        dangerous=False,
+        task_kind=TaskKind.NETWORK,
+    ))
+
+    registry.register(ToolDefinition(
+        name="vision_check_html",
+        description=(
+            "Check locally-generated HTML for visual correctness using Gemini vision. "
+            "Renders the HTML in a headless browser, screenshots it, and evaluates it "
+            "against the objective. Useful for verifying agent-generated UI code "
+            "without deploying it. Requires GEMINI_API_KEY env var."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "html": {
+                    "type": "string",
+                    "description": "The HTML content to render and evaluate",
+                },
+                "objective": {
+                    "type": "string",
+                    "description": "What the agent was trying to achieve",
+                },
+                "context": {
+                    "type": "string",
+                    "description": "Additional context about the task",
+                },
+                "full_page": {
+                    "type": "boolean",
+                    "description": "Capture the full scrollable page",
+                },
+                "wait_ms": {
+                    "type": "integer",
+                    "description": "Milliseconds to wait for rendering to settle (default: 1000)",
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Gemini model to use (default: gemini-2.5-flash)",
+                },
+            },
+            "required": ["html", "objective"],
+        },
+        handler=_vision_check_html_handler,
         requires_sandbox=False,
         dangerous=False,
         task_kind=TaskKind.NETWORK,

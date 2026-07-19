@@ -25,7 +25,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from .paths import UserData
 
-from .paths import UserData
 
 logger = logging.getLogger("sawyer-harness.lkg")
 

@@ -8,13 +8,10 @@ Tests cover:
 """
 
 import pytest
-import tempfile
 from pathlib import Path
 
 from sawyer_harness.orchestrator import (
     OrchestratorEngine,
-    OrchestrationRun,
-    OrchestratedTask,
     TaskStatus,
     TaskPriority,
     AgentBriefing,
@@ -502,7 +499,7 @@ class TestRalphLoopStep:
         )
 
         # With a very low threshold, should pass
-        result_low = engine.ralph_loop_step(run.id, task.id, quality_threshold=0.01)
+        engine.ralph_loop_step(run.id, task.id, quality_threshold=0.01)
 
         # Reset the task for re-evaluation
         engine.update_task(run.id, task.id, status=TaskStatus.COMPLETED)
@@ -525,7 +522,7 @@ class TestRalphLoopStatus:
         """Status should return run info with task summaries."""
         run = engine.create_run("Build feature")
         task1 = engine.add_task(run.id, goal="Task 1")
-        task2 = engine.add_task(run.id, goal="Task 2")
+        engine.add_task(run.id, goal="Task 2")
         engine.update_task(run.id, task1.id, status=TaskStatus.COMPLETED, result="Done")
 
         status = engine.ralph_loop_status(run.id)

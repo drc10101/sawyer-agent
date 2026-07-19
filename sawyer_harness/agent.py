@@ -16,10 +16,11 @@ from typing import AsyncIterator, Any
 
 from .config import HarnessConfig
 from .context_manager import CompactionPolicy
-from .llm import LLMClient, LLMResponse, Message, ToolCall
+from .llm import LLMClient, LLMResponse, Message
 from .memory import MemoryStore
 from .skills import SkillStore
 from .tools import ToolRegistry, ToolResult
+from .token_count import count_tokens, count_message_tokens
 
 logger = logging.getLogger("sawyer-harness.agent")
 
@@ -123,9 +124,6 @@ CONTEXT_PRESSURE_INSTRUCTION = (
 )
 
 
-from .token_count import count_tokens, count_message_tokens
-
-
 def _generate_handoff_notes(
     conversation: list[Message],
     tool_calls_made: list[str],
@@ -143,15 +141,15 @@ def _generate_handoff_notes(
     assistant_msgs = [m.content for m in conversation if m.role == "assistant" and m.content]
 
     notes_lines = [
-        f"## Session Handoff Note",
+        "## Session Handoff Note",
         f"**Reason**: {reason}",
         f"**Rounds used**: {round_num}",
         f"**Tools called**: {', '.join(tool_calls_made) if tool_calls_made else 'none'}",
-        f"",
-        f"### What was requested",
+        "",
+        "### What was requested",
         user_msgs[0][:200] if user_msgs else "No user message",
-        f"",
-        f"### Progress",
+        "",
+        "### Progress",
     ]
 
     # Add last few assistant messages as progress summary
@@ -160,8 +158,8 @@ def _generate_handoff_notes(
             notes_lines.append(f"- {msg[:150]}")
 
     notes_lines.extend([
-        f"",
-        f"### Conversation history (condensed)",
+        "",
+        "### Conversation history (condensed)",
     ])
 
     # Add a condensed version of the conversation
@@ -478,7 +476,7 @@ class Agent:
                 if context_pressure:
                     yield "\n\n---\n*Session context is full. Handoff notes saved. Start a new session to continue.*"
                 else:
-                    yield f"\n\n---\n*Tool round limit reached. Handoff notes saved. Start a new session to continue.*"
+                    yield "\n\n---\n*Tool round limit reached. Handoff notes saved. Start a new session to continue.*"
 
                 return
 
