@@ -2963,9 +2963,12 @@ def _register_routes(app: FastAPI, state: _AppState):
 
     @app.get("/")
     async def serve_index():
-        """Serve the web UI. No-cache to ensure updates appear immediately."""
-        from starlette.responses import FileResponse
-        response = FileResponse(STATIC_DIR / "index.html")
+        """Serve the web UI. No-cache to ensure updates appear immediately.
+        Replaces __VERSION__ placeholders with current version for cache-busting."""
+        from starlette.responses import Response
+        content = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        content = content.replace("__VERSION__", __version__)
+        response = Response(content=content, media_type="text/html")
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
