@@ -17,7 +17,6 @@ warning logged once.
 from __future__ import annotations
 
 import logging
-from functools import lru_cache
 from typing import Optional
 
 logger = logging.getLogger("sawyer-harness.token_count")

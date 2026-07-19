@@ -14,7 +14,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
+from .paths import UserData
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:

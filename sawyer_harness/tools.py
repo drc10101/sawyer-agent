@@ -20,9 +20,9 @@ import subprocess
 import sys
 import textwrap
 import time
-import traceback
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
+from .paths import UserData
 from typing import Any, Callable
 
 import httpx
@@ -680,7 +680,7 @@ def _file_search_handler(
             cmd_parts = ["grep", "-rn", "--color=never", f"--include={file_type}", pattern, path]
         else:
             # Search filenames
-            safe_pattern = pattern.replace('"', '\\"')
+            pattern.replace('"', '\\"')
             if Path(path).expanduser().is_dir():
                 cmd_parts = ["find", str(Path(path).expanduser()), "-name", pattern, "-type", "f"]
             else:
@@ -717,7 +717,6 @@ def _git_handler(
     workdir: str = "",
 ) -> ToolResult:
     """Execute a git operation. Supported: status, diff, log, add, commit, branch, checkout, push, pull."""
-    import os
     allowed = {"status", "diff", "log", "add", "commit", "branch", "checkout", "push", "pull",
                 "stash", "merge", "rebase", "fetch", "remote", "tag", "reset", "blame", "show"}
     cmd = command.strip().split()[0] if command.strip() else ""
@@ -863,7 +862,6 @@ def _project_create_handler(
     path: str = "",
 ) -> ToolResult:
     """Create a new project from a template. Templates: python-cli, python-lib, web-api, scripts."""
-    import os
     templates = {
         "python-cli": {
             "dirs": ["src", "tests"],
@@ -964,7 +962,7 @@ def _make_clawhub_import_handler(registry: ToolRegistry) -> Callable[..., ToolRe
                     installs = item.get("stats", {}).get("installs", 0)
                     output += f"  {s}  --  {d} ({stars} stars, {installs} installs)\n"
                     output += f"     {desc}\n\n"
-                output += f"\nTo import: use clawhub_import with slug='<name>'"
+                output += "\nTo import: use clawhub_import with slug='<name>'"
                 return ToolResult(success=True, output=output)
             except urllib.error.URLError:
                 return ToolResult(success=False, output="", error="ClawHub is not reachable. The service may be down or not yet launched. Skill import is not available at this time.")
@@ -1079,7 +1077,7 @@ def _make_clawhub_import_handler(registry: ToolRegistry) -> Callable[..., ToolRe
 
         sawyer_skill = "---\n"
         sawyer_skill += f"name: {sawyer_name}\n"
-        sawyer_skill += f"version: 1.0\n"
+        sawyer_skill += "version: 1.0\n"
         sawyer_skill += "category: imported\n"
         sawyer_skill += f"triggers:\n  - {sawyer_name}\n"
         sawyer_skill += f'description: "{escaped_desc}"\n'

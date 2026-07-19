@@ -1,7 +1,6 @@
 """Tests for tool registry and shell self-termination blocking."""
 import os
-import pytest
-from sawyer_harness.tools import ToolRegistry, create_default_registry
+from sawyer_harness.tools import create_default_registry
 
 
 class TestShellSelfKillBlocking:

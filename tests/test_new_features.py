@@ -1,14 +1,10 @@
 """Integration tests for session scoring, LKG, agreeability, and reasoning."""
 
-import json
 import tempfile
-from pathlib import Path
 
-import pytest
 
 from sawyer_harness.config import (
     HarnessConfig,
-    AgentConfig,
     AGREEABILITY_LEVELS,
     REASONING_LEVELS,
 )
@@ -98,7 +94,7 @@ class TestSessionScoring:
                 "speed": 4,
             },
         )
-        path = score.save()
+        score.save()
         loaded = SessionScore.load("test-002")
         assert loaded is not None
         assert loaded.session_id == "test-002"

@@ -71,11 +71,15 @@ No agent asks "what should I do?" -- the briefing provides everything needed.
 - Worker template: execution with briefing injection
 - Briefing assembly from rules + template + goal context
 
-### Phase 3: The Loop
-- Post-task evaluation hook
-- Skill auto-patch on success (no human correction)
-- Creative improvement suggestions → new worker tasks
-- Quality scoring and threshold checks
+### Phase 3: The Loop (DONE)
+- Post-task evaluation hook in session_engine.py -- after each tool call round, checks if the task is complete and whether quality meets the bar
+- Quality scoring: compare output against success criteria with 5 weighted dimensions (completeness, correctness, quality, coverage, efficiency)
+- Auto-patch skills on success (no human correction = the skill gets better)
+- Improvement suggestions → new creative evaluator tasks spawned automatically
+- Quality threshold config: stop the loop when score >= threshold or max iterations reached
+- Ralph Loop engine: ralph_loop_step (evaluate → pass/improve/max-out), ralph_loop_status, apply_improvement
+- 7 API endpoints: POST /api/orchestrations/{run_id}/ralph/{task_id}, GET /api/orchestrations/{run_id}/ralph, POST /api/orchestrations/{run_id}/apply-improvement/{task_id}, POST /api/quality-score, GET /api/quality-dimensions, GET /api/ralph-defaults
+- Web UI: Evaluate button on completed tasks, Ralph Loop panel with status/config view, quality score display with dimension breakdown
 
 ### Phase 4: Persistence & Learning
 - Task outcomes stored with quality scores

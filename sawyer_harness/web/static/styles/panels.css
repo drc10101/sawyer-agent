@@ -453,3 +453,54 @@
   color: var(--text-2);
   margin-left: 8px;
 }
+
+/* ── Update Banner ── */
+.update-banner {
+  background: linear-gradient(135deg, #0d1a2e 0%, #0d2228 100%);
+  border-bottom: 2px solid var(--brand);
+  padding: 10px 20px;
+  margin: 0;
+}
+.update-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.update-icon {
+  color: var(--brand);
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.update-text {
+  font-size: 13px;
+  color: var(--text-1);
+  flex: 1;
+  min-width: 200px;
+}
+.update-text strong {
+  color: var(--brand);
+}
+.update-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.update-changelog {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border-1);
+  border-radius: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.changelog-version h4 {
+  margin: 0 0 4px 0;
+}
+
+/* ── Suggestion Cards ── */
+.suggestion-status {
+  font-size: 12px;
+  min-height: 1em;
+}

@@ -34,7 +34,7 @@ def main():
     browser_thread.start()
 
     print(f"  Starting server on {url}")
-    print(f"  Press Ctrl+C to stop.")
+    print("  Press Ctrl+C to stop.")
     print()
 
     # Import and run the server

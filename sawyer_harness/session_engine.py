@@ -25,7 +25,6 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger("sawyer-harness.session_engine")
 
@@ -336,10 +335,10 @@ class SessionEngine:
         """Build a full markdown document of session notes."""
         lines = [
             f"# Session {self.session_id}",
-            f"",
+            "",
             f"**Started:** {self.session_start.isoformat()}",
             f"**Messages:** {self.message_count} | **Tool calls:** {self.tool_call_count}",
-            f"",
+            "",
         ]
 
         if topics:
@@ -470,6 +469,114 @@ class SessionEngine:
                 continue
 
         return summaries
+
+    def evaluate_task_completion(
+        self,
+        goal: str,
+        result: str,
+        success_criteria: str = "",
+        tool_calls: int = 0,
+        errors: list[str] | None = None,
+    ) -> dict:
+        """Post-task evaluation hook for the Ralph loop.
+
+        Called after each tool call round to check if the task is complete
+        and whether the result meets quality standards. Returns an evaluation
+        dict that can be fed into the orchestrator's ralph_loop_step.
+
+        This hook is the bridge between the session engine (which tracks
+        conversation state) and the orchestrator (which manages the Ralph
+        loop). The session engine provides context; the orchestrator makes
+        the decision.
+
+        Args:
+            goal: The task goal being evaluated.
+            result: The accumulated result text so far.
+            success_criteria: What success looks like for this task.
+            tool_calls: Number of tool calls made in this session.
+            errors: List of errors encountered during the session.
+
+        Returns:
+            Dict with:
+                - is_complete: Whether the task appears done
+                - quality_score: QualityScore dict (if evaluated)
+                - suggestions: List of suggestions for improvement
+                - needs_ralph_loop: Whether to trigger Ralph loop evaluation
+        """
+        from .scoring import evaluate_and_score, RALPH_DEFAULTS
+
+        suggestions = []
+        is_complete = False
+
+        # Check for explicit completion signals
+        result_lower = result.lower() if result else ""
+
+        # Signals that the task is likely complete
+        completion_signals = [
+            "done", "completed", "finished", "implemented",
+            "created", "wrote", "built", "deployed", "fixed",
+        ]
+        has_completion_signal = any(
+            signal in result_lower for signal in completion_signals
+        )
+
+        # Signals that the task is NOT complete
+        incompletion_signals = [
+            "todo:", "fixme:", "not yet", "still need to",
+            "work in progress", "in progress", "pending",
+        ]
+        has_incompletion_signal = any(
+            signal in result_lower for signal in incompletion_signals
+        )
+
+        # Determine completeness
+        if has_completion_signal and not has_incompletion_signal:
+            is_complete = True
+        elif result and len(result.strip()) > 200 and not has_incompletion_signal:
+            # Substantial result without incompletion markers
+            is_complete = True
+        elif not result:
+            is_complete = False
+
+        # Generate suggestions based on session state
+        if errors:
+            suggestions.append(
+                f"Session had {len(errors)} error(s) -- may need retry or fix."
+            )
+        if tool_calls == 0 and result:
+            suggestions.append(
+                "No tool calls made -- result may lack verification."
+            )
+        if not result or len(result.strip()) < 50:
+            suggestions.append(
+                "Very short or empty result -- task may not be complete."
+            )
+
+        # Quick quality evaluation if we have a result
+        quality_score = None
+        needs_ralph_loop = False
+        if result and len(result.strip()) >= 50:
+            quality = evaluate_and_score(
+                result=result,
+                success_criteria=success_criteria or goal,
+                task_id="",  # Will be set by the orchestrator
+                iteration=1,
+            )
+            quality_score = quality.to_dict()
+
+            # If quality is below threshold, suggest Ralph loop
+            if not quality.passed:
+                needs_ralph_loop = True
+                suggestions.extend(quality.improvements)
+
+        return {
+            "is_complete": is_complete,
+            "quality_score": quality_score,
+            "suggestions": suggestions,
+            "needs_ralph_loop": needs_ralph_loop,
+            "tool_calls": tool_calls,
+            "result_length": len(result) if result else 0,
+        }
 
     def format_suggestions_for_prompt(self) -> str:
         """Format next-session suggestions for injection into a new session's system prompt."""

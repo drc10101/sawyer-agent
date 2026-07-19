@@ -33,6 +33,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 from pathlib import Path
+from .paths import UserData
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:

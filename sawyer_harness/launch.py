@@ -205,7 +205,7 @@ def resolve_api_key(launch: LaunchConfig, explicit_key: str = "", existing_key: 
     # 6. Prompt the user
     provider_display = _PROVIDER_DISPLAY.get(launch.provider, launch.provider.title())
     print(f"\n  {provider_display} requires an API key for {launch.model}.")
-    print(f"  Get one at:", end="")
+    print("  Get one at:", end="")
     key_urls = {
         "openai": "https://platform.openai.com/api-keys",
         "anthropic": "https://console.anthropic.com/settings/keys",
@@ -222,13 +222,13 @@ def resolve_api_key(launch: LaunchConfig, explicit_key: str = "", existing_key: 
         print()
 
     try:
-        key = input(f"  API Key: ").strip()
+        key = input("  API Key: ").strip()
     except (EOFError, KeyboardInterrupt):
         key = ""
         print()
 
     if not key:
-        print(f"\n  No API key provided. Sawyer will start but won't connect until you add one.")
+        print("\n  No API key provided. Sawyer will start but won't connect until you add one.")
         print(f"  Set {launch.key_env_var or 'SAWYER_API_KEY'} or run: python -m sawyer_harness setup\n")
 
     return key
@@ -246,8 +246,6 @@ def auto_launch(model: str, api_key: str = "", host: str = "127.0.0.1", port: in
     """
     from .config import HarnessConfig, LLMConfig, DEFAULT_CONFIG_PATH
     from .web.server import run_server
-    from .cli import _cmd_web
-    import argparse
     import logging
 
     # Parse the model string
@@ -286,7 +284,7 @@ def auto_launch(model: str, api_key: str = "", host: str = "127.0.0.1", port: in
     # Print what we resolved
     provider_display = _PROVIDER_DISPLAY.get(launch.provider, launch.provider.title())
     key_status = f"{resolved_key[:8]}..." if resolved_key else "no key (local model)"
-    print(f"\n  Sawyer Agent -- self-activating launch")
+    print("\n  Sawyer Agent -- self-activating launch")
     print(f"  Provider:  {provider_display}")
     print(f"  Model:     {launch.model}")
     print(f"  Base URL:  {launch.base_url}")

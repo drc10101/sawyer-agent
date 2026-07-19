@@ -43,3 +43,9 @@ kanban-board.html
 SESSION-NOTES-*.md
 FEATURE-ANALYSIS.md
 REDESIGN-PLAN.md
+
+# Coverage
+coverage.xml
+htmlcov/
+.coversawyer-test-project/
+sawyer-test-project/

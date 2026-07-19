@@ -1,8 +1,8 @@
 """Tests for Sawyer Harness core components."""
 
-from sawyer_harness.config import HarnessConfig, LLMConfig, SecurityConfig
+from sawyer_harness.config import HarnessConfig
 from sawyer_harness.memory import MemoryStore
-from sawyer_harness.tools import ToolRegistry, create_default_registry, ToolResult
+from sawyer_harness.tools import create_default_registry
 
 
 def test_config_defaults():

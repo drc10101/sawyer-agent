@@ -8,7 +8,6 @@ from sawyer_harness.routing import (
     ModelRouter,
     ProviderEndpoint,
     ProviderHealth,
-    RouteDecision,
     TaskType,
     create_default_router,
 )

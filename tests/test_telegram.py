@@ -1,7 +1,7 @@
 """Tests for Sawyer Harness Telegram adapter."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -155,12 +155,17 @@ def test_handle_command_help(adapter):
 
 def test_handle_command_clear(adapter):
     """Handle /clear command."""
-    # Create a session first
-    session = adapter._get_or_create_session(12345)
-    assert session is not None
+    # Create a session with a mock agent to avoid needing real MemoryStore/LLM
+    mock_agent = MagicMock()
+    adapter.sessions[12345] = TelegramSession(
+        chat_id=12345,
+        agent=mock_agent,
+        created="2026-07-19T00:00:00",
+    )
 
     result = asyncio.run(adapter.handle_message(12345, "/clear"))
     assert "cleared" in result[0].lower()
+    mock_agent.reset_conversation.assert_called_once()
 
 
 def test_handle_command_unknown(adapter):

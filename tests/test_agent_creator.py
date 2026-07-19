@@ -1,9 +1,8 @@
 """Tests for Agent Creator / Templates."""
 
 import pytest
-from pathlib import Path
 
-from sawyer_harness.agent_creator import AgentCreator, AgentTemplate, AgentSoul, DEFAULT_TEMPLATES
+from sawyer_harness.agent_creator import AgentCreator, AgentTemplate, AgentSoul
 
 
 @pytest.fixture
@@ -352,7 +351,7 @@ class TestAgentCreator:
         )
 
         creator2 = AgentCreator(path=path)
-        tpl = creator2.get_template("soul-persist")
+        creator2.get_template("soul-persist")
         # User template, not builtin
         user_tpls = [t for t in creator2.list_templates() if t.name == "Soul Persist"]
         assert len(user_tpls) == 1

@@ -20,10 +20,10 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from .paths import UserData
 
 from .paths import UserData
 

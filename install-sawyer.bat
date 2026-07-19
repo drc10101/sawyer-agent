@@ -1,17 +1,15 @@
 @echo off
 setlocal enabledelayedexpansion
-title Sawyer Agent
+title Sawyer Agent Installer
 
 :: ── Sawyer Agent installer ──────────────────────────────────────
 ::  Usage:
-::    Double-click this file, or from PowerShell:
-::      irm https://raw.githubusercontent.com/drc10101/sawyer-agent/master/install-sawyer.bat -OutFile install-sawyer.bat; .\install-sawyer.bat
-::    From cmd:
+::    Double-click this file, or from cmd:
 ::      curl -sL https://raw.githubusercontent.com/drc10101/sawyer-agent/master/install-sawyer.bat -o install-sawyer.bat && install-sawyer.bat
 ::
 ::  Commands (pass as arg, or just double-click for full install):
-::    (no arg)   Full install: pip install + setup + desktop shortcut
-::    reinstall  Update package + re-run setup
+::    (no arg)   Full install: Python check + pip install + setup + shortcut
+::    reinstall  Update package + re-run setup + shortcut
 ::    setup      Reconfigure API key and provider
 ::    uninstall  Remove Sawyer completely
 ::    start      Start the server (browser opens automatically)
@@ -33,38 +31,115 @@ echo    Sawyer Agent - Install
 echo   ============================================
 echo.
 
-:: Check for Python
+:: ── Step 1: Check for Python ──────────────────────────────────
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
-    echo  [ERROR] Python not found.
-    echo  Install Python 3.11+ from https://python.org
-    echo  Check "Add Python to PATH" during installation, then re-run.
+    echo   [ERROR] Python not found on PATH.
+    echo.
+    echo   Sawyer requires Python 3.11 or later.
+    echo   Download from: https://python.org
+    echo.
+    echo   Make sure to check "Add Python to PATH" during setup,
+    echo   then close this window and re-run install-sawyer.bat.
+    echo.
     pause
     exit /b 1
 )
 
-:: Install Sawyer
-echo  Installing Sawyer Agent...
+:: Verify Python version is 3.11+
+for /f "tokens=2 delims= " %%v in ('python --version 2^>nul') do set "PY_VER=%%v"
+for /f "tokens=1,2 delims=." %%a in ("%PY_VER%") do (
+    set "PY_MAJOR=%%a"
+    set "PY_MINOR=%%b"
+)
+if %PY_MAJOR% lss 3 (
+    echo   [ERROR] Python %PY_VER% is too old. Sawyer requires Python 3.11+.
+    echo   Download from: https://python.org
+    pause
+    exit /b 1
+)
+if %PY_MAJOR% equ 3 if %PY_MINOR% lss 11 (
+    echo   [ERROR] Python %PY_VER% is too old. Sawyer requires Python 3.11+.
+    echo   Download from: https://python.org
+    pause
+    exit /b 1
+)
+echo   [OK] Python %PY_VER% found.
+
+:: ── Step 2: Check for pip ──────────────────────────────────────
+python -m pip --version >nul 2>&1
+if %errorlevel% neq 0 (
+    echo   [ERROR] pip not found.
+    echo.
+    echo   pip should come with Python 3.11+. Try reinstalling Python
+    echo   from https://python.org with "Add Python to PATH" checked.
+    echo.
+    echo   Alternatively, install pip manually:
+    echo     python -m ensurepip --upgrade
+    echo.
+    pause
+    exit /b 1
+)
+echo   [OK] pip is available.
+
+:: ── Step 3: Ask about virtual environment ──────────────────────
+echo.
+echo   Sawyer can be installed in a virtual environment (recommended)
+echo   or system-wide. A virtualenv keeps dependencies isolated.
+echo.
+set /p "USE_VENV=  Install in virtual environment? [Y/n] "
+if /i "%USE_VENV%"=="n" goto skip_venv
+if /i "%USE_VENV%"=="no" goto skip_venv
+
+:: Create virtualenv if it doesn't exist
+set "VENV_DIR=%USERPROFILE%\.sawyer-harness\venv"
+if not exist "%VENV_DIR%\Scripts\python.exe" (
+    echo   Creating virtual environment...
+    python -m venv "%VENV_DIR%"
+    if %errorlevel% neq 0 (
+        echo   [ERROR] Failed to create virtual environment.
+        echo   Falling back to system-wide install.
+        goto skip_venv
+    )
+    echo   [OK] Virtual environment created at %VENV_DIR%
+)
+
+:: Activate venv for the rest of this script
+call "%VENV_DIR%\Scripts\activate.bat"
+echo   [OK] Virtual environment activated.
+
+:skip_venv
+
+:: ── Step 4: Install Sawyer ─────────────────────────────────────
+echo.
+echo   Installing Sawyer Agent...
 pip install git+https://github.com/drc10101/sawyer-agent.git --quiet --upgrade
 if %errorlevel% neq 0 (
-    echo  [ERROR] Installation failed. Check your internet and try again.
+    echo.
+    echo   [ERROR] Installation failed.
+    echo   Check your internet connection and try again.
+    echo   If this persists, try: pip install --no-cache-dir git+https://github.com/drc10101/sawyer-agent.git
+    echo.
     pause
     exit /b 1
 )
-echo  Package installed.
+echo   [OK] Package installed.
 
-:: Run setup wizard
+:: ── Step 5: Run setup wizard ──────────────────────────────────
+echo.
+echo   Running setup wizard...
 echo.
 python -m sawyer_harness setup
 if %errorlevel% neq 0 (
     echo.
-    echo  [WARN] Setup did not complete. Run manually:
-    echo    python -m sawyer_harness setup
+    echo   [WARN] Setup did not complete. Run manually:
+    echo     python -m sawyer_harness setup
 )
 
-:: Create desktop shortcut
+:: ── Step 6: Create desktop shortcut ──────────────────────────
 call :create_shortcut
 
+:: ── Done ───────────────────────────────────────────────────────
 echo.
 echo   ============================================
 echo    Done! Sawyer Agent is ready.
@@ -90,14 +165,14 @@ echo   ============================================
 echo.
 
 :: Update package
-echo  Updating Sawyer Agent...
+echo   Updating Sawyer Agent...
 pip install git+https://github.com/drc10101/sawyer-agent.git --quiet --upgrade --force-reinstall --no-deps
 if %errorlevel% neq 0 (
-    echo  [ERROR] Update failed.
+    echo   [ERROR] Update failed.
     pause
     exit /b 1
 )
-echo  Package updated.
+echo   [OK] Package updated.
 
 :: Re-run setup
 echo.
@@ -144,7 +219,7 @@ echo.
 echo   Usage: install-sawyer.bat [command]
 echo.
 echo   Commands:
-echo     (none)      Full install: pip install + setup + shortcut
+echo     (none)      Full install: Python check + pip install + setup + shortcut
 echo     reinstall   Update package and reconfigure
 echo     setup       Reconfigure API key and provider
 echo     uninstall   Remove Sawyer completely
@@ -180,7 +255,7 @@ if not exist "%SCRIPT_PATH%" (
 powershell -ExecutionPolicy Bypass -File "%SCRIPT_PATH%"
 
 if %errorlevel% equ 0 (
-    echo   Desktop shortcut created.
+    echo   [OK] Desktop shortcut created.
 ) else (
     echo   [WARN] Shortcut creation failed.
 )

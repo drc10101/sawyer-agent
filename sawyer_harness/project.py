@@ -37,7 +37,8 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+
+from .paths import UserData
 
 logger = logging.getLogger("sawyer-harness.project")
 
@@ -253,7 +254,7 @@ class ProjectManager:
         Args:
             base_path: Base directory for projects. Defaults to ~/projects/
         """
-        self.base_path = base_path or Path.home() / "projects"
+        self.base_path = base_path or UserData.projects_dir
         self.base_path.mkdir(parents=True, exist_ok=True)
 
     def create_project(

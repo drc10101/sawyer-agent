@@ -4,21 +4,17 @@ import json
 import tempfile
 from pathlib import Path
 
-import pytest
 
 from sawyer_harness.compression import (
-    CompressionResult,
     ContextCompressor,
-    LLMCompressor,
     Priority,
 )
 from sawyer_harness.context_manager import (
-    ContextBudget,
     ContextManager,
     MODEL_WINDOWS,
 )
-from sawyer_harness.session_engine import SessionEngine, SessionNote, SessionSummary
-from sawyer_harness.project import Project, ProjectManager
+from sawyer_harness.session_engine import SessionEngine
+from sawyer_harness.project import ProjectManager
 
 
 # ============================================================
@@ -298,7 +294,7 @@ class TestSessionEngine:
     def test_track_todo(self):
         """TODO items are extracted from messages."""
         self.engine.track_message("user", "We need to add authentication.")
-        todos = [n for n in self.engine.notes if n.note_type == "todo"]
+        [n for n in self.engine.notes if n.note_type == "todo"]
         # At minimum, a topic note should be extracted
         assert len(self.engine.notes) >= 1
 

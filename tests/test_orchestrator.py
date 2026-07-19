@@ -1,9 +1,6 @@
 """Tests for Sawyer Harness orchestration engine."""
 
 import pytest
-from pathlib import Path
-import tempfile
-import os
 
 from sawyer_harness.orchestrator import (
     OrchestratorEngine,
@@ -353,7 +350,7 @@ class TestSerialization:
 
     def test_run_to_dict_from_dict(self, engine):
         run = engine.create_run("Test serialization")
-        task = engine.add_task(run.id, "Subtask 1")
+        engine.add_task(run.id, "Subtask 1")
         
         data = run.to_dict()
         assert data["id"] == run.id

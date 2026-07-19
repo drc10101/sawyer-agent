@@ -1,15 +1,11 @@
 """Tests for Sawyer Harness SkillCreator."""
 
 import pytest
-from pathlib import Path
-import tempfile
 
 from sawyer_harness.skill_creator import (
     SkillCreator,
-    SkillCreationSession,
     SessionPhase,
     SessionStatus,
-    SkillSpec,
 )
 from sawyer_harness.skills import SkillStore
 
@@ -37,13 +33,13 @@ class TestSkillCreatorSessions:
         assert retrieved.id == session.id
 
     def test_list_sessions(self, creator):
-        s1 = creator.create_session()
-        s2 = creator.create_session()
+        creator.create_session()
+        creator.create_session()
         sessions = creator.list_sessions()
         assert len(sessions) == 2
 
     def test_list_sessions_by_status(self, creator):
-        s1 = creator.create_session()
+        creator.create_session()
         sessions = creator.list_sessions(status=SessionStatus.ACTIVE)
         assert len(sessions) == 1
         sessions = creator.list_sessions(status=SessionStatus.COMPLETED)
@@ -246,12 +242,12 @@ class TestSuggestSkillCreation:
 class TestSpecToMarkdown:
     def test_full_spec_to_markdown(self, creator):
         session = creator.create_session()
-        spec = creator.theorize(
+        creator.theorize(
             session.id,
             "Deploy the application to production",
         )
         # Refine with full details
-        spec = creator.refine(session.id, {
+        creator.refine(session.id, {
             "name": "production-deploy",
             "description": "Deploy the app to production safely",
             "procedure": [

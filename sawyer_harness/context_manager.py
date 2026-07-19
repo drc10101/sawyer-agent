@@ -31,9 +31,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
 
-from .token_count import count_tokens, count_message_tokens, get_counter
+from .token_count import get_counter
 
 logger = logging.getLogger("sawyer-harness.context_manager")
 

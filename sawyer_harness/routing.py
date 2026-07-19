@@ -21,7 +21,6 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
 
 import httpx
 
@@ -148,7 +147,7 @@ class ModelRouter:
                 url = f"{provider.base_url.rstrip('/')}/health"
             elif provider.provider_type == "anthropic":
                 # Anthropic doesn't have a health endpoint, just check DNS
-                url = f"https://api.anthropic.com"
+                url = "https://api.anthropic.com"
             else:
                 url = f"{provider.base_url.rstrip('/')}/models"
 

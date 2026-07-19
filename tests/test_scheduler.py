@@ -1,8 +1,6 @@
 """Tests for Sawyer Harness cron scheduler."""
 
-import asyncio
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 
 import pytest
 

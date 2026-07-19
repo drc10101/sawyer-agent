@@ -23,7 +23,6 @@ import logging
 import re
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Optional
 
 from .token_count import get_counter
 
@@ -442,7 +441,7 @@ class LLMCompressor(ContextCompressor):
                 content = content[:500] + "..."
             conversation_text.append(f"{role}: {content}")
 
-        prompt = (
+        (
             "Summarize this conversation excerpt in 2-3 sentences. "
             "Focus on: what was discussed, what was decided, what was built or changed. "
             "Omit routine tool output and status messages.\n\n"

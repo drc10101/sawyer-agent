@@ -1,11 +1,9 @@
 """Tests for KeyStorage credential management."""
 
 import os
-import tempfile
 import pytest
-from pathlib import Path
 
-from sawyer_harness.key_storage import KeyStorage, mask_value, KEYS_FILE
+from sawyer_harness.key_storage import KeyStorage, mask_value
 
 
 @pytest.fixture
@@ -40,7 +38,7 @@ class TestMaskValue:
 
 class TestKeyStorageInit:
     def test_creates_directory(self, keys_dir):
-        ks = KeyStorage(path=keys_dir)
+        KeyStorage(path=keys_dir)
         assert keys_dir.parent.exists()
 
     def test_starts_empty(self, ks):
@@ -214,7 +212,7 @@ class TestPersistence:
 
     def test_file_permissions(self, ks, keys_dir):
         ks.add_entry("api", {"name": "test", "key": "sk-test"})
-        mode = os.stat(keys_dir).st_mode & 0o777
+        os.stat(keys_dir).st_mode & 0o777
         # On Windows, chmod may not work as expected; just verify file exists
         assert keys_dir.exists()
 

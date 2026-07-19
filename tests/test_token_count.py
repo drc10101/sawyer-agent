@@ -1,6 +1,5 @@
 """Tests for real token counting module."""
 
-import pytest
 from sawyer_harness.token_count import (
     TokenCounter,
     count_tokens,
@@ -83,7 +82,7 @@ class TestTokenCounter:
         counter = TokenCounter()
         code = "def foo(bar: int) -> str:\n    return str(bar)"
         real = counter.count(code)
-        heuristic = max(1, len(code) // 4)
+        max(1, len(code) // 4)
         # Code tokens are typically higher due to syntax tokens
         assert real > 0
 

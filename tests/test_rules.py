@@ -1,8 +1,6 @@
 """Tests for Agent Rules engine."""
 
 import pytest
-import tempfile
-from pathlib import Path
 
 from sawyer_harness.rules import RulesStore, AgentRule, RulePriority, RuleScope
 
@@ -122,7 +120,7 @@ class TestRulesStore:
         assert cron_rules[0].name == "Cron"
 
     def test_list_rules_enabled_only(self, rules_store):
-        r1 = rules_store.add_rule(name="On", rule="Active")
+        rules_store.add_rule(name="On", rule="Active")
         r2 = rules_store.add_rule(name="Off", rule="Inactive")
         rules_store.update_rule(r2.id, enabled=False)
         
