@@ -47,7 +47,7 @@ class TestKeyStorageInit:
 
     def test_categories(self, ks):
         cats = ks.categories()
-        assert cats == ["ssh", "api", "tokens", "custom"]
+        assert cats == ["ssh", "api", "vision", "tokens", "custom"]
 
     def test_count_empty(self, ks):
         count = ks.count()

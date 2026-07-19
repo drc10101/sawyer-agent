@@ -947,6 +947,7 @@
           <div style="display:flex;gap:8px;margin-bottom:16px">
             <button class="btn btn--subtle btn-sm" id="keys-tab-ssh" onclick="switchKeysTab('ssh')" style="border-color:var(--brand);color:var(--brand)">SSH</button>
             <button class="btn btn--subtle btn-sm" id="keys-tab-api" onclick="switchKeysTab('api')">API</button>
+            <button class="btn btn--subtle btn-sm" id="keys-tab-vision" onclick="switchKeysTab('vision')" style="color:#12c7ef">Vision</button>
             <button class="btn btn--subtle btn-sm" id="keys-tab-tokens" onclick="switchKeysTab('tokens')">Tokens</button>
             <button class="btn btn--subtle btn-sm" id="keys-tab-custom" onclick="switchKeysTab('custom')">Custom</button>
           </div>
@@ -980,9 +981,10 @@
             <select id="key-category" style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px;width:200px" onchange="onKeyCategoryChange(this.value)">
               <option value="ssh">SSH</option>
               <option value="api">API</option>
+              <option value="vision">Vision</option>
               <option value="tokens">Tokens</option>
               <option value="custom">Custom</option>
-            </select></div>
+            </select>
 
             <!-- Name (always visible) -->
             <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Name</label><br>
@@ -1054,6 +1056,33 @@
             <div id="key-fields-custom" style="display:none">
               <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Custom fields (one per line: key=value)</label><br>
               <textarea id="key-custom-fields" style="width:100%;min-height:60px;font-family:var(--font-mono);font-size:12px" placeholder="secret=abc123&#10;endpoint=https://..."></textarea></div>
+            </div>
+
+            <!-- Vision fields -->
+            <div id="key-fields-vision" style="display:none">
+              <div style="margin:8px 0;padding:10px 12px;background:var(--bg-0);border:1px solid var(--border-1);border-radius:8px;border-left:3px solid #12c7ef">
+                <div style="font-size:12px;color:var(--text-0);font-weight:600;margin-bottom:4px">Vision Bridge -- Google AI Studio API Key</div>
+                <div style="font-size:11px;color:var(--text-2);line-height:1.5">
+                  This key powers the <strong>vision bridge</strong> -- the agent's ability to see and verify web pages, screenshots, and UI output.
+                  Without it, the agent is blind: it cannot check whether things <em>look</em> correct.
+                  <br><br>
+                  <strong>How to get it:</strong>
+                  <ol style="margin:4px 0 0 16px;padding:0">
+                    <li>Go to <a href="https://ai.google.dev/" target="_blank" rel="noopener" style="color:#12c7ef;text-decoration:underline">ai.google.dev</a></li>
+                    <li>Sign in with a Google account (free)</li>
+                    <li>Create a project and generate an API key</li>
+                    <li>Paste the key below</li>
+                  </ol>
+                  <br>
+                  <span style="color:var(--text-3)">The free tier includes generous usage. The key is stored locally and never sent anywhere except Google's API for vision checks.</span>
+                </div>
+              </div>
+              <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">Provider</label><br>
+              <select id="key-vision-provider" style="background:var(--bg-0);border:1px solid var(--border-1);border-radius:6px;padding:6px 10px;color:var(--text-0);font-size:13px;width:280px" onchange="onVisionProviderChange(this.value)">
+                <option value="google-ai-studio">Google AI Studio (Gemini)</option>
+              </select></div>
+              <div style="margin:8px 0"><label style="font-size:11px;color:var(--text-2)">API Key</label><br>
+              <input id="key-vision-key" type="password" placeholder="AIza..." style="width:100%"></div>
             </div>
 
             <!-- Note (always visible) -->
@@ -2805,7 +2834,7 @@ const API_PRESETS = {
 
 function switchKeysTab(tab) {
   currentKeysTab = tab;
-  ['ssh', 'api', 'tokens', 'custom'].forEach(t => {
+  ['ssh', 'api', 'vision', 'tokens', 'custom'].forEach(t => {
     const btn = document.getElementById('keys-tab-' + t);
     if (btn) {
       if (t === tab) {
@@ -2821,7 +2850,7 @@ function switchKeysTab(tab) {
 }
 
 function onKeyCategoryChange(cat) {
-  ['ssh', 'api', 'tokens', 'custom'].forEach(t => {
+  ['ssh', 'api', 'vision', 'tokens', 'custom'].forEach(t => {
     const el = document.getElementById('key-fields-' + t);
     if (el) el.style.display = (t === cat) ? 'block' : 'none';
   });
@@ -2852,6 +2881,10 @@ function onTokenServiceChange(val) {
     customInput.style.display = 'none';
     customInput.value = '';
   }
+}
+
+function onVisionProviderChange(val) {
+  // Currently only Google AI Studio -- future providers can be added here
 }
 
 // Show/hide allowlist fields based on permission
@@ -3162,6 +3195,11 @@ async function addKey() {
     const token = document.getElementById('key-token').value;
     if (service) entry.service = service;
     if (token) entry.token = token;
+  } else if (cat === 'vision') {
+    const providerSel = document.getElementById('key-vision-provider').value;
+    const key = document.getElementById('key-vision-key').value;
+    if (providerSel) entry.provider = providerSel;
+    if (key) entry.key = key;
   } else {
     const custom = document.getElementById('key-custom-fields').value.trim();
     if (custom) {
@@ -3188,7 +3226,7 @@ async function addKey() {
     }
     hideAddKeyForm();
     // Clear form
-    ['key-name','key-host','key-user','key-path','key-port','key-key','key-base-url','key-token','key-custom-fields','key-note','key-allow-for'].forEach(id => {
+    ['key-name','key-host','key-user','key-path','key-port','key-key','key-base-url','key-token','key-vision-key','key-custom-fields','key-note','key-allow-for'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.value = '';
     });

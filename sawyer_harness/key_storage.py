@@ -52,7 +52,7 @@ from .paths import UserData
 KEYS_DIR = UserData.home
 KEYS_FILE = UserData.keys_file
 
-CATEGORIES = ["ssh", "api", "tokens", "custom"]
+CATEGORIES = ["ssh", "api", "vision", "tokens", "custom"]
 PERMISSIONS = ["ask", "allowlist", "session", "approve"]
 PERMISSION_LABELS = {
     "ask": "Ask Every Time",
@@ -113,6 +113,21 @@ KEY_PRESETS = {
         "label": "Custom Key",
         "fields": [],
         "defaults": {},
+    },
+    "vision": {
+        "label": "Vision (Google AI Studio)",
+        "description": "API key for the vision bridge -- lets the agent see and verify web pages, screenshots, and UI output. Requires a Google Developer account. Get a free key at https://ai.google.dev/",
+        "fields": ["key"],
+        "defaults": {},
+        "providers": {
+            "google-ai-studio": {
+                "label": "Google AI Studio (Gemini)",
+                "env_var": "GEMINI_API_KEY",
+                "url": "https://ai.google.dev/",
+                "fields": ["key"],
+                "note": "Free tier available. Create a project at ai.google.dev, generate an API key, and paste it here. The vision bridge uses Gemini to evaluate screenshots and provide visual feedback.",
+            },
+        },
     },
 }
 

@@ -250,10 +250,35 @@ async def capture_screenshot_from_html(
 
 # ── Gemini vision evaluation ─────────────────────────────────────────
 
+def _get_gemini_api_key() -> str:
+    """Get the Gemini API key from key_storage, falling back to env var.
+
+    Checks the 'vision' category in key_storage first (the UI-stored key),
+    then falls back to the GEMINI_API_KEY environment variable.
+    """
+    # Try key_storage first
+    try:
+        from .key_storage import KeyStorage
+        ks = KeyStorage()
+        entry = ks.get_entry("vision", "google-ai-studio")
+        if entry and entry.get("key"):
+            return entry["key"]
+    except Exception:
+        pass  # key_storage unavailable or not configured
+
+    # Fall back to environment variable
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if api_key:
+        return api_key
+
+    return ""
+
+
 def _get_gemini_client():
     """Get or create the Google GenAI client.
 
-    Requires GEMINI_API_KEY environment variable.
+    Requires a Gemini API key -- stored in the Vision section of Key Storage,
+    or set as the GEMINI_API_KEY environment variable.
     Falls back gracefully if not configured.
     """
     try:
@@ -264,12 +289,13 @@ def _get_gemini_client():
             "Install with: pip install google-genai"
         )
 
-    api_key = os.environ.get("GEMINI_API_KEY", "")
+    api_key = _get_gemini_api_key()
     if not api_key:
         raise ValueError(
-            "GEMINI_API_KEY environment variable not set. "
-            "Get a free key from https://ai.google.dev/ "
-            "and set it with: export GEMINI_API_KEY=your_key"
+            "GEMINI_API_KEY not found. "
+            "Store it in the Vision section of Key Storage (Keys panel), "
+            "or set it as an environment variable.\n"
+            "Get a free key at https://ai.google.dev/"
         )
 
     return genai.Client(api_key=api_key)
