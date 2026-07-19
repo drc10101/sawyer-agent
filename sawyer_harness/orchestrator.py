@@ -517,8 +517,8 @@ class OrchestratorEngine:
         """
         from .scoring import evaluate_and_score, RALPH_DEFAULTS
 
-        _quality_threshold: float = quality_threshold if quality_threshold is not None else RALPH_DEFAULTS["quality_threshold"]
-        _max_iterations: int = max_iterations if max_iterations is not None else RALPH_DEFAULTS["max_iterations"]
+        _quality_threshold: float = float(quality_threshold) if quality_threshold is not None else float(RALPH_DEFAULTS["quality_threshold"])
+        _max_iterations: int = max_iterations if max_iterations is not None else int(RALPH_DEFAULTS["max_iterations"])
 
         run = self._runs.get(run_id)
         if not run:
