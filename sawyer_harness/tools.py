@@ -672,7 +672,6 @@ def _file_search_handler(
 ) -> ToolResult:
     """Search for files by name or content using platform-appropriate commands."""
     import platform
-    import os as _os
 
     try:
         is_windows = platform.system() == "Windows"

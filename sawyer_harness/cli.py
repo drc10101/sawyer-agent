@@ -84,7 +84,7 @@ def _cmd_setup(args):
 
 def _cmd_sandbox(args):
     """Change the permission mode (sandbox level) without reconfiguring the LLM."""
-    from sawyer_harness.config import HarnessConfig, SecurityConfig, DEFAULT_CONFIG_PATH, PERMISSION_MODES
+    from sawyer_harness.config import HarnessConfig, DEFAULT_CONFIG_PATH, PERMISSION_MODES
 
     config_path = Path(args.config).expanduser().resolve() if args.config else DEFAULT_CONFIG_PATH
 
