@@ -180,9 +180,11 @@
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/><line x1="17" y1="2" x2="17" y2="13"/></svg>
               </button>
             </div>
-            <textarea id="chat-input" placeholder="Send a message..." rows="2" autofocus></textarea>
-            <button class="btn btn--primary" id="send-btn" onclick="sendMessage()">Send</button>
-            <button class="btn btn--danger" id="stop-btn" onclick="stopStreaming()" style="display:none">Stop</button>
+            <div class="chat-input-row">
+              <textarea id="chat-input" placeholder="Send a message..." rows="2" autofocus></textarea>
+              <button class="btn btn--primary" id="send-btn" onclick="sendMessage()">Send</button>
+              <button class="btn btn--danger" id="stop-btn" onclick="stopStreaming()" style="display:none">Stop</button>
+            </div>
           </div>
         </div>
       </div>
