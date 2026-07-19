@@ -517,10 +517,8 @@ class OrchestratorEngine:
         """
         from .scoring import evaluate_and_score, RALPH_DEFAULTS
 
-        if quality_threshold is None:
-            quality_threshold = RALPH_DEFAULTS["quality_threshold"]
-        if max_iterations is None:
-            max_iterations = RALPH_DEFAULTS["max_iterations"]
+        _quality_threshold: float = quality_threshold if quality_threshold is not None else RALPH_DEFAULTS["quality_threshold"]
+        _max_iterations: int = max_iterations if max_iterations is not None else RALPH_DEFAULTS["max_iterations"]
 
         run = self._runs.get(run_id)
         if not run:
@@ -539,12 +537,12 @@ class OrchestratorEngine:
             if t.parent_task_id == task_id and t.agent_type == "creative"
         )
 
-        if improvement_iterations >= max_iterations:
+        if improvement_iterations >= _max_iterations:
             return {
                 "status": "max_iterations_reached",
                 "quality_score": None,
                 "iteration": improvement_iterations,
-                "message": f"Max iterations ({max_iterations}) reached for task {task_id}",
+                "message": f"Max iterations ({_max_iterations}) reached for task {task_id}",
             }
 
         # Evaluate the task result
@@ -552,7 +550,7 @@ class OrchestratorEngine:
             result=task.result,
             success_criteria=task.briefing.success_criteria if task.briefing else "",
             task_id=task.id,
-            quality_threshold=quality_threshold,
+            quality_threshold=_quality_threshold,
         )
 
         # Record quality score as improvement annotation
