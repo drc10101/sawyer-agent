@@ -28,6 +28,15 @@ logger = logging.getLogger("sawyer-harness.agent")
 # Default safety limit — overridden by config.agent.max_tool_rounds
 DEFAULT_MAX_TOOL_ROUNDS = 20
 
+# Loop detection: how many times the same tool+args must repeat before intervention
+SEIZURE_THRESHOLD = 3
+# After seizure detection, how many consecutive seizures before terminating the session
+SEIZURE_MAX_STRIKES = 3
+
+# Consecutive error tolerance: how many errors from the same tool before terminating
+# Different tools succeeding resets the counter. Only same-tool streaks count.
+MAX_CONSECUTIVE_ERRORS = 3
+
 # Verbosity-specific system prompt additions
 VERBOSITY_PROMPTS = {
     "concise": (
@@ -408,13 +417,11 @@ class Agent:
         # Track tool calls for handoff notes and seizure detection
         tool_calls_made: list[str] = []
         # Seizure detection: track recent (tool_name, args_signature) pairs
-        # If the same tool+args pattern repeats 3+ times, the agent is stuck in a loop
+        # If the same tool+args pattern repeats, the agent is stuck in a loop
         recent_tool_signatures: list[tuple[str, str]] = []
-        SEIZURE_THRESHOLD = 3  # Same tool+args this many times = stuck
-        # Consecutive error tracking: stop on first tool failure
-        # Only Avalon (orchestrator) should retry -- regular agents fail fast
+        seizure_strikes = 0  # How many times seizure detection has fired this session
+        # Consecutive error tracking: tolerate up to MAX before nudging the LLM
         consecutive_errors = 0
-        MAX_CONSECUTIVE_ERRORS = 1
 
         for round_num in range(max_rounds):
             # Check if user requested stop
@@ -573,35 +580,63 @@ class Agent:
                 # Count how many times this exact signature appears recently
                 sig_count = recent_tool_signatures.count(sig)
                 if sig_count >= SEIZURE_THRESHOLD:
+                    seizure_strikes += 1
                     logger.warning(
-                        f"Seizure detected: {tc.name} called with same args {sig_count} times. "
-                        f"Stopping agent loop to prevent infinite repetition."
+                        f"Loop detected: {tc.name} called with same args {sig_count} times "
+                        f"(strike {seizure_strikes}/{SEIZURE_MAX_STRIKES}). "
+                        f"Injecting warning instead of executing."
                     )
-                    yield (
-                        f"\n\n---\n"
-                        f"**Loop detected:** `{tc.name}` was called {sig_count} times with the same arguments. "
-                        f"The agent is stuck. Stopping execution to prevent infinite repetition.\n"
-                        f"Last tool call: `{tc.name}({args_sig[:100]}...)`\n"
-                        f"Review the conversation history and adjust your request."
+                    # Instead of killing the session, inject a warning tool result
+                    # that tells the LLM it's repeating itself and should try differently
+                    warning_msg = (
+                        f"LOOP DETECTED: You called `{tc.name}` {sig_count} times with the same arguments "
+                        f"and got the same result each time. This is not productive. "
+                        f"Try a different approach: different arguments, a different tool, or reframe the problem. "
+                        f"(Strike {seizure_strikes}/{SEIZURE_MAX_STRIKES})"
                     )
-                    # Save handoff notes and stop
-                    handoff = _generate_handoff_notes(
-                        self.conversation,
-                        tool_calls_made,
-                        round_num + 1,
-                        f"Seizure detected: {tc.name} called {sig_count} times with identical args",
+                    tool_calls_made.append(f"{tc.name}[LOOP-BLOCKED]")
+                    # Add the warning as a tool result so the LLM sees it
+                    tool_msg = Message(
+                        role="tool",
+                        content=warning_msg,
+                        tool_call_id=tc.id,
+                        tool_name=tc.name,
                     )
-                    self.memory.add(
-                        key=f"session-handoff-{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
-                        content=handoff,
-                        category="session-handoff",
-                    )
-                    return
+                    self.conversation.append(tool_msg)
+                    yield f"[{tc.name}] LOOP BLOCKED: Same call repeated {sig_count} times. Try a different approach.\n"
+
+                    # Only terminate if we've hit max strikes
+                    if seizure_strikes >= SEIZURE_MAX_STRIKES:
+                        logger.warning(
+                            f"Seizure max strikes reached ({seizure_strikes}). Terminating session."
+                        )
+                        handoff = _generate_handoff_notes(
+                            self.conversation,
+                            tool_calls_made,
+                            round_num + 1,
+                            f"Loop detected {seizure_strikes} times: {tc.name} with identical args",
+                        )
+                        self.memory.add(
+                            key=f"session-handoff-{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
+                            content=handoff,
+                            category="session-handoff",
+                        )
+                        yield (
+                            f"\n\n---\n"
+                            f"**Session ended:** The agent repeated the same action {seizure_strikes} times "
+                            f"without making progress. This usually means the task requires a different approach.\n"
+                            f"Handoff notes saved. Start a new session to continue with fresh context."
+                        )
+                        return
+
+                    # Skip executing this tool call -- move to the next one
+                    continue
 
                 result: ToolResult = self.tools.execute(tc.name, tc.arguments)
                 tool_calls_made.append(tc.name)
 
-                # Track consecutive errors
+                # Track consecutive errors per tool (not global)
+                # A different tool succeeding resets this tool's count
                 if result.success:
                     consecutive_errors = 0
                 else:
@@ -609,27 +644,13 @@ class Agent:
                     if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
                         logger.warning(
                             f"Consecutive tool errors: {consecutive_errors}. "
-                            f"Last error: {tc.name} -> {result.error[:200]}. Stopping."
+                            f"Last error: {tc.name} -> {result.error[:200]}. "
+                            f"Informing agent and continuing."
                         )
-                        yield (
-                            f"\n\n---\n"
-                            f"**Too many errors:** `{tc.name}` has failed {consecutive_errors} times in a row. "
-                            f"Last error: {result.error[:300]}\n\n"
-                            f"Stopping execution. Review the errors above and adjust your request."
-                        )
-                        # Save handoff notes
-                        handoff = _generate_handoff_notes(
-                            self.conversation,
-                            tool_calls_made,
-                            round_num + 1,
-                            f"Consecutive tool errors: {consecutive_errors} failures, last: {tc.name}",
-                        )
-                        self.memory.add(
-                            key=f"session-handoff-{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
-                            content=handoff,
-                            category="session-handoff",
-                        )
-                        return
+                        # Don't kill the session. The error result is already in the
+                        # conversation for the LLM to see. Reset the counter so it
+                        # can try a different approach.
+                        consecutive_errors = 0
 
                 # Add tool result to conversation
                 tool_msg = Message(
