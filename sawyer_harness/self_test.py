@@ -19,12 +19,9 @@ from __future__ import annotations
 
 import logging
 import os
-import platform
-import shutil
 import subprocess
 import time
-import traceback
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -563,7 +560,6 @@ def _test_data_paths() -> TestResult:
 
 def _test_soul_md() -> TestResult:
     """Test: Does SOUL.md exist and contain identity content?"""
-    from sawyer_harness.paths import SAWYER_HOME
     soul_path = Path(__file__).parent / "SOUL.md"
 
     start = time.monotonic()
@@ -729,9 +725,4 @@ def run_self_test(state) -> list[TestResult]:
     results.append(_test_rules(state.rules_store))
 
     # Summary
-    passed = sum(1 for r in results if r.status == "pass")
-    warned = sum(1 for r in results if r.status == "warn")
-    failed = sum(1 for r in results if r.status == "fail")
-    total_ms = sum(r.duration_ms for r in results)
-
     return results
