@@ -4140,7 +4140,17 @@ async function runSelfTest() {
     const results = data.results || [];
 
     // Build results table
-    let html = '<div style="border:1px solid var(--border-1);border-radius:8px;overflow:hidden">';
+    const now = new Date();
+    const timestamp = now.toLocaleString();
+    const version = data.version || '--';
+    const commit = data.commit || '--';
+
+    let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">`;
+    html += `<span style="font-size:12px;color:var(--text-2)">v${version} &middot; ${commit}</span>`;
+    html += `<span style="font-size:12px;color:var(--text-2)">${timestamp}</span>`;
+    html += `</div>`;
+
+    html += '<div style="border:1px solid var(--border-1);border-radius:8px;overflow:hidden">';
     html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
 
     // Header

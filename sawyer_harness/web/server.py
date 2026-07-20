@@ -2105,11 +2105,19 @@ def _register_routes(app: FastAPI, state: _AppState):
         status, detail, and timing.
         """
         from sawyer_harness.self_test import run_self_test as _run_self_test
+        import subprocess as _sp
         results = _run_self_test(state)
         passed = sum(1 for r in results if r.status == "pass")
         warned = sum(1 for r in results if r.status == "warn")
         failed = sum(1 for r in results if r.status == "fail")
         total_ms = sum(r.duration_ms for r in results)
+
+        # Get current git commit for traceability
+        try:
+            commit = _sp.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, timeout=5).stdout.strip()
+        except Exception:
+            commit = "unknown"
+
         return {
             "summary": {
                 "total": len(results),
@@ -2119,6 +2127,8 @@ def _register_routes(app: FastAPI, state: _AppState):
                 "total_ms": total_ms,
                 "overall": "pass" if failed == 0 else ("warn" if passed > 0 else "fail"),
             },
+            "version": __version__,
+            "commit": commit,
             "results": [
                 {
                     "name": r.name,
