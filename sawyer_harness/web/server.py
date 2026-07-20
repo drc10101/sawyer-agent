@@ -183,6 +183,16 @@ class _AppState:
             UserData.memory_db,
         )
         self.memory = MemoryStore(memory_path)
+
+        # Bootstrap memory with essential facts if missing
+        try:
+            from ..memory_bootstrap import bootstrap_memory
+            added = bootstrap_memory(self.memory)
+            if added > 0:
+                logger.info(f"Memory bootstrap: seeded {added} essential facts")
+        except Exception as e:
+            logger.warning(f"Memory bootstrap failed (non-fatal): {e}")
+
         self.skills = SkillStore(UserData.skills_dir)
         self.tools = create_default_registry(
             allowed_tools=config.security.allowed_tools or None,
@@ -3211,6 +3221,22 @@ def run_server(config: HarnessConfig | None = None, host: str = "0.0.0.0", port:
 
     # ── Auto-install shortcuts on first run ───────────────────────
     _ensure_shortcuts()
+
+    # ── Check if LLM provider is reachable, start if local and down ──
+    try:
+        from ..provider_check import check_and_start_provider
+        result = check_and_start_provider(
+            base_url=config.llm.base_url,
+            provider=config.llm.provider,
+        )
+        logger.info(f"Provider check: {result['message']}")
+        if not result["reachable"]:
+            logger.warning(
+                f"LLM provider is not reachable: {result['message']}. "
+                f"Agent will start but chat will fail until the provider is available."
+            )
+    except Exception as e:
+        logger.warning(f"Provider check failed (non-fatal): {e}")
 
     # ── Kill any existing process on this port ──────────────────────
     _kill_port_holder(host, port)

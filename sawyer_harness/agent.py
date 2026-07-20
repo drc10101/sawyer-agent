@@ -210,6 +210,17 @@ class Agent:
         """
         parts = [self.system_prompt]
 
+        # Load SOUL.md identity file if it exists
+        try:
+            from pathlib import Path as _Path
+            _soul_path = _Path(__file__).parent / "SOUL.md"
+            if _soul_path.exists():
+                _soul_content = _soul_path.read_text(encoding="utf-8").strip()
+                if _soul_content:
+                    parts.append(f"\n{_soul_content}")
+        except Exception:
+            pass  # SOUL.md is optional
+
         # Inject platform info so the agent knows its host OS
         import platform as _platform
         import os as _os
