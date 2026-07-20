@@ -449,6 +449,17 @@
             <div id="score-history" style="max-height:150px;overflow-y:auto"></div>
           </div>
 
+          <!-- Self-Test -->
+          <div class="ctrl-card" style="margin-bottom:12px">
+            <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Power-On Self-Test</h4>
+            <p style="font-size:12px;color:var(--text-2);margin-bottom:10px">
+              Runs a comprehensive health check of every subsystem. Real tests -- actual reads, writes, queries, LLM requests. No stubs.
+            </p>
+            <button class="btn btn--primary btn-sm" id="self-test-btn" onclick="runSelfTest()">Run Self-Test</button>
+            <div id="self-test-status" style="font-size:12px;color:var(--text-2);margin-top:8px"></div>
+            <div id="self-test-results" style="display:none;margin-top:12px"></div>
+          </div>
+
           <!-- Restart Server -->
           <div class="ctrl-card" style="margin-bottom:12px">
             <h4 style="font-size:13px;color:var(--text-0);margin-bottom:8px">Server</h4>
@@ -4109,6 +4120,98 @@ setInterval(checkForUpdates, 6 * 60 * 60 * 1000);  // Recheck every 6 hours
 lucide.createIcons();
 
 // Server restart
+async function runSelfTest() {
+  const btn = document.getElementById('self-test-btn');
+  const statusEl = document.getElementById('self-test-status');
+  const resultsEl = document.getElementById('self-test-results');
+
+  if (btn) btn.disabled = true;
+  if (btn) btn.textContent = 'Running...';
+  if (statusEl) {
+    statusEl.textContent = 'Running self-test...';
+    statusEl.style.color = 'var(--brand)';
+  }
+  if (resultsEl) resultsEl.style.display = 'none';
+
+  try {
+    const res = await fetch(API + '/api/self-test', { method: 'POST' });
+    const data = await res.json();
+    const summary = data.summary || {};
+    const results = data.results || [];
+
+    // Build results table
+    let html = '<div style="border:1px solid var(--border-1);border-radius:8px;overflow:hidden">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+
+    // Header
+    html += '<thead><tr style="background:var(--bg-1)">';
+    html += '<th style="padding:8px 12px;text-align:left;color:var(--text-2)">Status</th>';
+    html += '<th style="padding:8px 12px;text-align:left;color:var(--text-2)">Test</th>';
+    html += '<th style="padding:8px 12px;text-align:left;color:var(--text-2)">Detail</th>';
+    html += '<th style="padding:8px 12px;text-align:right;color:var(--text-2)">Time</th>';
+    html += '</tr></thead><tbody>';
+
+    for (const r of results) {
+      const statusColors = {
+        pass: '#22c55e',
+        warn: '#eab308',
+        fail: '#ef4444'
+      };
+      const statusLabels = {
+        pass: 'PASS',
+        warn: 'WARN',
+        fail: 'FAIL'
+      };
+      const color = statusColors[r.status] || 'var(--text-2)';
+      const label = statusLabels[r.status] || r.status.toUpperCase();
+
+      html += '<tr style="border-top:1px solid var(--border-1)">';
+      html += `<td style="padding:6px 12px"><span style="display:inline-block;padding:2px 8px;border-radius:4px;font-weight:600;font-size:11px;background:${color}20;color:${color}">${label}</span></td>`;
+      html += `<td style="padding:6px 12px;color:var(--text-0);font-weight:500">${r.name}</td>`;
+      html += `<td style="padding:6px 12px;color:var(--text-2)">${r.detail}</td>`;
+      html += `<td style="padding:6px 12px;text-align:right;color:var(--text-2);font-family:var(--font-mono)">${r.duration_ms}ms</td>`;
+      html += '</tr>';
+    }
+
+    html += '</tbody></table></div>';
+
+    // Summary bar
+    const overallColor = summary.overall === 'pass' ? '#22c55e' : (summary.overall === 'warn' ? '#eab308' : '#ef4444');
+    html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding:8px 12px;border-radius:6px;background:${overallColor}15;border:1px solid ${overallColor}40">`;
+    html += `<span style="font-weight:600;color:${overallColor}">${summary.passed} passed / ${summary.warned} warned / ${summary.failed} failed</span>`;
+    html += `<span style="font-size:12px;color:var(--text-2)">Total: ${summary.total_ms}ms</span>`;
+    html += '</div>';
+
+    if (resultsEl) {
+      resultsEl.innerHTML = html;
+      resultsEl.style.display = 'block';
+    }
+
+    if (statusEl) {
+      if (summary.failed > 0) {
+        statusEl.textContent = `${summary.failed} test(s) failed. See details below.`;
+        statusEl.style.color = '#ef4444';
+      } else if (summary.warned > 0) {
+        statusEl.textContent = `All tests passed with ${summary.warned} warning(s).`;
+        statusEl.style.color = '#eab308';
+      } else {
+        statusEl.textContent = `All ${summary.total} tests passed.`;
+        statusEl.style.color = '#22c55e';
+      }
+    }
+  } catch (e) {
+    if (statusEl) {
+      statusEl.textContent = 'Self-test failed: ' + e.message;
+      statusEl.style.color = '#ef4444';
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Run Self-Test';
+    }
+  }
+}
+
 async function restartServer() {
   if (!confirm('Restart the Sawyer server? This takes a few seconds. Your data is preserved.')) return;
   const statusEl = document.getElementById('restart-status');
