@@ -2096,6 +2096,40 @@ def _register_routes(app: FastAPI, state: _AppState):
             "orchestration_runs": state.orchestrator.count(),
         }
 
+    @app.post("/api/self-test")
+    async def run_self_test():
+        """Run comprehensive self-test of all subsystems.
+
+        Each test actually exercises the subsystem -- real reads, real writes,
+        real queries. No stubs. Returns a list of results with pass/fail/warn
+        status, detail, and timing.
+        """
+        from ..self_test import run_self_test as _run_self_test
+        results = _run_self_test(state)
+        passed = sum(1 for r in results if r.status == "pass")
+        warned = sum(1 for r in results if r.status == "warn")
+        failed = sum(1 for r in results if r.status == "fail")
+        total_ms = sum(r.duration_ms for r in results)
+        return {
+            "summary": {
+                "total": len(results),
+                "passed": passed,
+                "warned": warned,
+                "failed": failed,
+                "total_ms": total_ms,
+                "overall": "pass" if failed == 0 else ("warn" if passed > 0 else "fail"),
+            },
+            "results": [
+                {
+                    "name": r.name,
+                    "status": r.status,
+                    "detail": r.detail,
+                    "duration_ms": r.duration_ms,
+                }
+                for r in results
+            ],
+        }
+
     # ----------------------------------------------------------
     # Suggestions
     # ----------------------------------------------------------
