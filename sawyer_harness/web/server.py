@@ -2104,7 +2104,7 @@ def _register_routes(app: FastAPI, state: _AppState):
         real queries. No stubs. Returns a list of results with pass/fail/warn
         status, detail, and timing.
         """
-        from ..self_test import run_self_test as _run_self_test
+        from sawyer_harness.self_test import run_self_test as _run_self_test
         results = _run_self_test(state)
         passed = sum(1 for r in results if r.status == "pass")
         warned = sum(1 for r in results if r.status == "warn")

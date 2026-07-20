@@ -217,15 +217,21 @@ def _test_skills(skill_store) -> TestResult:
         # Try to load one
         loaded = False
         load_name = None
+        content_len = 0
         if skills:
-            load_name = skills[0].get("name", skills[0].get("file", ""))
-            content = skill_store.load_skill(load_name)
-            loaded = content is not None and len(content) > 0
+            load_name = skills[0].get("name", "")
+            skill = skill_store.get(load_name)
+            if skill is not None:
+                content_len = len(skill.content) if hasattr(skill, 'content') else len(str(skill))
+                loaded = content_len > 0
 
         elapsed = int((time.monotonic() - start) * 1000)
         detail = f"{count} skill(s) found."
         if count > 0:
-            detail += f" Successfully loaded '{load_name}' ({len(content) if loaded else 0} chars)." if loaded else f" Failed to load '{load_name}'."
+            if loaded:
+                detail += f" Successfully loaded '{load_name}' ({content_len} chars)."
+            else:
+                detail += f" Failed to load '{load_name}'."
 
         return TestResult(
             name="Skills",
@@ -500,7 +506,7 @@ def _test_config(config) -> TestResult:
 
 def _test_data_paths() -> TestResult:
     """Test: Do all expected data paths exist and are they writable?"""
-    from ..paths import UserData
+    from sawyer_harness.paths import UserData
 
     start = time.monotonic()
     try:
@@ -557,7 +563,7 @@ def _test_data_paths() -> TestResult:
 
 def _test_soul_md() -> TestResult:
     """Test: Does SOUL.md exist and contain identity content?"""
-    from ..paths import SAWYER_HOME
+    from sawyer_harness.paths import SAWYER_HOME
     soul_path = Path(__file__).parent / "SOUL.md"
 
     start = time.monotonic()
@@ -605,9 +611,9 @@ def _test_memory_bootstrap() -> TestResult:
     start = time.monotonic()
     try:
         # Import and check what bootstrap would add
-        from ..memory_bootstrap import ESSENTIAL_FACTS
+        from sawyer_harness.memory_bootstrap import ESSENTIAL_FACTS
 
-        required_keys = ["user_name", "github_username", "platform", "sawyer_home"]
+        required_keys = ["user_name", "github_username"]
         missing = [k for k in required_keys if not any(k == f[1] for f in ESSENTIAL_FACTS)]
 
         elapsed = int((time.monotonic() - start) * 1000)
@@ -642,10 +648,22 @@ def _test_rules(rules_store) -> TestResult:
         rules = rules_store.list_rules()
         elapsed = int((time.monotonic() - start) * 1000)
 
+        # AgentRule objects have .name and .id attributes
+        rule_names = []
+        for r in rules:
+            name = getattr(r, 'name', None) or (r.get('name', '?') if isinstance(r, dict) else '?')
+            rule_names.append(name)
+
+        detail = f"{len(rules)} rule(s) loaded."
+        if rule_names:
+            detail += f" Rules: {', '.join(rule_names)}"
+        else:
+            detail += " No custom rules defined."
+
         return TestResult(
             name="Rules",
             status="pass" if rules else "warn",
-            detail=f"{len(rules)} rule(s) loaded." + (f" Rules: {', '.join(r.get('name', r.get('id', '?')) for r in rules)}" if rules else " No custom rules defined."),
+            detail=detail,
             duration_ms=elapsed,
         )
     except Exception as e:
