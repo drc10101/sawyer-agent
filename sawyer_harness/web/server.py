@@ -3257,20 +3257,21 @@ def run_server(config: HarnessConfig | None = None, host: str = "0.0.0.0", port:
     _ensure_shortcuts()
 
     # ── Check if LLM provider is reachable, start if local and down ──
-    try:
-        from ..provider_check import check_and_start_provider
-        result = check_and_start_provider(
-            base_url=config.llm.base_url,
-            provider=config.llm.provider,
-        )
-        logger.info(f"Provider check: {result['message']}")
-        if not result["reachable"]:
-            logger.warning(
-                f"LLM provider is not reachable: {result['message']}. "
-                f"Agent will start but chat will fail until the provider is available."
+    if config is not None:
+        try:
+            from ..provider_check import check_and_start_provider
+            result = check_and_start_provider(
+                base_url=config.llm.base_url,
+                provider=config.llm.provider,
             )
-    except Exception as e:
-        logger.warning(f"Provider check failed (non-fatal): {e}")
+            logger.info(f"Provider check: {result['message']}")
+            if not result["reachable"]:
+                logger.warning(
+                    f"LLM provider is not reachable: {result['message']}. "
+                    f"Agent will start but chat will fail until the provider is available."
+                )
+        except Exception as e:
+            logger.warning(f"Provider check failed (non-fatal): {e}")
 
     # ── Kill any existing process on this port ──────────────────────
     _kill_port_holder(host, port)

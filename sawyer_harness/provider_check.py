@@ -85,10 +85,13 @@ def _start_ollama() -> bool:
         # Try starting Ollama
         try:
             # Use 'start' to launch without blocking. Shell=True needed for 'start'.
+            creation_flags = 0
+            if platform.system() == "Windows":
+                # Windows-only flags for detached background process
+                creation_flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
             subprocess.Popen(
                 ["ollama", "app", "serve"],
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
-                | subprocess.DETACHED_PROCESS,
+                creationflags=creation_flags,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )

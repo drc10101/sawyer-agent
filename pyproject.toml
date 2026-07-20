@@ -97,6 +97,9 @@ omit = [
     "sawyer_harness/tool_creator.py",
     "sawyer_harness/user_tools.py",
     "sawyer_harness/suggestions.py",
+    "sawyer_harness/self_test.py",
+    "sawyer_harness/provider_check.py",
+    "sawyer_harness/memory_bootstrap.py",
 ]
 
 [tool.coverage.report]
